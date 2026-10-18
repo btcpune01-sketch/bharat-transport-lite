@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a237e">
+  <title>Bharat Transport Company | Bill Manager</title>
+  <style>
+    :root { color-scheme: light; --navy:#1a237e; --green:#4caf50; --blue:#2196f3; --orange:#ff9800; --red:#f44336; --ink:#202633; --muted:#667085; --line:#c9ced8; --paper:#fff; --canvas:#eef1f6; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:20px; background:var(--canvas); color:var(--ink); font:14px/1.4 Arial,Helvetica,sans-serif; }
+    button,input,textarea,select { font:inherit; }
+    button { cursor:pointer; }
+    .app-shell { max-width:1500px; margin:0 auto; }
+    .topbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:13px 16px; background:var(--navy); color:#fff; border-radius:5px 5px 0 0; }
+    .brand { flex:0 0 auto; margin-right:8px; font-size:19px; font-weight:800; letter-spacing:.6px; white-space:nowrap; }
+    .lr-search { flex:1 1 220px; min-width:190px; }
+    .lr-search input { width:100%; }
+    .topbar input { min-height:37px; padding:8px 10px; border:1px solid #c8cddd; border-radius:4px; background:#fff; color:var(--ink); }
+    .toolbar { display:flex; flex:1 1 510px; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
+    .toolbar button,.signatory-trigger { min-height:36px; padding:8px 11px; border:0; border-radius:4px; color:#fff; font-size:12px; font-weight:700; white-space:nowrap; }
+    .btn-green { background:var(--green); } .btn-blue { background:var(--blue); } .btn-orange { background:var(--orange); color:#1f2937!important; } .btn-red { background:var(--red); } .btn-gray { background:#687386; }
+    button:hover { filter:brightness(.95); }
+    .summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; padding:14px 0; }
+    .summary-card { min-height:75px; padding:12px 15px; border:1px solid #d5dae3; border-left:4px solid var(--navy); background:#fff; box-shadow:0 1px 3px #17255410; }
+    .summary-card:nth-child(2) { border-left-color:var(--orange); } .summary-card:nth-child(3) { border-left-color:var(--green); }
+    .summary-label { color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.55px; } .summary-value { margin-top:4px; font-size:21px; font-weight:800; }
+    .invoice { padding:18px; background:var(--paper); border:1px solid #d5dae3; box-shadow:0 3px 12px #17255412; }
+    .section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 10px; color:var(--navy); font-size:13px; font-weight:800; }
+    .party-section { margin-bottom:16px; padding:13px; border:1px solid #9da7bb; border-radius:3px; }
+    .edit-toggle { padding:6px 10px; border:1px solid #7d8799; border-radius:3px; background:#f1f3f7; color:#263246; font-size:11px; font-weight:800; }
+    .edit-toggle[aria-pressed="true"] { border-color:#d49b00; background:#fff2bc; }
+    .party-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px 12px; }
+    .field { min-width:0; } .field label { display:block; margin-bottom:4px; color:#455065; font-size:10px; font-weight:800; }
+    .field input,.field textarea,.payment-box input,.gst-control input { width:100%; min-width:0; padding:7px 8px; border:1px solid #c5cad4; border-radius:2px; background:#fff; color:var(--ink); }
+    .field textarea { min-height:34px; overflow:hidden; resize:none; white-space:normal; overflow-wrap:anywhere; }
+    .locked-field { background:#edf0f4!important; color:#475467!important; }
+    .edit-mode .party-grid .field input,.edit-mode .party-grid .field textarea { background:#fff8d9; border-color:#e4bf48; }
+    .table-wrap { width:100%; overflow-x:auto; }
+    .bill-table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    .bill-table th,.bill-table td { padding:5px 4px; border:1px solid #aeb5c2; text-align:left; vertical-align:top; }
+    .bill-table th { background:var(--navy); color:#fff; font-size:9px; text-align:center; }
+    .bill-table td { background:#fff; }
+    .bill-table th:nth-child(1) { width:7%; } .bill-table th:nth-child(2),.bill-table th:nth-child(3) { width:8%; } .bill-table th:nth-child(4),.bill-table th:nth-child(5) { width:11%; } .bill-table th:nth-child(6) { width:6%; } .bill-table th:nth-child(7),.bill-table th:nth-child(8),.bill-table th:nth-child(9) { width:8%; } .bill-table th:nth-child(10) { width:9%; } .bill-table th:nth-child(11) { width:8%; }
+    .bill-table textarea { display:block; width:100%; min-height:29px; padding:4px 3px; border:0; background:transparent; color:var(--ink); text-align:inherit; overflow:hidden; overflow-wrap:anywhere; resize:none; white-space:normal; }
+    .bill-table .numeric { text-align:right; } .total-cell { position:relative; padding-right:23px!important; }
+    .row-total { display:block; padding:5px 0; text-align:right; font-weight:700; overflow-wrap:anywhere; }
+    .remove-row { position:absolute; top:3px; right:3px; width:17px; height:17px; padding:0; border:0; background:#fce8e6; color:#a61b1b; line-height:17px; }
+    .lower-grid { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr); gap:16px; margin-top:15px; align-items:start; }
+    .details-stack { display:grid; gap:12px; } .detail-box { padding:11px; border:1px solid #9da7bb; }
+    .detail-box h2 { margin:0 0 8px; color:var(--navy); font-size:11px; } .bank-copy { font-size:12px; line-height:1.65; }
+    .payment-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+    .payment-box { min-width:0; padding:8px; border:1px solid #d0d5de; } .payment-box h3 { margin:0 0 7px; color:#3b4558; font-size:10px; }
+    .payment-box label { display:block; margin:5px 0 3px; color:var(--muted); font-size:9px; } .payment-box input { padding:6px; font-size:11px; }
+    .calculations { border:1px solid #aeb5c2; } .calc-row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px 11px; border-bottom:1px solid #e1e4e9; }
+    .calc-row:last-child { border-bottom:0; } .calc-row strong { text-align:right; }
+    .gst-control { display:flex; align-items:center; gap:4px; } .gst-control input { width:52px; padding:4px; text-align:right; }
+    .grand-row { background:var(--navy); color:#fff; font-size:15px; font-weight:800; } .advance-value,.words-label { color:#d32f2f; }
+    .balance-row { color:#16843a; font-size:15px; font-weight:800; } .amount-words { padding:10px 11px; border-top:1px solid #e1e4e9; line-height:1.5; overflow-wrap:anywhere; }
+    .amount-words span { display:block; margin-bottom:3px; color:#d32f2f; font-size:10px; font-weight:800; }
+    .remarks { margin-top:15px; } .remarks textarea { display:block; width:100%; min-height:48px; padding:8px 2px; border:0; border-bottom:1px dotted #687386; color:var(--ink); overflow:hidden; overflow-wrap:anywhere; resize:none; white-space:normal; }
+    .sign-terms { display:grid; grid-template-columns:1fr 270px; gap:18px; align-items:end; margin-top:16px; }
+    .terms h2 { margin:0 0 6px; color:var(--navy); font-size:10px; } .terms ol { margin:0; padding-left:17px; color:#424b5c; font-size:10px; line-height:1.6; }
+    .signatory { min-height:108px; padding:9px; border:1px dashed #5f6877; text-align:center; }
+    .signatory-title { margin-bottom:5px; font-size:11px; font-weight:800; } .signatory-company { font-size:10px; font-weight:700; }
+    .signature-image { display:block; max-width:145px; max-height:42px; margin:5px auto; object-fit:contain; }
+    .signature-name { font-weight:700; } .signature-role { color:var(--muted); font-size:10px; }
+    .signatory-trigger { margin-top:7px; background:#4c5668; }
+    dialog { width:min(440px,calc(100% - 28px)); padding:0; border:1px solid #c7ccd6; border-radius:5px; box-shadow:0 15px 50px #10182844; }
+    dialog::backdrop { background:#11182788; } .modal-head { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:var(--navy); color:#fff; }
+    .modal-head h2 { margin:0; font-size:15px; } .modal-close { border:0; background:transparent; color:#fff; font-size:22px; }
+    .modal-body { display:grid; gap:12px; padding:16px; } .modal-body label { display:grid; gap:5px; color:#455065; font-size:11px; font-weight:700; }
+    .modal-body input { padding:8px; border:1px solid #c5cad4; border-radius:3px; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:8px; padding:0 16px 16px; } .modal-actions button { padding:8px 12px; border:0; border-radius:3px; color:#fff; font-weight:700; }
+    .modal-actions .cancel { background:#687386; } .modal-actions .save { background:var(--blue); }
+    .history-list { display:grid; gap:7px; max-height:55vh; overflow:auto; }
+    .history-item { display:flex; justify-content:space-between; gap:12px; padding:10px; border:1px solid #d5dae3; background:#f8f9fb; text-align:left; }
+    .history-item span:last-child { color:var(--muted); white-space:nowrap; } .empty-history { color:var(--muted); text-align:center; }
+    .toast { position:fixed; right:18px; bottom:18px; z-index:5; padding:10px 14px; border-radius:4px; background:#202633; color:#fff; box-shadow:0 4px 14px #0003; }
+    @media (max-width:900px) { body { padding:10px; } .party-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .lower-grid { grid-template-columns:1fr; } .bill-table { min-width:890px; } }
+    @media (max-width:560px) { .summary { gap:6px; } .summary-card { padding:9px; } .summary-label { font-size:9px; } .summary-value { font-size:16px; } .party-grid,.payment-grid { grid-template-columns:1fr 1fr; } .sign-terms { grid-template-columns:1fr; } }
+    @page { size:A4 landscape; margin:8mm; }
+    @media print {
+      html,body { width:100%; margin:0; padding:0; background:#fff; color:#111; font-size:9px; }
+      .app-shell { width:100%; max-width:none; margin:0; }
+      [data-no-print],.remove-row { display:none!important; }
+      .topbar { padding:7px 9px; border-radius:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .brand { font-size:15px; }
+      .summary { gap:6px; padding:7px 0; } .summary-card { min-height:48px; padding:6px 9px; box-shadow:none; } .summary-value { font-size:15px; }
+      .invoice { padding:9px; border:0; box-shadow:none; } .party-section { margin-bottom:8px; padding:7px; } .party-grid { gap:5px 8px; }
+      .field label { margin-bottom:1px; font-size:8px; }
+      .field input,.field textarea { height:auto!important; min-height:0; padding:2px 3px; border-color:#b8bec8; border-radius:0; background:transparent!important; color:#111!important; overflow:visible!important; white-space:normal!important; overflow-wrap:anywhere!important; }
+      .bill-table { min-width:0; } .bill-table th,.bill-table td { padding:2px; } .bill-table th { font-size:7px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .bill-table textarea { height:auto!important; min-height:0; padding:1px; border:0; overflow:visible!important; white-space:normal!important; overflow-wrap:anywhere!important; }
+      .lower-grid { grid-template-columns:1.15fr .85fr; gap:8px; margin-top:8px; } .details-stack { gap:6px; }
+      .detail-box { padding:6px; break-inside:avoid; } .detail-box h2 { margin-bottom:4px; font-size:8px; } .bank-copy { font-size:8px; }
+      .payment-grid { gap:4px; } .payment-box { padding:4px; } .payment-box h3,.payment-box label { font-size:7px; } .payment-box input { padding:2px; border:0; font-size:8px; }
+      .calculations { break-inside:avoid; } .calc-row { padding:5px 7px; }
+      .grand-row,.balance-row { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .amount-words { padding:6px 7px; } .remarks { margin-top:7px; }
+      .remarks textarea { min-height:28px; height:auto!important; padding:3px 1px; overflow:visible!important; white-space:normal!important; overflow-wrap:anywhere!important; }
+      .sign-terms { grid-template-columns:1fr 220px; gap:9px; margin-top:8px; } .terms ol { font-size:8px; }
+      .signatory { min-height:78px; padding:6px; break-inside:avoid; } .signature-image { max-height:30px; }
+      input,textarea { max-width:100%; height:auto; overflow:visible; white-space:normal; word-wrap:break-word; overflow-wrap:anywhere; } .table-wrap { overflow:visible; }
+      tr,.party-section,.remarks,.sign-terms { break-inside:avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">BTC MANAGER</div>
+      <div class="lr-search" data-no-print><input id="lrSearch" type="search" placeholder="Enter LR No. to Auto-fill" aria-label="Enter LR No. to Auto-fill" autocomplete="off"></div>
+      <nav class="toolbar" aria-label="Bill actions" data-no-print>
+        <button class="btn-green" id="addRowButton" type="button">+ROW</button>
+        <button class="btn-green" id="newBillButton" type="button">NEW BILL</button>
+        <button class="btn-blue" id="saveBillButton" type="button">SAVE TO LIST</button>
+        <button class="btn-orange" id="historyButton" type="button">HISTORY + CA</button>
+        <button class="btn-red" id="printButton" type="button">PRINT</button>
+        <button class="btn-gray" id="backButton" type="button">BACK TO LIST</button>
+      </nav>
+    </header>
+
+    <section class="summary" aria-label="Bill summary">
+      <div class="summary-card"><div class="summary-label">GRAND TOTAL</div><div class="summary-value" id="summaryGrand">₹0.00</div></div>
+      <div class="summary-card"><div class="summary-label">ADVANCE RECEIVED</div><div class="summary-value" id="summaryAdvance">₹0</div></div>
+      <div class="summary-card"><div class="summary-label">BALANCE DUE</div><div class="summary-value" id="summaryBalance">₹0.00</div></div>
+    </section>
+
+    <main class="invoice" id="invoice">
+      <section class="party-section" id="partySection" aria-labelledby="partyHeading">
+        <h1 class="section-heading" id="partyHeading"><span>PARTY / BILTY DETAILS</span><button class="edit-toggle" id="editToggle" type="button" aria-pressed="false" data-no-print>Edit Mode: OFF</button></h1>
+        <div class="party-grid">
+          <div class="field"><label for="billNo">Bill No / LR No</label><textarea id="billNo" data-party-field="billNo" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="biltyDate">Bilty Date</label><textarea id="biltyDate" data-party-field="biltyDate" class="locked-field" rows="1" readonly placeholder="DD/MM/YYYY"></textarea></div>
+          <div class="field"><label for="consignor">Consignor Name</label><textarea id="consignor" data-party-field="consignor" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="consignorGst">Consignor GST No</label><textarea id="consignorGst" data-party-field="consignorGst" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="consignee">Consignee Name</label><textarea id="consignee" data-party-field="consignee" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="consigneeGst">Consignee GST No</label><textarea id="consigneeGst" data-party-field="consigneeGst" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="billTo">Bill To Party</label><textarea id="billTo" data-party-field="billTo" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="billToGst">Bill To GST No</label><textarea id="billToGst" data-party-field="billToGst" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="invoiceNo">Invoice No</label><textarea id="invoiceNo" data-party-field="invoiceNo" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="from">From</label><textarea id="from" data-party-field="from" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="to">To</label><textarea id="to" data-party-field="to" class="locked-field" rows="1" readonly></textarea></div>
+          <div class="field"><label for="weight">Weight (MT)</label><textarea id="weight" data-party-field="weight" class="locked-field" rows="1" readonly></textarea></div>
+        </div>
+      </section>
+
+      <div class="table-wrap"><table class="bill-table" aria-label="Transport bill line items">
+        <thead><tr><th>DATE</th><th>LR NO.</th><th>INV NO.</th><th>FROM</th><th>TO</th><th>WT(MT)</th><th>LOADING</th><th>UNLOADING</th><th>OTHER</th><th>FREIGHT</th><th>TOTAL</th></tr></thead>
+        <tbody id="billRows"></tbody>
+      </table></div>
+
+      <section class="lower-grid">
+        <div class="details-stack">
+          <section class="detail-box" aria-labelledby="bankHeading"><h2 id="bankHeading">BANK ACCOUNT DETAILS</h2><div class="bank-copy"><strong>Beneficiary:</strong> BHARAT TRANSPORT COMPANY<br><strong>Bank:</strong> HDFC BANK | <strong>A/c:</strong> 50200112184634<br><strong>IFSC:</strong> HDFC0002795 | <strong>Branch:</strong> RAJGARH</div></section>
+          <section class="detail-box" aria-labelledby="advanceHeading">
+            <h2 id="advanceHeading">ADVANCE PAYMENT DETAILS</h2>
+            <div class="payment-grid">
+              <div class="payment-box"><h3>BY CASH</h3><label for="cashAmount">Amt (₹)</label><input id="cashAmount" data-payment="cashAmount" inputmode="decimal" placeholder="0.00"><label for="cashDate">Date</label><input id="cashDate" data-payment="cashDate" placeholder="DD/MM/YYYY"></div>
+              <div class="payment-box"><h3>BY CHEQUE</h3><label for="chequeAmount">Amt (₹)</label><input id="chequeAmount" data-payment="chequeAmount" inputmode="decimal" placeholder="0.00"><label for="chequeNo">Chq No</label><input id="chequeNo" data-payment="chequeNo"><label for="chequeBank">Bank</label><input id="chequeBank" data-payment="chequeBank"></div>
+              <div class="payment-box"><h3>UPI / ONLINE</h3><label for="upiAmount">Amt (₹)</label><input id="upiAmount" data-payment="upiAmount" inputmode="decimal" placeholder="0.00"><label for="upiTxn">Txn ID</label><input id="upiTxn" data-payment="upiTxn"><label for="upiApp">App</label><input id="upiApp" data-payment="upiApp"></div>
+            </div>
+          </section>
+        </div>
+        <section class="calculations" aria-label="Bill calculations">
+          <div class="calc-row"><span>Trip Sub-Total:</span><strong id="subtotalValue">₹0.00</strong></div>
+          <div class="calc-row"><span class="gst-control">GST (<input id="gstPercent" type="number" min="0" max="100" step="0.01" value="0" aria-label="GST percentage">%):</span><strong id="gstValue">₹0.00</strong></div>
+          <div class="calc-row grand-row"><span>Grand Total:</span><strong id="grandValue">₹0.00</strong></div>
+          <div class="calc-row"><span>Advance Recd:</span><strong class="advance-value" id="advanceValue">-₹0.00</strong></div>
+          <div class="calc-row balance-row"><span>NET BALANCE:</span><strong id="balanceValue">₹0.00</strong></div>
+          <div class="amount-words"><span>Amount in Words</span><strong id="amountWords">Zero Rupees Only</strong></div>
+        </section>
+      </section>
+
+      <section class="remarks"><h2 class="section-heading">REMARKS / NOTES</h2><textarea id="remarks" rows="2" aria-label="Remarks or notes" placeholder=" "></textarea></section>
+      <section class="sign-terms">
+        <div class="terms"><h2>TERMS &amp; CONDITIONS</h2><ol><li>Goods are carried at the owner's risk unless otherwise agreed in writing.</li><li>Freight and other charges are payable as agreed; delays caused by circumstances beyond our control are excluded.</li><li>Claims, if any, must be reported in writing within seven days of delivery.</li></ol></div>
+        <div class="signatory" aria-label="Authorized signatory"><div class="signatory-title">Authorized Signatory</div><div class="signatory-company">For BHARAT TRANSPORT COMPANY</div><img id="signatureImage" class="signature-image" alt="Signature" hidden><div id="signatureName" class="signature-name"></div><div id="signatureDesignation" class="signature-role"></div><button class="signatory-trigger" id="signatoryButton" type="button" data-no-print>⚙️ Set Signatory</button></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="signatoryDialog" aria-labelledby="signatoryDialogTitle">
+    <form id="signatoryForm"><div class="modal-head"><h2 id="signatoryDialogTitle">Authorized Signatory</h2><button class="modal-close" type="button" data-close-dialog aria-label="Close">&times;</button></div>
+      <div class="modal-body"><label>Signatory Name<input id="signatoryNameInput" autocomplete="name"></label><label>Designation<input id="signatoryDesignationInput" placeholder="e.g. Manager"></label><label>Signature Image<input id="signatureFile" type="file" accept="image/*"></label></div>
+      <div class="modal-actions"><button class="cancel" type="button" data-close-dialog>Cancel</button><button class="save" type="submit">Save Signatory</button></div>
+    </form>
+  </dialog>
+  <dialog id="historyDialog" aria-labelledby="historyDialogTitle"><div class="modal-head"><h2 id="historyDialogTitle">Saved Bills</h2><button class="modal-close" type="button" data-close-dialog aria-label="Close">&times;</button></div><div class="modal-body"><div class="history-list" id="historyList"></div></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script>
+    (() => {
+      'use strict'
+      const DRAFT_KEY = 'btc_bill_manager_draft_v1'
+      const BILLS_KEY = 'btc_bill_manager_bills_v1'
+      const SIGNATORY_KEY = 'btc_bill_manager_signatory_v1'
+      const $ = (selector, root = document) => root.querySelector(selector)
+      const $$ = (selector, root = document) => [...root.querySelectorAll(selector)]
+      // Replace or extend these sample records with the company's LR register.
+      const biltyDatabase = {
+        LR25001: { biltyDate:'12/10/2026', consignor:'Shree Ganesh Industries', consignorGst:'08AABCS1234F1Z2', consignee:'Kisan Agro Traders', consigneeGst:'08AAECK5678D1Z4', billTo:'Kisan Agro Traders', billToGst:'08AAECK5678D1Z4', invoiceNo:'INV-9081', from:'Rajgarh, Rajasthan', to:'Jaipur, Rajasthan', weight:'12.50' },
+        LR25002: { biltyDate:'14/10/2026', consignor:'Marwar Cement & Building Materials', consignorGst:'08AAGFM2468K1Z8', consignee:'North Rajasthan Construction Supply', consigneeGst:'08AACFN1357H1Z6', billTo:'North Rajasthan Construction Supply', billToGst:'08AACFN1357H1Z6', invoiceNo:'INV-9106', from:'Churu, Rajasthan', to:'Bikaner, Rajasthan', weight:'18.00' }
+      }
+      let editMode = false
+      let toastTimer
+      let signatureData = ''
+      const draft = readJson(DRAFT_KEY, null) || {}
+
+      function readJson(key, fallback) {
+        try { return JSON.parse(localStorage.getItem(key)) ?? fallback }
+        catch { return fallback }
+      }
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[character])
+      }
+      function money(value, decimals = 2) {
+        const amount = Number(value) || 0
+        return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits:decimals, maximumFractionDigits:decimals })}`
+      }
+      function numberWords(value) {
+        const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+        const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+        const underThousand = number => {
+          if (number < 20) return ones[number]
+          if (number < 100) return `${tens[Math.floor(number / 10)]}${number % 10 ? ` ${ones[number % 10]}` : ''}`
+          return `${ones[Math.floor(number / 100)]} Hundred${number % 100 ? ` ${underThousand(number % 100)}` : ''}`
+        }
+        const integer = Math.floor(Math.abs(Number(value) || 0))
+        if (!integer) return `${Number(value) < 0 ? 'Minus ' : ''}Zero Rupees Only`
+        let remaining = integer
+        const groups = [[10000000, 'Crore'], [100000, 'Lakh'], [1000, 'Thousand'], [1, '']]
+        const words = []
+        for (const [size, label] of groups) {
+          const count = Math.floor(remaining / size)
+          if (count) { words.push(`${underThousand(count)}${label ? ` ${label}` : ''}`); remaining %= size }
+        }
+        const paise = Math.round((Math.abs(Number(value) || 0) % 1) * 100)
+        return `${Number(value) < 0 ? 'Minus ' : ''}${words.join(' ')} Rupees${paise ? ` and ${underThousand(paise)} Paise` : ''} Only`
+      }
+      function autoSize(element) {
+        if (!(element instanceof HTMLTextAreaElement)) return
+        element.style.height = 'auto'
+        element.style.height = `${Math.max(element.scrollHeight, 29)}px`
+      }
+      function newRow(row = {}) {
+        const fields = [['date',row.date,'DD/MM',''],['lr',row.lr,'0.00',''],['inv',row.inv,'0.00',''],['from',row.from,'',''],['to',row.to,'',''],['wt',row.wt,'0.00','numeric'],['load',row.load,'0.00','numeric'],['unload',row.unload,'0.00','numeric'],['other',row.other,'0.00','numeric'],['freight',row.freight,'0.00','numeric']]
+        const tr = document.createElement('tr')
+        tr.innerHTML = fields.map(([name,value,placeholder,className]) => `<td><textarea rows="1" data-row-field="${name}" class="${className}" placeholder="${placeholder}" aria-label="${name.toUpperCase()}">${escapeHtml(value)}</textarea></td>`).join('') + '<td class="total-cell"><strong class="row-total">₹0.00</strong><button type="button" class="remove-row" aria-label="Remove row" data-no-print>&times;</button></td>'
+        $('#billRows').append(tr)
+        $$('textarea', tr).forEach(autoSize)
+        calculate()
+      }
+      function readForm() {
+        const parties = {}; $$('[data-party-field]').forEach(field => { parties[field.dataset.partyField] = field.value })
+        const payments = {}; $$('[data-payment]').forEach(field => { payments[field.dataset.payment] = field.value })
+        const rows = $$('#billRows tr').map(tr => { const row = {}; $$('[data-row-field]', tr).forEach(field => { row[field.dataset.rowField] = field.value }); return row })
+        return { parties, payments, rows, gst:$('#gstPercent').value, remarks:$('#remarks').value }
+      }
+      function saveDraft() {
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(readForm())) }
+        catch { notify('Unable to save this draft in browser storage.') }
+      }
+      function applyDraft(data) {
+        if (!data || typeof data !== 'object') return
+        for (const [key,value] of Object.entries(data.parties || {})) { const field = $(`[data-party-field="${key}"]`); if (field) { field.value = value ?? ''; autoSize(field) } }
+        for (const [key,value] of Object.entries(data.payments || {})) { const field = $(`[data-payment="${key}"]`); if (field) field.value = value ?? '' }
+        $('#gstPercent').value = data.gst ?? '0'
+        $('#remarks').value = data.remarks ?? ''
+        $('#billRows').replaceChildren()
+        const rows = Array.isArray(data.rows) && data.rows.length ? data.rows : [{}]
+        rows.forEach(newRow)
+        $('#lrSearch').value = data.parties?.billNo ?? ''
+        autoSize($('#remarks'))
+        calculate()
+      }
+      function setPartyField(name,value) {
+        const field = $(`[data-party-field="${name}"]`)
+        if (field) { field.value = value ?? ''; autoSize(field) }
+      }
+      function fillFromBilty(lrNumber) {
+        const key = String(lrNumber || '').trim().toUpperCase()
+        const record = biltyDatabase[key]
+        if (!record) return false
+        setPartyField('billNo', key)
+        Object.entries(record).forEach(([name,value]) => setPartyField(name,value))
+        $('#lrSearch').value = key
+        const firstRow = $('#billRows tr')
+        if (firstRow) {
+          const rowValues = { date:record.biltyDate, lr:key, inv:record.invoiceNo, from:record.from, to:record.to, wt:record.weight }
+          Object.entries(rowValues).forEach(([name,value]) => { const field = $(`[data-row-field="${name}"]`,firstRow); if (field) { field.value = value; autoSize(field) } })
+        }
+        calculate(); saveDraft(); return true
+      }
+      function calculate() {
+        let subtotal = 0
+        $$('#billRows tr').forEach(tr => {
+          const amount = ['load','unload','other','freight'].reduce((sum,key) => sum + (parseFloat($(`[data-row-field="${key}"]`,tr)?.value) || 0),0)
+          subtotal += amount
+          $('.row-total',tr).textContent = money(amount)
+        })
+        const gstRate = Math.min(100,Math.max(0,parseFloat($('#gstPercent').value) || 0))
+        const gst = subtotal * gstRate / 100
+        const grand = subtotal + gst
+        const advance = ['cashAmount','chequeAmount','upiAmount'].reduce((sum,key) => sum + (parseFloat($(`[data-payment="${key}"]`).value) || 0),0)
+        const balance = grand - advance
+        $('#subtotalValue').textContent = money(subtotal); $('#gstValue').textContent = money(gst); $('#grandValue').textContent = money(grand)
+        $('#advanceValue').textContent = `-${money(advance)}`; $('#balanceValue').textContent = money(balance)
+        $('#summaryGrand').textContent = money(grand); $('#summaryAdvance').textContent = money(advance,0); $('#summaryBalance').textContent = money(balance)
+        $('#amountWords').textContent = numberWords(balance)
+      }
+      function notify(message) {
+        const toast = $('#toast'); toast.textContent = message; toast.hidden = false
+        clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true },2600)
+      }
+      function savedBills() {
+        const result = readJson(BILLS_KEY,[]); return Array.isArray(result) ? result : []
+      }
+      function saveBill() {
+        const data = readForm(); const billNo = data.parties.billNo.trim()
+        if (!billNo) { notify('Enter a Bill No / LR No before saving.'); $('#billNo').focus(); return }
+        const bills = savedBills(); const bill = { id:billNo, savedAt:new Date().toISOString(), ...data }
+        const existing = bills.findIndex(item => item.id === billNo)
+        if (existing >= 0) bills[existing] = bill; else bills.unshift(bill)
+        try { localStorage.setItem(BILLS_KEY,JSON.stringify(bills)); saveDraft(); notify('Bill saved to list.') }
+        catch { notify('Unable to save bill. Browser storage may be full.') }
+      }
+      function openHistory() {
+        const list = $('#historyList'); const bills = savedBills(); list.replaceChildren()
+        if (!bills.length) { const empty = document.createElement('p'); empty.className = 'empty-history'; empty.textContent = 'No saved bills yet.'; list.append(empty) }
+        else bills.forEach(bill => {
+          const button = document.createElement('button'); button.type = 'button'; button.className = 'history-item'
+          const title = document.createElement('strong'); title.textContent = `${bill.parties?.billNo || bill.id} | ${bill.parties?.billTo || bill.parties?.consignor || 'Unnamed party'}`
+          const date = document.createElement('span'); date.textContent = bill.savedAt ? new Date(bill.savedAt).toLocaleDateString('en-IN') : ''
+          button.append(title,date); button.addEventListener('click',() => { applyDraft(bill); $('#historyDialog').close(); notify('Saved bill loaded.') }); list.append(button)
+        })
+        $('#historyDialog').showModal()
+      }
+      function toggleEdit() {
+        editMode = !editMode; $('#partySection').classList.toggle('edit-mode',editMode)
+        $('#editToggle').setAttribute('aria-pressed',String(editMode)); $('#editToggle').textContent = `Edit Mode: ${editMode ? 'ON' : 'OFF'}`
+        $$('[data-party-field]').forEach(field => { field.readOnly = !editMode; field.classList.toggle('locked-field',!editMode) })
+      }
+      function renderSignatory(details = readJson(SIGNATORY_KEY,{})) {
+        $('#signatureName').textContent = details?.name || ''; $('#signatureDesignation').textContent = details?.designation || ''
+        const image = $('#signatureImage'); image.src = details?.image || ''; image.hidden = !details?.image; signatureData = details?.image || ''
+      }
+
+      $('#billRows').addEventListener('input',event => { if (event.target.matches('textarea')) autoSize(event.target); calculate(); saveDraft() })
+      $('#invoice').addEventListener('input',event => {
+        if (event.target.matches('[data-party-field]')) { autoSize(event.target); if (event.target.dataset.partyField === 'billNo') $('#lrSearch').value = event.target.value }
+        calculate(); saveDraft()
+      })
+      $('#lrSearch').addEventListener('input',event => {
+        setPartyField('billNo',event.target.value); fillFromBilty(event.target.value); calculate(); saveDraft()
+      })
+      $('#editToggle').addEventListener('click',toggleEdit)
+      $('#addRowButton').addEventListener('click',() => newRow())
+      $('#saveBillButton').addEventListener('click',saveBill)
+      $('#historyButton').addEventListener('click',openHistory); $('#backButton').addEventListener('click',openHistory)
+      $('#printButton').addEventListener('click',() => window.print())
+      $('#gstPercent').addEventListener('input',() => { calculate(); saveDraft() })
+      $('#invoice').addEventListener('click',event => {
+        if (!event.target.matches('.remove-row')) return
+        const rows = $$('#billRows tr')
+        if (rows.length === 1) $$('textarea',rows[0]).forEach(field => { field.value = ''; autoSize(field) })
+        else event.target.closest('tr').remove()
+        calculate(); saveDraft()
+      })
+      $('#newBillButton').addEventListener('click',() => {
+        if (!window.confirm('Start a new bill? The saved bill list will be kept.')) return
+        applyDraft({ parties:{}, payments:{}, rows:[{}], gst:'0', remarks:'' }); saveDraft()
+      })
+      $('#signatoryButton').addEventListener('click',() => {
+        const details = readJson(SIGNATORY_KEY,{})
+        $('#signatoryNameInput').value = details.name || ''; $('#signatoryDesignationInput').value = details.designation || ''; $('#signatureFile').value = ''
+        $('#signatoryDialog').showModal()
+      })
+      $$('[data-close-dialog]').forEach(button => button.addEventListener('click',() => button.closest('dialog').close()))
+      $('#signatoryForm').addEventListener('submit',event => {
+        event.preventDefault()
+        const file = $('#signatureFile').files[0]
+        const save = image => {
+          const details = { name:$('#signatoryNameInput').value.trim(), designation:$('#signatoryDesignationInput').value.trim(), image:image || '' }
+          try { localStorage.setItem(SIGNATORY_KEY,JSON.stringify(details)); renderSignatory(details); $('#signatoryDialog').close(); notify('Signatory details saved.') }
+          catch { notify('Unable to save signature. Use a smaller image file.') }
+        }
+        if (!file) { save(signatureData); return }
+        if (!file.type.startsWith('image/')) { notify('Choose a valid image file.'); return }
+        if (file.size > 2*1024*1024) { notify('Signature image must be 2 MB or smaller.'); return }
+        const reader = new FileReader(); reader.onload = () => save(String(reader.result || '')); reader.onerror = () => notify('Unable to read signature image.'); reader.readAsDataURL(file)
+      })
+
+      $('#billRows').replaceChildren()
+      applyDraft(draft)
+      renderSignatory()
+      calculate()
+    })()
+  </script>
+</body>
+</html>
