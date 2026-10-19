@@ -9,7 +9,7 @@ const createBranchAuthRouter = require('./routes/branchAuth');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 
 require('dotenv').config();
-
+ 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
