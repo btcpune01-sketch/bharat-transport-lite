@@ -35,13 +35,18 @@ const Dashboard = () => {
           dashboardAPI.topParties(),
           branchAPI.getAll().catch(() => ({ data: [] }))
         ]);
-        setStats(statsRes.data);
-        setRecentBilties(recentRes.data.bilties || []);
-        setRecentMR(recentRes.data.receipts || []);
-        setTopParties(topRes.data.data || []);
-        setBranches(branchesRes.data || []);
+        
+        setStats(statsRes.data || null);
+        setRecentBilties(Array.isArray(recentRes.data?.bilties) ? recentRes.data.bilties : []);
+        setRecentMR(Array.isArray(recentRes.data?.receipts) ? recentRes.data.receipts : []);
+        setTopParties(Array.isArray(topRes.data?.data) ? topRes.data.data : []);
+        setBranches(Array.isArray(branchesRes.data) ? branchesRes.data : []);
       } catch (error) {
         console.error('Dashboard fetch error:', error);
+        setRecentBilties([]);
+        setRecentMR([]);
+        setTopParties([]);
+        setBranches([]);
       } finally {
         setLoading(false);
       }
@@ -59,22 +64,19 @@ const Dashboard = () => {
     setSelectedBranch(e.target.value);
   };
 
-  // ========== 8 CATEGORIES WITH ALL FUNCTIONS ==========
   const categories = [
     {
       id: 'bilty',
       name: 'Bilty/LR Management',
       icon: '🚚',
       gradient: 'from-blue-500 to-blue-700',
-      bgLight: 'bg-blue-50',
-      borderColor: 'border-blue-200',
       functions: [
-        { name: 'New Bilty', icon: '📝', path: '/consignments/new', color: 'bg-blue-100 text-blue-700' },
-        { name: 'Bilty List', icon: '📋', path: '/consignments', color: 'bg-blue-100 text-blue-700' },
-        { name: 'Bilty Print', icon: '️', path: '/bilty-print', color: 'bg-blue-100 text-blue-700' },
-        { name: 'Track Bilty', icon: '📍', path: '/track', color: 'bg-blue-100 text-blue-700' },
-        { name: 'POD', icon: '✅', path: '/pod', color: 'bg-blue-100 text-blue-700' },
-        { name: 'POD Upload', icon: '📤', path: '/pod-upload', color: 'bg-blue-100 text-blue-700' },
+        { name: 'New Bilty', icon: '📝', path: '/consignments/new' },
+        { name: 'Bilty List', icon: '📋', path: '/consignments' },
+        { name: 'Bilty Print', icon: '️', path: '/bilty-print' },
+        { name: 'Track Bilty', icon: '', path: '/track' },
+        { name: 'POD', icon: '✅', path: '/pod' },
+        { name: 'POD Upload', icon: '📤', path: '/pod-upload' },
       ]
     },
     {
@@ -82,17 +84,15 @@ const Dashboard = () => {
       name: 'Billing & Payments',
       icon: '💰',
       gradient: 'from-emerald-500 to-emerald-700',
-      bgLight: 'bg-emerald-50',
-      borderColor: 'border-emerald-200',
       functions: [
-        { name: 'New Bill', icon: '', path: '/bill-entry', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'Bill List', icon: '', path: '/bills', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'Bill Print', icon: '🖨️', path: '/bill-print', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'Money Receipt', icon: '💵', path: '/mr', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'Create MR', icon: '', path: '/mr/create', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'MR Print', icon: '🧾', path: '/mr-print', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'Outstanding', icon: '', path: '/outstanding', color: 'bg-emerald-100 text-emerald-700' },
-        { name: 'Payments', icon: '💸', path: '/branch-payments', color: 'bg-emerald-100 text-emerald-700' },
+        { name: 'New Bill', icon: '', path: '/bill-entry' },
+        { name: 'Bill List', icon: '', path: '/bills' },
+        { name: 'Bill Print', icon: '🖨️', path: '/bill-print' },
+        { name: 'Money Receipt', icon: '💵', path: '/mr' },
+        { name: 'Create MR', icon: '', path: '/mr/create' },
+        { name: 'MR Print', icon: '🧾', path: '/mr-print' },
+        { name: 'Outstanding', icon: '', path: '/outstanding' },
+        { name: 'Payments', icon: '💸', path: '/branch-payments' },
       ]
     },
     {
@@ -100,13 +100,11 @@ const Dashboard = () => {
       name: 'Parties & Customers',
       icon: '👥',
       gradient: 'from-purple-500 to-purple-700',
-      bgLight: 'bg-purple-50',
-      borderColor: 'border-purple-200',
       functions: [
-        { name: 'Customers', icon: '👤', path: '/customers', color: 'bg-purple-100 text-purple-700' },
-        { name: 'Party List', icon: '', path: '/party', color: 'bg-purple-100 text-purple-700' },
-        { name: 'New Party', icon: '', path: '/party/new', color: 'bg-purple-100 text-purple-700' },
-        { name: 'Ledger', icon: '📒', path: '/ledger', color: 'bg-purple-100 text-purple-700' },
+        { name: 'Customers', icon: '', path: '/customers' },
+        { name: 'Party List', icon: '', path: '/party' },
+        { name: 'New Party', icon: '', path: '/party/new' },
+        { name: 'Ledger', icon: '📒', path: '/ledger' },
       ]
     },
     {
@@ -114,15 +112,13 @@ const Dashboard = () => {
       name: 'Vehicle & Driver',
       icon: '',
       gradient: 'from-red-500 to-red-700',
-      bgLight: 'bg-red-50',
-      borderColor: 'border-red-200',
       functions: [
-        { name: 'Drivers', icon: '👨‍️', path: '/drivers', color: 'bg-red-100 text-red-700' },
-        { name: 'Vehicles', icon: '🚗', path: '/vehicles', color: 'bg-red-100 text-red-700' },
-        { name: 'Trips', icon: '️', path: '/trips', color: 'bg-red-100 text-red-700' },
-        { name: 'Transit', icon: '🔄', path: '/transit', color: 'bg-red-100 text-red-700' },
-        { name: 'Gadi Challan', icon: '', path: '/gadi-challan', color: 'bg-red-100 text-red-700' },
-        { name: 'Gadi Print', icon: '🖨️', path: '/gadi-challan-print', color: 'bg-red-100 text-red-700' },
+        { name: 'Drivers', icon: '‍️', path: '/drivers' },
+        { name: 'Vehicles', icon: '🚗', path: '/vehicles' },
+        { name: 'Trips', icon: '️', path: '/trips' },
+        { name: 'Transit', icon: '🔄', path: '/transit' },
+        { name: 'Gadi Challan', icon: '', path: '/gadi-challan' },
+        { name: 'Gadi Print', icon: '🖨️', path: '/gadi-challan-print' },
       ]
     },
     {
@@ -130,13 +126,11 @@ const Dashboard = () => {
       name: 'Branch Operations',
       icon: '🏢',
       gradient: 'from-teal-500 to-teal-700',
-      bgLight: 'bg-teal-50',
-      borderColor: 'border-teal-200',
       functions: [
-        { name: 'Branches', icon: '🏬', path: '/branches', color: 'bg-teal-100 text-teal-700' },
-        { name: 'Gate Pass', icon: '🎫', path: '/gate-pass', color: 'bg-teal-100 text-teal-700' },
-        { name: 'Branch Portal', icon: '🌐', path: '/branch-portal', color: 'bg-teal-100 text-teal-700' },
-        { name: 'Branch Login', icon: '🔐', path: '/branch-login', color: 'bg-teal-100 text-teal-700' },
+        { name: 'Branches', icon: '🏬', path: '/branches' },
+        { name: 'Gate Pass', icon: '🎫', path: '/gate-pass' },
+        { name: 'Branch Portal', icon: '🌐', path: '/branch-portal' },
+        { name: 'Branch Login', icon: '🔐', path: '/branch-login' },
       ]
     },
     {
@@ -144,14 +138,12 @@ const Dashboard = () => {
       name: 'Accounts & Finance',
       icon: '',
       gradient: 'from-indigo-500 to-indigo-700',
-      bgLight: 'bg-indigo-50',
-      borderColor: 'border-indigo-200',
       functions: [
-        { name: 'Accounts', icon: '💼', path: '/accounts', color: 'bg-indigo-100 text-indigo-700' },
-        { name: 'Expenses', icon: '💰', path: '/expenses', color: 'bg-indigo-100 text-indigo-700' },
-        { name: 'Commissions', icon: '💵', path: '/commissions', color: 'bg-indigo-100 text-indigo-700' },
-        { name: 'Claims', icon: '📑', path: '/claims', color: 'bg-indigo-100 text-indigo-700' },
-        { name: 'E-Way Bill', icon: '🧾', path: '/eway', color: 'bg-indigo-100 text-indigo-700' },
+        { name: 'Accounts', icon: '💼', path: '/accounts' },
+        { name: 'Expenses', icon: '💰', path: '/expenses' },
+        { name: 'Commissions', icon: '💵', path: '/commissions' },
+        { name: 'Claims', icon: '📑', path: '/claims' },
+        { name: 'E-Way Bill', icon: '🧾', path: '/eway' },
       ]
     },
     {
@@ -159,27 +151,23 @@ const Dashboard = () => {
       name: 'Reports & Analytics',
       icon: '📈',
       gradient: 'from-orange-500 to-orange-700',
-      bgLight: 'bg-orange-50',
-      borderColor: 'border-orange-200',
       functions: [
-        { name: 'Reports', icon: '📊', path: '/reports', color: 'bg-orange-100 text-orange-700' },
-        { name: 'Audit Logs', icon: '', path: '/audit', color: 'bg-orange-100 text-orange-700' },
-        { name: 'Analytics', icon: '📉', path: '/reports', color: 'bg-orange-100 text-orange-700' },
-        { name: 'Backup', icon: '💾', path: '/backup', color: 'bg-orange-100 text-orange-700' },
+        { name: 'Reports', icon: '📊', path: '/reports' },
+        { name: 'Audit Logs', icon: '', path: '/audit' },
+        { name: 'Analytics', icon: '', path: '/reports' },
+        { name: 'Backup', icon: '💾', path: '/backup' },
       ]
     },
     {
       id: 'master',
       name: 'Master Data & Settings',
-      icon: '⚙️',
+      icon: '️',
       gradient: 'from-pink-500 to-pink-700',
-      bgLight: 'bg-pink-50',
-      borderColor: 'border-pink-200',
       functions: [
-        { name: 'Freight Rates', icon: '💲', path: '/rates', color: 'bg-pink-100 text-pink-700' },
-        { name: 'Stock Mgmt', icon: '', path: '/stock', color: 'bg-pink-100 text-pink-700' },
-        { name: 'Users', icon: '', path: '/users', color: 'bg-pink-100 text-pink-700' },
-        { name: 'Settings', icon: '⚙️', path: '/settings', color: 'bg-pink-100 text-pink-700' },
+        { name: 'Freight Rates', icon: '💲', path: '/rates' },
+        { name: 'Stock Mgmt', icon: '', path: '/stock' },
+        { name: 'Users', icon: '', path: '/users' },
+        { name: 'Settings', icon: '⚙️', path: '/settings' },
       ]
     }
   ];
@@ -198,11 +186,10 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* ===== PROFESSIONAL HEADER ===== */}
+      {/* Professional Header */}
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-2xl border-b border-slate-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            {/* Left: BTC Logo + Company Name */}
             <div className="flex items-center space-x-4">
               <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-3 shadow-lg">
                 <span className="text-3xl font-bold text-white">BTC</span>
@@ -213,18 +200,16 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Right: Branch Selector + User + Logout */}
             <div className="flex items-center space-x-4">
-              {/* Branch Selector */}
               <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2">
-                <span className="text-sm text-gray-300"></span>
+                <span className="text-sm text-gray-300">🏬</span>
                 <select
                   value={selectedBranch}
                   onChange={handleBranchChange}
                   className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer"
                 >
                   <option value="all" className="text-gray-900">All Branches</option>
-                  {branches.map((branch) => (
+                  {Array.isArray(branches) && branches.map((branch) => (
                     <option key={branch.id} value={branch.id} className="text-gray-900">
                       {branch.branch_name} ({branch.branch_code})
                     </option>
@@ -232,7 +217,6 @@ const Dashboard = () => {
                 </select>
               </div>
 
-              {/* User Info */}
               {user && (
                 <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2">
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center">
@@ -245,7 +229,6 @@ const Dashboard = () => {
                 </div>
               )}
 
-              {/* Logout Button */}
               <button
                 onClick={handleLogout}
                 className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center space-x-2"
@@ -258,7 +241,6 @@ const Dashboard = () => {
         </div>
       </header>
 
-      {/* ===== MAIN CONTENT ===== */}
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Stats Cards */}
         {stats && (
@@ -299,7 +281,7 @@ const Dashboard = () => {
             <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold opacity-95">Total Revenue</h3>
-                <span className="text-4xl">📊</span>
+                <span className="text-4xl"></span>
               </div>
               <p className="text-5xl font-bold mb-3">₹{(stats.total_revenue || 0).toLocaleString()}</p>
               <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block backdrop-blur-sm">
@@ -309,12 +291,12 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* ===== QUICK ACCESS MODULES - ALWAYS VISIBLE ===== */}
+        {/* Quick Access Modules */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-                <span className="mr-2">🎯</span> Quick Access Modules
+                <span className="mr-2"></span> Quick Access Modules
               </h2>
               <p className="text-sm text-gray-500 mt-1">All 45+ features organized by category</p>
             </div>
@@ -328,31 +310,28 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* All Categories with Functions - Always Visible */}
           <div className="space-y-6">
             {categories.map((category) => (
               <div key={category.id} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                {/* Category Header */}
                 <div className={`bg-gradient-to-r ${category.gradient} px-6 py-3 flex items-center justify-between`}>
                   <h3 className="text-white font-bold text-lg flex items-center">
                     <span className="mr-2 text-2xl">{category.icon}</span>
                     {category.name}
                   </h3>
                   <span className="text-white text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">
-                    {category.functions.length} features
+                    {Array.isArray(category.functions) ? category.functions.length : 0} features
                   </span>
                 </div>
-                {/* Functions Grid */}
                 <div className="p-4 bg-gray-50">
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {category.functions.map((func, idx) => (
+                    {Array.isArray(category.functions) && category.functions.map((func, idx) => (
                       <button
                         key={idx}
                         onClick={() => navigate(func.path)}
-                        className={`flex flex-col items-center justify-center p-4 rounded-xl ${func.color} hover:shadow-lg transition-all duration-200 transform hover:-translate-y-1 border border-transparent hover:border-gray-300`}
+                        className="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-100 hover:bg-blue-50 hover:shadow-lg transition-all duration-200 transform hover:-translate-y-1 border border-transparent hover:border-gray-300"
                       >
                         <span className="text-2xl mb-2">{func.icon}</span>
-                        <span className="text-xs font-semibold text-center">{func.name}</span>
+                        <span className="text-xs font-semibold text-center text-gray-700">{func.name}</span>
                       </button>
                     ))}
                   </div>
@@ -362,9 +341,8 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ===== MONTHLY REPORT + RECENT BILTIES ===== */}
+        {/* Monthly Report + Recent Bilties */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Monthly Report */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">📊</span> Monthly Report Summary
@@ -403,12 +381,11 @@ const Dashboard = () => {
             )}
           </div>
 
-          {/* Recent Bilties */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">📋</span> Recent 5 Bilties - LIVE
             </h2>
-            {recentBilties.length === 0 ? (
+            {!Array.isArray(recentBilties) || recentBilties.length === 0 ? (
               <div className="text-center py-12">
                 <span className="text-6xl"></span>
                 <p className="text-gray-500 mt-4 text-lg">No recent bilties</p>
@@ -423,7 +400,7 @@ const Dashboard = () => {
                       <p className="text-xs text-gray-500 mt-1">{bilty.consignor_name}</p>
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-gray-900 text-lg">₹{parseInt(bilty.grand_total || 0).toLocaleString()}</p>
+                      <p className="font-bold text-gray-900 text-lg">{parseInt(bilty.grand_total || 0).toLocaleString()}</p>
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                         bilty.status === 'Booked' ? 'bg-green-100 text-green-800' :
                         bilty.status === 'In-Transit' ? 'bg-blue-100 text-blue-800' :
@@ -439,8 +416,8 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ===== TOP PARTIES ===== */}
-        {topParties.length > 0 && (
+        {/* Top Parties */}
+        {Array.isArray(topParties) && topParties.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">🏆</span> Top 5 Parties by Revenue
@@ -463,8 +440,8 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* ===== RECENT MONEY RECEIPTS ===== */}
-        {recentMR.length > 0 && (
+        {/* Recent Money Receipts */}
+        {Array.isArray(recentMR) && recentMR.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">💵</span> Recent Money Receipts
@@ -500,7 +477,6 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Footer */}
         <div className="text-center mt-8 pb-4">
           <p className="text-sm text-gray-500">© 2026 Bharat Transport Company. All rights reserved.</p>
           <p className="text-xs text-gray-400 mt-1">Powered by BTC TMS v6.0</p>
