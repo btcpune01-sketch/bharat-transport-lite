@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // ✅ FIX: Use empty string to route to the same domain (Vercel backend)
-const API_URL = import.meta.env.VITE_API_URL || ''
+const API_URL = import.meta.env.VITE_API_URL || 'https://bharat-transport-lite-iemb.vercel.app'
 
 console.info('API base URL:', API_URL || 'Current Domain (Relative)')
 
