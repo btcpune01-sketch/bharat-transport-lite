@@ -15,16 +15,9 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 app.set('trust proxy', 1);
 
-// ✅ CORS - PERMANENT FIX
+// ✅ CORS - PERMANENT FIX - Sab allow karega
 app.use(cors({
-  origin: [
-    'https://bharat-transport-company.vercel.app',
-    'https://bharat-transport.pages.dev',
-    'https://bharat-transport-v2.pages.dev',
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:4173'
-  ],
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug']
