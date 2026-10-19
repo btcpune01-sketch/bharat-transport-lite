@@ -27,19 +27,14 @@ const Dashboard = () => {
     } catch(e) {}
   }, []);
 
-  // Fetch branches with proper auth
   const fetchBranches = async () => {
     try {
       const token = localStorage.getItem('token');
-      if (!token) {
-        console.log('No token found for branches');
-        return [];
-      }
+      if (!token) return [];
       const res = await fetch('/api/branches', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      console.log('Branches response:', data);
       if (data && Array.isArray(data.data)) {
         return data.data;
       }
@@ -53,24 +48,33 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const isAdmin = user?.role === 'admin';
+        
+        // Admin can filter by branch, branch users are automatically filtered by backend
+        const branchFilterParam = (isAdmin && selectedBranch !== 'all') 
+          ? `?branch_id=${selectedBranch}` 
+          : '';
+
         const [statsRes, recentRes, topRes, branchesList] = await Promise.allSettled([
-          dashboardAPI.getStats(),
-          dashboardAPI.recentBilties(),
-          dashboardAPI.topParties(),
+          fetch(`/api/dashboard/stats${branchFilterParam}`, { headers }).then(r => r.json()),
+          fetch(`/api/dashboard/recent${branchFilterParam}`, { headers }).then(r => r.json()),
+          fetch(`/api/dashboard/top-parties${branchFilterParam}`, { headers }).then(r => r.json()),
           fetchBranches()
         ]);
 
-        if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
-          setStats(statsRes.value.data);
+        if (statsRes.status === 'fulfilled' && statsRes.value?.success) {
+          setStats(statsRes.value);
         }
 
-        if (recentRes.status === 'fulfilled' && recentRes.value?.data) {
-          setRecentBilties(Array.isArray(recentRes.value.data.bilties) ? recentRes.value.data.bilties : []);
-          setRecentMR(Array.isArray(recentRes.value.data.receipts) ? recentRes.value.data.receipts : []);
+        if (recentRes.status === 'fulfilled' && recentRes.value?.success) {
+          setRecentBilties(Array.isArray(recentRes.value.bilties) ? recentRes.value.bilties : []);
+          setRecentMR(Array.isArray(recentRes.value.receipts) ? recentRes.value.receipts : []);
         }
 
-        if (topRes.status === 'fulfilled' && topRes.value?.data) {
-          setTopParties(Array.isArray(topRes.value.data.data) ? topRes.value.data.data : []);
+        if (topRes.status === 'fulfilled' && topRes.value?.success) {
+          setTopParties(Array.isArray(topRes.value.data) ? topRes.value.data : []);
         }
 
         if (branchesList.status === 'fulfilled' && Array.isArray(branchesList.value)) {
@@ -83,7 +87,7 @@ const Dashboard = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [selectedBranch, user]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -99,11 +103,13 @@ const Dashboard = () => {
     setExpandedCategory(expandedCategory === id ? null : id);
   };
 
+  const isAdmin = user?.role === 'admin';
+
   const categories = [
     {
       id: 'bilty',
       name: 'Bilty/LR',
-      icon: '',
+      icon: '🚚',
       gradient: 'from-blue-500 to-blue-700',
       functions: [
         { name: 'New Bilty', icon: '📝', path: '/consignments/new' },
@@ -127,7 +133,7 @@ const Dashboard = () => {
         { name: 'Create MR', icon: '➕', path: '/mr/create' },
         { name: 'MR Print', icon: '🧾', path: '/mr-print' },
         { name: 'Outstanding', icon: '⏳', path: '/outstanding' },
-        { name: 'Payments', icon: '', path: '/branch-payments' },
+        { name: 'Payments', icon: '💸', path: '/branch-payments' },
       ]
     },
     {
@@ -139,7 +145,7 @@ const Dashboard = () => {
         { name: 'Customers', icon: '👤', path: '/customers' },
         { name: 'Party List', icon: '📇', path: '/party' },
         { name: 'New Party', icon: '➕', path: '/party/new' },
-        { name: 'Ledger', icon: '', path: '/ledger' },
+        { name: 'Ledger', icon: '📒', path: '/ledger' },
       ]
     },
     {
@@ -148,12 +154,12 @@ const Dashboard = () => {
       icon: '🚛',
       gradient: 'from-red-500 to-red-700',
       functions: [
-        { name: 'Drivers', icon: '👨‍️', path: '/drivers' },
+        { name: 'Drivers', icon: '👨‍✈️', path: '/drivers' },
         { name: 'Vehicles', icon: '🚗', path: '/vehicles' },
         { name: 'Trips', icon: '🗺️', path: '/trips' },
         { name: 'Transit', icon: '🔄', path: '/transit' },
         { name: 'Gadi Challan', icon: '📄', path: '/gadi-challan' },
-        { name: 'Gadi Print', icon: '️', path: '/gadi-challan-print' },
+        { name: 'Gadi Print', icon: '🖨️', path: '/gadi-challan-print' },
       ]
     },
     {
@@ -162,7 +168,7 @@ const Dashboard = () => {
       icon: '🏢',
       gradient: 'from-teal-500 to-teal-700',
       functions: [
-        { name: 'Branches', icon: '', path: '/branches' },
+        { name: 'Branches', icon: '🏬', path: '/branches' },
         { name: 'Gate Pass', icon: '🎫', path: '/gate-pass' },
         { name: 'Branch Portal', icon: '🌐', path: '/branch-portal' },
         { name: 'Branch Login', icon: '🔐', path: '/branch-login' },
@@ -171,11 +177,11 @@ const Dashboard = () => {
     {
       id: 'accounts',
       name: 'Accounts',
-      icon: '',
+      icon: '💼',
       gradient: 'from-indigo-500 to-indigo-700',
       functions: [
         { name: 'Accounts', icon: '💼', path: '/accounts' },
-        { name: 'Expenses', icon: '', path: '/expenses' },
+        { name: 'Expenses', icon: '💰', path: '/expenses' },
         { name: 'Commissions', icon: '💵', path: '/commissions' },
         { name: 'Claims', icon: '📑', path: '/claims' },
         { name: 'E-Way Bill', icon: '🧾', path: '/eway' },
@@ -235,21 +241,32 @@ const Dashboard = () => {
             </div>
 
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
-                <span className="text-sm">🏬</span>
-                <select
-                  value={selectedBranch}
-                  onChange={handleBranchChange}
-                  className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer"
-                >
-                  <option value="all" className="text-gray-900">All Branches</option>
-                  {branches.length > 0 && branches.map((branch) => (
-                    <option key={branch.id} value={branch.id} className="text-gray-900">
-                      {branch.branch_name} ({branch.branch_code})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Branch Selector - ONLY for Admin */}
+              {isAdmin && branches.length > 0 && (
+                <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
+                  <span className="text-sm">🏬</span>
+                  <select
+                    value={selectedBranch}
+                    onChange={handleBranchChange}
+                    className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer"
+                  >
+                    <option value="all" className="text-gray-900">All Branches</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id} className="text-gray-900">
+                        {branch.branch_name} ({branch.branch_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Branch Name Badge - ONLY for Branch Users */}
+              {!isAdmin && user?.branch_name && (
+                <div className="flex items-center space-x-2 bg-teal-700 rounded-lg px-3 py-2 border border-teal-600">
+                  <span className="text-sm">🏬</span>
+                  <span className="text-white text-sm font-medium">{user.branch_name}</span>
+                </div>
+              )}
 
               {user && (
                 <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
@@ -278,12 +295,22 @@ const Dashboard = () => {
       {/* ===== MAIN CONTENT ===== */}
       <div className="max-w-7xl mx-auto px-6 py-6">
         
+        {/* Role Indicator */}
+        <div className={`mb-4 p-3 rounded-lg ${isAdmin ? 'bg-blue-100 border border-blue-300' : 'bg-teal-100 border border-teal-300'}`}>
+          <p className={`text-sm font-medium ${isAdmin ? 'text-blue-800' : 'text-teal-800'}`}>
+            {isAdmin 
+              ? '👑 Admin Mode - You can view and filter all branches data' 
+              : `🏢 Branch Mode - Viewing data for: ${user?.branch_name || 'Your Branch'}`
+            }
+          </p>
+        </div>
+
         {/* ===== QUICK ACCESS MODULES ===== */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-                <span className="mr-2"></span> Quick Access Modules
+                <span className="mr-2">🎯</span> Quick Access Modules
               </h2>
               <p className="text-sm text-gray-500 mt-1">Click any category to view functions</p>
             </div>
@@ -394,7 +421,7 @@ const Dashboard = () => {
             <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold opacity-95">Total Revenue</h3>
-                <span className="text-4xl"></span>
+                <span className="text-4xl">📊</span>
               </div>
               <p className="text-5xl font-bold mb-3">₹{(stats.total_revenue || 0).toLocaleString()}</p>
               <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
@@ -450,7 +477,7 @@ const Dashboard = () => {
             </h2>
             {!Array.isArray(recentBilties) || recentBilties.length === 0 ? (
               <div className="text-center py-12">
-                <span className="text-6xl"></span>
+                <span className="text-6xl">📭</span>
                 <p className="text-gray-500 mt-4 text-lg">No recent bilties</p>
               </div>
             ) : (
