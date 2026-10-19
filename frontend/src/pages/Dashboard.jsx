@@ -65,12 +65,11 @@ const Dashboard = () => {
     setExpandedCategory(expandedCategory === id ? null : id);
   };
 
-  // ========== 8 CATEGORIES WITH ALL 46 FUNCTIONS ==========
   const categories = [
     {
       id: 'bilty',
       name: 'Bilty/LR',
-      icon: '🚚',
+      icon: '',
       gradient: 'from-blue-500 to-blue-700',
       functions: [
         { name: 'New Bilty', icon: '📝', path: '/consignments/new' },
@@ -87,14 +86,14 @@ const Dashboard = () => {
       icon: '💰',
       gradient: 'from-emerald-500 to-emerald-700',
       functions: [
-        { name: 'New Bill', icon: '📄', path: '/bill-entry' },
+        { name: 'New Bill', icon: '', path: '/bill-entry' },
         { name: 'Bill List', icon: '📑', path: '/bills' },
         { name: 'Bill Print', icon: '🖨️', path: '/bill-print' },
         { name: 'Money Receipt', icon: '💵', path: '/mr' },
         { name: 'Create MR', icon: '➕', path: '/mr/create' },
         { name: 'MR Print', icon: '🧾', path: '/mr-print' },
         { name: 'Outstanding', icon: '⏳', path: '/outstanding' },
-        { name: 'Payments', icon: '', path: '/branch-payments' },
+        { name: 'Payments', icon: '💸', path: '/branch-payments' },
       ]
     },
     {
@@ -106,7 +105,7 @@ const Dashboard = () => {
         { name: 'Customers', icon: '👤', path: '/customers' },
         { name: 'Party List', icon: '📇', path: '/party' },
         { name: 'New Party', icon: '➕', path: '/party/new' },
-        { name: 'Ledger', icon: '', path: '/ledger' },
+        { name: 'Ledger', icon: '📒', path: '/ledger' },
       ]
     },
     {
@@ -117,10 +116,10 @@ const Dashboard = () => {
       functions: [
         { name: 'Drivers', icon: '👨‍️', path: '/drivers' },
         { name: 'Vehicles', icon: '🚗', path: '/vehicles' },
-        { name: 'Trips', icon: '️', path: '/trips' },
+        { name: 'Trips', icon: '🗺️', path: '/trips' },
         { name: 'Transit', icon: '🔄', path: '/transit' },
-        { name: 'Gadi Challan', icon: '', path: '/gadi-challan' },
-        { name: 'Gadi Print', icon: '🖨️', path: '/gadi-challan-print' },
+        { name: 'Gadi Challan', icon: '📄', path: '/gadi-challan' },
+        { name: 'Gadi Print', icon: '️', path: '/gadi-challan-print' },
       ]
     },
     {
@@ -130,7 +129,7 @@ const Dashboard = () => {
       gradient: 'from-teal-500 to-teal-700',
       functions: [
         { name: 'Branches', icon: '🏬', path: '/branches' },
-        { name: 'Gate Pass', icon: '🎫', path: '/gate-pass' },
+        { name: 'Gate Pass', icon: '', path: '/gate-pass' },
         { name: 'Branch Portal', icon: '🌐', path: '/branch-portal' },
         { name: 'Branch Login', icon: '🔐', path: '/branch-login' },
       ]
@@ -144,8 +143,8 @@ const Dashboard = () => {
         { name: 'Accounts', icon: '💼', path: '/accounts' },
         { name: 'Expenses', icon: '💰', path: '/expenses' },
         { name: 'Commissions', icon: '💵', path: '/commissions' },
-        { name: 'Claims', icon: '', path: '/claims' },
-        { name: 'E-Way Bill', icon: '', path: '/eway' },
+        { name: 'Claims', icon: '📑', path: '/claims' },
+        { name: 'E-Way Bill', icon: '🧾', path: '/eway' },
       ]
     },
     {
@@ -154,9 +153,9 @@ const Dashboard = () => {
       icon: '📈',
       gradient: 'from-orange-500 to-orange-700',
       functions: [
-        { name: 'Reports', icon: '📊', path: '/reports' },
+        { name: 'Reports', icon: '', path: '/reports' },
         { name: 'Audit Logs', icon: '📋', path: '/audit' },
-        { name: 'Analytics', icon: '', path: '/reports' },
+        { name: 'Analytics', icon: '📉', path: '/reports' },
         { name: 'Backup', icon: '💾', path: '/backup' },
       ]
     },
@@ -166,9 +165,9 @@ const Dashboard = () => {
       icon: '⚙️',
       gradient: 'from-pink-500 to-pink-700',
       functions: [
-        { name: 'Freight Rates', icon: '💲', path: '/rates' },
+        { name: 'Freight Rates', icon: '', path: '/rates' },
         { name: 'Stock Mgmt', icon: '📦', path: '/stock' },
-        { name: 'Users', icon: '', path: '/users' },
+        { name: 'Users', icon: '👤', path: '/users' },
         { name: 'Settings', icon: '⚙️', path: '/settings' },
       ]
     }
@@ -191,7 +190,6 @@ const Dashboard = () => {
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-2xl border-b-4 border-blue-600 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            {/* Left: BTC Logo + Company Name */}
             <div className="flex items-center space-x-4">
               <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-3 shadow-lg border-2 border-blue-400">
                 <span className="text-3xl font-bold text-white">BTC</span>
@@ -202,10 +200,9 @@ const Dashboard = () => {
               </div>
             </div>
 
-            {/* Right: Branch Selector + User + Logout */}
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
-                <span className="text-sm">🏬</span>
+                <span className="text-sm"></span>
                 <select
                   value={selectedBranch}
                   onChange={handleBranchChange}
@@ -246,56 +243,8 @@ const Dashboard = () => {
 
       {/* ===== MAIN CONTENT ===== */}
       <div className="max-w-7xl mx-auto px-6 py-6">
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Today's LR</h3>
-                <span className="text-4xl">🚚</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">{stats.today_lr || 0}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Month: {stats.month_lr || 0} | Total: {stats.total_lr || 0}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Today's Revenue</h3>
-                <span className="text-4xl">💰</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">₹{(stats.today_revenue || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Month: ₹{(stats.month_revenue || 0).toLocaleString()}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Pending Amount</h3>
-                <span className="text-4xl">⏳</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">₹{(stats.pending_amount || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Pending LR: {stats.pending_lr || 0}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Total Revenue</h3>
-                <span className="text-4xl">📊</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">₹{(stats.total_revenue || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Paid Bilties: {stats.paid_lr || 0}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===== 8 CATEGORY BUTTONS - SINGLE LINE ===== */}
+        
+        {/* ===== 1. QUICK ACCESS MODULES - SABSE UPER ===== */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -336,9 +285,9 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ===== EXPANDED CATEGORY FUNCTIONS ===== */}
+        {/* ===== EXPANDED CATEGORY FUNCTIONS - 8 ICONS KE NICHE ===== */}
         {expandedCategory && (
-          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border-2 border-blue-200 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border-2 border-blue-200">
             {categories.map((category) => {
               if (category.id !== expandedCategory) return null;
               return (
@@ -373,7 +322,56 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* ===== MONTHLY REPORT + RECENT BILTIES ===== */}
+        {/* ===== 2. STATS CARDS ===== */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+            <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold opacity-95">Today's LR</h3>
+                <span className="text-4xl">🚚</span>
+              </div>
+              <p className="text-5xl font-bold mb-3">{stats.today_lr || 0}</p>
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
+                Month: {stats.month_lr || 0} | Total: {stats.total_lr || 0}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold opacity-95">Today's Revenue</h3>
+                <span className="text-4xl">💰</span>
+              </div>
+              <p className="text-5xl font-bold mb-3">₹{(stats.today_revenue || 0).toLocaleString()}</p>
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
+                Month: ₹{(stats.month_revenue || 0).toLocaleString()}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold opacity-95">Pending Amount</h3>
+                <span className="text-4xl">⏳</span>
+              </div>
+              <p className="text-5xl font-bold mb-3">₹{(stats.pending_amount || 0).toLocaleString()}</p>
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
+                Pending LR: {stats.pending_lr || 0}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold opacity-95">Total Revenue</h3>
+                <span className="text-4xl"></span>
+              </div>
+              <p className="text-5xl font-bold mb-3">₹{(stats.total_revenue || 0).toLocaleString()}</p>
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
+                Paid Bilties: {stats.paid_lr || 0}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== 3. MONTHLY REPORT + RECENT BILTIES ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Monthly Report */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
@@ -387,7 +385,7 @@ const Dashboard = () => {
                     <p className="text-sm text-gray-600 font-medium">Total Bilties (Month)</p>
                     <p className="text-3xl font-bold text-blue-600">{stats.month_lr || 0}</p>
                   </div>
-                  <span className="text-5xl opacity-80">🚚</span>
+                  <span className="text-5xl opacity-80"></span>
                 </div>
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl border-l-4 border-emerald-500">
                   <div>
@@ -401,7 +399,7 @@ const Dashboard = () => {
                     <p className="text-sm text-gray-600 font-medium">Pending Amount</p>
                     <p className="text-3xl font-bold text-orange-600">₹{(stats.pending_amount || 0).toLocaleString()}</p>
                   </div>
-                  <span className="text-5xl opacity-80"></span>
+                  <span className="text-5xl opacity-80">⏳</span>
                 </div>
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border-l-4 border-purple-500">
                   <div>
@@ -450,7 +448,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Top Parties */}
+        {/* ===== 4. TOP PARTIES ===== */}
         {Array.isArray(topParties) && topParties.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
@@ -474,7 +472,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Recent Money Receipts */}
+        {/* ===== 5. RECENT MONEY RECEIPTS ===== */}
         {Array.isArray(recentMR) && recentMR.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
@@ -496,7 +494,7 @@ const Dashboard = () => {
                     <tr key={mr.id} className="hover:bg-blue-50 transition-colors">
                       <td className="px-4 py-3 text-sm font-bold text-blue-600">{mr.mr_no}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 font-medium">{mr.party_name}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-green-600 text-lg">₹{parseInt(mr.amount || 0).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-green-600 text-lg">{parseInt(mr.amount || 0).toLocaleString()}</td>
                       <td className="px-4 py-3">
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
                           {mr.payment_mode}
