@@ -24,10 +24,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, or server-to-server)
     if (!origin) return callback(null, true);
-    
-    // Allow if it's in the allowed list or ends with .vercel.app
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
@@ -39,9 +36,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug']
 }));
 
-// Handle OPTIONS preflight requests explicitly
 app.options('*', cors());
-
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -433,7 +428,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ==========================================
-// DASHBOARD STATS
+// DASHBOARD STATS (ROLE BASED FIXED)
 // ==========================================
 app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
   try {
@@ -451,38 +446,71 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
 
     const today = new Date().toISOString().split('T')[0];
     const thisMonth = today.substring(0, 7);
-    const userRole = req.user?.role || 'admin';
-    const branchId = req.user?.branch_id ? parseInt(req.user.branch_id) : null;
-    const branchCode = req.user?.branch_code || 'All';
+    const userRole = req.user?.role || 'operator';
+    const userBranchId = req.user?.branch_id ? parseInt(req.user.branch_id, 10) : null;
+    const userBranchCode = req.user?.branch_code || null;
     const isAdmin = userRole === 'admin';
-    if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0)) {
+
+    if (!isAdmin && (!Number.isSafeInteger(userBranchId) || userBranchId <= 0)) {
       return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     }
-    const whereBranch = isAdmin ? '' : `WHERE branch_id = ${branchId}`;
-    const andBranch = isAdmin ? '' : `AND branch_id = ${branchId}`;
+
+    let effectiveBranchId = userBranchId;
+    let effectiveBranchCode = userBranchCode;
+
+    if (isAdmin) {
+      const selectedBranchId = req.query.branch_id;
+      if (selectedBranchId && selectedBranchId !== 'all') {
+        const parsed = parseInt(selectedBranchId, 10);
+        if (Number.isSafeInteger(parsed) && parsed > 0) {
+          effectiveBranchId = parsed;
+          effectiveBranchCode = null;
+        } else {
+          effectiveBranchId = null;
+          effectiveBranchCode = null;
+        }
+      } else {
+        effectiveBranchId = null;
+        effectiveBranchCode = null;
+      }
+    }
+
+    let whereBranch = '';
+    let andBranch = '';
+
+    if (effectiveBranchId) {
+      const safeCode = effectiveBranchCode ? effectiveBranchCode.replace(/'/g, "''") : '';
+      whereBranch = `WHERE (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
+      andBranch = `AND (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
+    } else if (effectiveBranchCode) {
+      const safeCode = effectiveBranchCode.replace(/'/g, "''");
+      whereBranch = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
+      andBranch = `AND (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
+    }
+
     const globalMasterCount = (table, condition) => isAdmin ? pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`) : Promise.resolve({ rows: [{ count: 0 }] });
 
     const queries = [
-      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE lr_date = $1 ${andBranch}`, [today]),
-      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 ${andBranch}`, [thisMonth]),
-      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE 1=1 ${andBranch}`),
-      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE status IN ('Booked','In-Transit') ${andBranch}`),
-      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch}`),
+      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE lr_date = $1 ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
+      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth]),
+      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE 1=1 ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`),
+      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE status IN ('Booked','In-Transit') ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`),
+      pool.query(`SELECT COUNT(*) as count FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`),
       pool.query(`SELECT COUNT(*) as count FROM bill_book ${whereBranch}`),
       pool.query(`SELECT COUNT(*) as count FROM bill_book ${whereBranch} ${whereBranch ? 'AND' : 'WHERE'} COALESCE(payment_status, 'Unpaid') = 'Unpaid'`),
       pool.query(`SELECT COUNT(*) as count FROM money_receipts ${whereBranch}`),
       globalMasterCount('parties', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
       globalMasterCount('customers', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
-      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch}`),
-      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' ${andBranch}`),
+      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`),
+      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`),
       pool.query(`SELECT COUNT(*) as count FROM pod_records WHERE COALESCE(status, 'Pending') = 'Pending' ${andBranch}`),
       globalMasterCount('drivers', "WHERE COALESCE(status, 'Active') = 'Active'"),
       globalMasterCount('vehicles', "WHERE COALESCE(status, 'Active') = 'Active'"),
       pool.query(`SELECT COUNT(*) as count FROM claims WHERE COALESCE(status, 'Open') = 'Open' ${andBranch}`),
       pool.query(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date >= $1 ${andBranch}`, [today]),
       globalMasterCount('branches', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
-      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE lr_date = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch}`, [today]),
-      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch}`, [thisMonth])
+      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE lr_date = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
+      pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' ${andBranch} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth])
     ];
 
     const results = await Promise.all(queries);
@@ -493,35 +521,122 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     };
 
     res.json({
+      success: true,
       today_lr: get(0), month_lr: get(1), total_lr: get(2), pending_lr: get(3), paid_lr: get(4), total_bills: get(5),
       pending_bills: get(6), total_mr: get(7), total_parties: get(8), total_customers: get(9), total_revenue: get(10, 'total'),
       pending_amount: get(11, 'total'), pending_pod: get(12), active_drivers: get(13), active_vehicles: get(14),
       open_claims: get(15), today_expenses: get(16, 'total'), total_branches: get(17), today_revenue: get(18, 'total'),
-      month_revenue: get(19, 'total'), user_role: userRole, user_branch: branchCode, success: true
+      month_revenue: get(19, 'total'), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error('Dashboard stats error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${parseInt(req.user.branch_id)}`;
+    const userRole = req.user?.role || 'operator';
+    const userBranchId = req.user?.branch_id ? parseInt(req.user.branch_id, 10) : null;
+    const userBranchCode = req.user?.branch_code || null;
+    const isAdmin = userRole === 'admin';
+
+    if (!isAdmin && (!Number.isSafeInteger(userBranchId) || userBranchId <= 0)) {
+      return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    }
+
+    let effectiveBranchId = userBranchId;
+    let effectiveBranchCode = userBranchCode;
+
+    if (isAdmin) {
+      const selectedBranchId = req.query.branch_id;
+      if (selectedBranchId && selectedBranchId !== 'all') {
+        const parsed = parseInt(selectedBranchId, 10);
+        if (Number.isSafeInteger(parsed) && parsed > 0) {
+          effectiveBranchId = parsed;
+          effectiveBranchCode = null;
+        } else {
+          effectiveBranchId = null;
+          effectiveBranchCode = null;
+        }
+      } else {
+        effectiveBranchId = null;
+        effectiveBranchCode = null;
+      }
+    }
+
+    let branchCondition = '';
+    if (effectiveBranchId) {
+      const safeCode = effectiveBranchCode ? effectiveBranchCode.replace(/'/g, "''") : '';
+      branchCondition = `WHERE (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
+    } else if (effectiveBranchCode) {
+      const safeCode = effectiveBranchCode.replace(/'/g, "''");
+      branchCondition = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
+    }
+
     const [recentBilties, recentMR, recentClaims] = await Promise.all([
-      pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') as payment_status, created_at FROM consignments ${branchCondition} ORDER BY created_at DESC LIMIT 5`),
+      pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') as payment_status, created_at FROM consignments ${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY created_at DESC LIMIT 5`),
       pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${branchCondition} ORDER BY created_at DESC LIMIT 5`),
       pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') as status, created_at FROM claims ${branchCondition} ORDER BY created_at DESC LIMIT 3`)
     ]);
-    res.json({ bilties: recentBilties.rows, receipts: recentMR.rows, claims: recentClaims.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    res.json({ 
+      success: true,
+      bilties: recentBilties.rows, 
+      receipts: recentMR.rows, 
+      claims: recentClaims.rows 
+    });
+  } catch (err) { 
+    console.error('Dashboard recent error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${parseInt(req.user.branch_id)}`;
-    const result = await pool.query(`SELECT consignor_name, consignor_code, COUNT(*) as total_bilties, SUM(CAST(grand_total AS NUMERIC)) as total_revenue FROM consignments ${branchCondition} GROUP BY consignor_name, consignor_code ORDER BY total_revenue DESC LIMIT 5`);
-    res.json({ data: result.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const userRole = req.user?.role || 'operator';
+    const userBranchId = req.user?.branch_id ? parseInt(req.user.branch_id, 10) : null;
+    const userBranchCode = req.user?.branch_code || null;
+    const isAdmin = userRole === 'admin';
+
+    if (!isAdmin && (!Number.isSafeInteger(userBranchId) || userBranchId <= 0)) {
+      return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    }
+
+    let effectiveBranchId = userBranchId;
+    let effectiveBranchCode = userBranchCode;
+
+    if (isAdmin) {
+      const selectedBranchId = req.query.branch_id;
+      if (selectedBranchId && selectedBranchId !== 'all') {
+        const parsed = parseInt(selectedBranchId, 10);
+        if (Number.isSafeInteger(parsed) && parsed > 0) {
+          effectiveBranchId = parsed;
+          effectiveBranchCode = null;
+        } else {
+          effectiveBranchId = null;
+          effectiveBranchCode = null;
+        }
+      } else {
+        effectiveBranchId = null;
+        effectiveBranchCode = null;
+      }
+    }
+
+    let branchCondition = '';
+    if (effectiveBranchId) {
+      const safeCode = effectiveBranchCode ? effectiveBranchCode.replace(/'/g, "''") : '';
+      branchCondition = `WHERE (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
+    } else if (effectiveBranchCode) {
+      const safeCode = effectiveBranchCode.replace(/'/g, "''");
+      branchCondition = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
+    }
+
+    const result = await pool.query(`SELECT consignor_name, consignor_code, COUNT(*) as total_bilties, SUM(CAST(grand_total AS NUMERIC)) as total_revenue FROM consignments ${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE GROUP BY consignor_name, consignor_code ORDER BY total_revenue DESC LIMIT 5`);
+    res.json({ success: true, data: result.rows });
+  } catch (err) { 
+    console.error('Dashboard top parties error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 // ==========================================
@@ -663,7 +778,7 @@ app.post('/api/branch/login', (req, res) => {
 });
 
 // ==========================================
-// CONSIGNMENTS
+// CONSIGNMENTS (ROLE BASED FIXED)
 // ==========================================
 async function generateBiltyNo(db = pool) {
   const result = await db.query(`SELECT COALESCE(MAX(((regexp_match(lr_no, '([0-9]+)$'))[1])::BIGINT), 0) AS max_serial FROM consignments WHERE lr_no ~ '[0-9]+$'`);
@@ -689,26 +804,72 @@ app.get('/api/consignments/next-number', authMiddleware, async (req, res) => {
 
 app.get('/api/consignments', authMiddleware, async (req, res) => {
   try {
-    const isAdmin = String(req.user.role || '').toLowerCase() === 'admin';
-    const branchId = Number(req.user.branch_id);
+    const userRole = String(req.user.role || '').toLowerCase();
+    const isAdmin = userRole === 'admin';
+    const userBranchId = Number(req.user.branch_id);
+    const userBranchCode = req.user.branch_code || null;
     const search = String(req.query.search || '').trim();
     const lrNumber = String(req.query.lrNumber || '').trim();
-    if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0)) return res.status(403).json({ error: 'Your account is not assigned to a branch' });
-    
-    const result = lrNumber
-      ? isAdmin
-        ? await pool.query('SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1', [lrNumber])
-        : await pool.query('SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND branch_id = $2 AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1', [lrNumber, branchId])
-      : isAdmin
-        ? search
-          ? await pool.query('SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $1 ORDER BY (lr_no = $2) DESC, id DESC LIMIT 100', [`%${search}%`, search])
-          : await pool.query('SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500')
-        : search
-          ? await pool.query('SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $2 ORDER BY (lr_no = $3) DESC, id DESC LIMIT 100', [branchId, `%${search}%`, search])
-          : await pool.query('SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500', [branchId]);
-          
+
+    if (!isAdmin && (!Number.isSafeInteger(userBranchId) || userBranchId <= 0)) {
+      return res.status(403).json({ error: 'Your account is not assigned to a branch' });
+    }
+
+    let effectiveBranchId = userBranchId;
+    let effectiveBranchCode = userBranchCode;
+
+    if (isAdmin) {
+      const selectedBranchId = req.query.branch_id;
+      if (selectedBranchId && selectedBranchId !== 'all') {
+        const parsed = parseInt(selectedBranchId, 10);
+        if (Number.isSafeInteger(parsed) && parsed > 0) {
+          effectiveBranchId = parsed;
+          effectiveBranchCode = null;
+        } else {
+          effectiveBranchId = null;
+          effectiveBranchCode = null;
+        }
+      } else {
+        effectiveBranchId = null;
+        effectiveBranchCode = null;
+      }
+    }
+
+    let branchFilter = '';
+    if (effectiveBranchId) {
+      const safeCode = effectiveBranchCode ? effectiveBranchCode.replace(/'/g, "''") : '';
+      branchFilter = `AND (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
+    } else if (effectiveBranchCode) {
+      const safeCode = effectiveBranchCode.replace(/'/g, "''");
+      branchFilter = `AND (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
+    }
+
+    let result;
+    if (lrNumber) {
+      if (isAdmin) {
+        result = await pool.query('SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1', [lrNumber]);
+      } else {
+        result = await pool.query('SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND branch_id = $2 AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1', [lrNumber, userBranchId]);
+      }
+    } else if (isAdmin) {
+      if (search) {
+        result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} AND lr_no ILIKE $1 ORDER BY (lr_no = $2) DESC, id DESC LIMIT 100`, [`%${search}%`, search]);
+      } else {
+        result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} ORDER BY id DESC LIMIT 500`);
+      }
+    } else {
+      if (search) {
+        result = await pool.query(`SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $2 ORDER BY (lr_no = $3) DESC, id DESC LIMIT 100`, [userBranchId, `%${search}%`, search]);
+      } else {
+        result = await pool.query('SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500', [userBranchId]);
+      }
+    }
+
     res.json({ data: result.rows, total: result.rows.length });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error('Consignments fetch error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.get('/api/consignments/:id', authMiddleware, async (req, res) => {
@@ -1751,7 +1912,7 @@ app.delete('/api/users/:id', authMiddleware, async (req, res) => {
 });
 
 // ==========================================
-// 💾 BACKUP & RESTORE MODULE (Local D: Drive Support)
+// 💾 BACKUP & RESTORE MODULE
 // ==========================================
 app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
