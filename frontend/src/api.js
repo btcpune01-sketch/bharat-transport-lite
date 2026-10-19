@@ -1,8 +1,9 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://bharat-transport-api.onrender.com'
+// ✅ FIX: Use empty string to route to the same domain (Vercel backend)
+const API_URL = import.meta.env.VITE_API_URL || ''
 
-console.info('API base URL:', API_URL)
+console.info('API base URL:', API_URL || 'Current Domain (Relative)')
 
 function getActiveBranchSession() {
   const match = window.location.hash.match(/^#\/branch\/([^/?#]+)/)
@@ -309,7 +310,7 @@ export const auditAPI = {
 // PUBLIC TRACKING API (No auth needed)
 // ============================================
 export const trackAPI = {
-  track: (lr_no) => axios.get(`${API_URL}/api/consignments/track?lr_no=${lr_no}`)
+  track: (lr_no) => axios.get(`/api/consignments/track?lr_no=${lr_no}`)
 }
 
 // ============================================
