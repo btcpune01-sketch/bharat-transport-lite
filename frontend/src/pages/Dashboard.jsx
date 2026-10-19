@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardAPI, branchAPI } from '../api';
+import { dashboardAPI } from '../api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -21,27 +21,61 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try { setUser(JSON.parse(storedUser)); } catch(e) {}
-    }
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) setUser(JSON.parse(storedUser));
+    } catch(e) {}
   }, []);
+
+  // Fetch branches with proper auth
+  const fetchBranches = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.log('No token found for branches');
+        return [];
+      }
+      const res = await fetch('/api/branches', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      console.log('Branches response:', data);
+      if (data && Array.isArray(data.data)) {
+        return data.data;
+      }
+      return [];
+    } catch (err) {
+      console.error('Branches fetch error:', err);
+      return [];
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, recentRes, topRes, branchesRes] = await Promise.all([
+        const [statsRes, recentRes, topRes, branchesList] = await Promise.allSettled([
           dashboardAPI.getStats(),
           dashboardAPI.recentBilties(),
           dashboardAPI.topParties(),
-          branchAPI.getAll().catch(() => ({ data: [] }))
+          fetchBranches()
         ]);
-        
-        setStats(statsRes?.data || null);
-        setRecentBilties(Array.isArray(recentRes?.data?.bilties) ? recentRes.data.bilties : []);
-        setRecentMR(Array.isArray(recentRes?.data?.receipts) ? recentRes.data.receipts : []);
-        setTopParties(Array.isArray(topRes?.data?.data) ? topRes.data.data : []);
-        setBranches(Array.isArray(branchesRes?.data) ? branchesRes.data : []);
+
+        if (statsRes.status === 'fulfilled' && statsRes.value?.data) {
+          setStats(statsRes.value.data);
+        }
+
+        if (recentRes.status === 'fulfilled' && recentRes.value?.data) {
+          setRecentBilties(Array.isArray(recentRes.value.data.bilties) ? recentRes.value.data.bilties : []);
+          setRecentMR(Array.isArray(recentRes.value.data.receipts) ? recentRes.value.data.receipts : []);
+        }
+
+        if (topRes.status === 'fulfilled' && topRes.value?.data) {
+          setTopParties(Array.isArray(topRes.value.data.data) ? topRes.value.data.data : []);
+        }
+
+        if (branchesList.status === 'fulfilled' && Array.isArray(branchesList.value)) {
+          setBranches(branchesList.value);
+        }
       } catch (error) {
         console.error('Dashboard fetch error:', error);
       } finally {
@@ -49,7 +83,7 @@ const Dashboard = () => {
       }
     };
     fetchData();
-  }, [selectedBranch]);
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -86,14 +120,14 @@ const Dashboard = () => {
       icon: '💰',
       gradient: 'from-emerald-500 to-emerald-700',
       functions: [
-        { name: 'New Bill', icon: '', path: '/bill-entry' },
+        { name: 'New Bill', icon: '📄', path: '/bill-entry' },
         { name: 'Bill List', icon: '📑', path: '/bills' },
         { name: 'Bill Print', icon: '🖨️', path: '/bill-print' },
         { name: 'Money Receipt', icon: '💵', path: '/mr' },
         { name: 'Create MR', icon: '➕', path: '/mr/create' },
         { name: 'MR Print', icon: '🧾', path: '/mr-print' },
         { name: 'Outstanding', icon: '⏳', path: '/outstanding' },
-        { name: 'Payments', icon: '💸', path: '/branch-payments' },
+        { name: 'Payments', icon: '', path: '/branch-payments' },
       ]
     },
     {
@@ -105,7 +139,7 @@ const Dashboard = () => {
         { name: 'Customers', icon: '👤', path: '/customers' },
         { name: 'Party List', icon: '📇', path: '/party' },
         { name: 'New Party', icon: '➕', path: '/party/new' },
-        { name: 'Ledger', icon: '📒', path: '/ledger' },
+        { name: 'Ledger', icon: '', path: '/ledger' },
       ]
     },
     {
@@ -128,8 +162,8 @@ const Dashboard = () => {
       icon: '🏢',
       gradient: 'from-teal-500 to-teal-700',
       functions: [
-        { name: 'Branches', icon: '🏬', path: '/branches' },
-        { name: 'Gate Pass', icon: '', path: '/gate-pass' },
+        { name: 'Branches', icon: '', path: '/branches' },
+        { name: 'Gate Pass', icon: '🎫', path: '/gate-pass' },
         { name: 'Branch Portal', icon: '🌐', path: '/branch-portal' },
         { name: 'Branch Login', icon: '🔐', path: '/branch-login' },
       ]
@@ -137,11 +171,11 @@ const Dashboard = () => {
     {
       id: 'accounts',
       name: 'Accounts',
-      icon: '💼',
+      icon: '',
       gradient: 'from-indigo-500 to-indigo-700',
       functions: [
         { name: 'Accounts', icon: '💼', path: '/accounts' },
-        { name: 'Expenses', icon: '💰', path: '/expenses' },
+        { name: 'Expenses', icon: '', path: '/expenses' },
         { name: 'Commissions', icon: '💵', path: '/commissions' },
         { name: 'Claims', icon: '📑', path: '/claims' },
         { name: 'E-Way Bill', icon: '🧾', path: '/eway' },
@@ -153,7 +187,7 @@ const Dashboard = () => {
       icon: '📈',
       gradient: 'from-orange-500 to-orange-700',
       functions: [
-        { name: 'Reports', icon: '', path: '/reports' },
+        { name: 'Reports', icon: '📊', path: '/reports' },
         { name: 'Audit Logs', icon: '📋', path: '/audit' },
         { name: 'Analytics', icon: '📉', path: '/reports' },
         { name: 'Backup', icon: '💾', path: '/backup' },
@@ -165,7 +199,7 @@ const Dashboard = () => {
       icon: '⚙️',
       gradient: 'from-pink-500 to-pink-700',
       functions: [
-        { name: 'Freight Rates', icon: '', path: '/rates' },
+        { name: 'Freight Rates', icon: '💲', path: '/rates' },
         { name: 'Stock Mgmt', icon: '📦', path: '/stock' },
         { name: 'Users', icon: '👤', path: '/users' },
         { name: 'Settings', icon: '⚙️', path: '/settings' },
@@ -186,7 +220,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* ===== PROFESSIONAL HEADER ===== */}
+      {/* ===== HEADER ===== */}
       <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-2xl border-b-4 border-blue-600 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -202,14 +236,14 @@ const Dashboard = () => {
 
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
-                <span className="text-sm"></span>
+                <span className="text-sm">🏬</span>
                 <select
                   value={selectedBranch}
                   onChange={handleBranchChange}
                   className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer"
                 >
                   <option value="all" className="text-gray-900">All Branches</option>
-                  {Array.isArray(branches) && branches.map((branch) => (
+                  {branches.length > 0 && branches.map((branch) => (
                     <option key={branch.id} value={branch.id} className="text-gray-900">
                       {branch.branch_name} ({branch.branch_code})
                     </option>
@@ -244,12 +278,12 @@ const Dashboard = () => {
       {/* ===== MAIN CONTENT ===== */}
       <div className="max-w-7xl mx-auto px-6 py-6">
         
-        {/* ===== 1. QUICK ACCESS MODULES - SABSE UPER ===== */}
+        {/* ===== QUICK ACCESS MODULES ===== */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-                <span className="mr-2">🎯</span> Quick Access Modules
+                <span className="mr-2"></span> Quick Access Modules
               </h2>
               <p className="text-sm text-gray-500 mt-1">Click any category to view functions</p>
             </div>
@@ -263,7 +297,6 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* 8 Buttons in Single Line */}
           <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
             {categories.map((category) => (
               <button
@@ -285,7 +318,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ===== EXPANDED CATEGORY FUNCTIONS - 8 ICONS KE NICHE ===== */}
+        {/* ===== EXPANDED FUNCTIONS ===== */}
         {expandedCategory && (
           <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border-2 border-blue-200">
             {categories.map((category) => {
@@ -322,7 +355,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* ===== 2. STATS CARDS ===== */}
+        {/* ===== STATS CARDS ===== */}
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
@@ -371,9 +404,8 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* ===== 3. MONTHLY REPORT + RECENT BILTIES ===== */}
+        {/* ===== MONTHLY REPORT + RECENT BILTIES ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Monthly Report */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">📊</span> Monthly Report Summary
@@ -385,7 +417,7 @@ const Dashboard = () => {
                     <p className="text-sm text-gray-600 font-medium">Total Bilties (Month)</p>
                     <p className="text-3xl font-bold text-blue-600">{stats.month_lr || 0}</p>
                   </div>
-                  <span className="text-5xl opacity-80"></span>
+                  <span className="text-5xl opacity-80">🚚</span>
                 </div>
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl border-l-4 border-emerald-500">
                   <div>
@@ -412,14 +444,13 @@ const Dashboard = () => {
             )}
           </div>
 
-          {/* Recent Bilties */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">📋</span> Recent 5 Bilties - LIVE
             </h2>
             {!Array.isArray(recentBilties) || recentBilties.length === 0 ? (
               <div className="text-center py-12">
-                <span className="text-6xl">📭</span>
+                <span className="text-6xl"></span>
                 <p className="text-gray-500 mt-4 text-lg">No recent bilties</p>
               </div>
             ) : (
@@ -448,7 +479,7 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* ===== 4. TOP PARTIES ===== */}
+        {/* ===== TOP PARTIES ===== */}
         {Array.isArray(topParties) && topParties.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
@@ -472,7 +503,7 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* ===== 5. RECENT MONEY RECEIPTS ===== */}
+        {/* ===== RECENT MONEY RECEIPTS ===== */}
         {Array.isArray(recentMR) && recentMR.length > 0 && (
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
@@ -494,7 +525,7 @@ const Dashboard = () => {
                     <tr key={mr.id} className="hover:bg-blue-50 transition-colors">
                       <td className="px-4 py-3 text-sm font-bold text-blue-600">{mr.mr_no}</td>
                       <td className="px-4 py-3 text-sm text-gray-700 font-medium">{mr.party_name}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-green-600 text-lg">{parseInt(mr.amount || 0).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-green-600 text-lg">₹{parseInt(mr.amount || 0).toLocaleString()}</td>
                       <td className="px-4 py-3">
                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
                           {mr.payment_mode}
