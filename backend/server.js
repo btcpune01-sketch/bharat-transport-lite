@@ -2036,8 +2036,10 @@ async function startServer() {
   });
 }
 
-// Vercel Serverless के लिए - app.listen() को skip करें
-if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+// Vercel Serverless के लिए
+if (process.env.VERCEL) {
+  module.exports = app;
+} else {
   startServer();
+  module.exports = app;
 }
-module.exports = app;
