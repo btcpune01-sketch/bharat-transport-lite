@@ -10,6 +10,7 @@ const Dashboard = () => {
   const [topParties, setTopParties] = useState([]);
   const [branches, setBranches] = useState([]);
   const [selectedBranch, setSelectedBranch] = useState('all');
+  const [expandedCategory, setExpandedCategory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [user, setUser] = useState(null);
@@ -36,17 +37,13 @@ const Dashboard = () => {
           branchAPI.getAll().catch(() => ({ data: [] }))
         ]);
         
-        setStats(statsRes.data || null);
-        setRecentBilties(Array.isArray(recentRes.data?.bilties) ? recentRes.data.bilties : []);
-        setRecentMR(Array.isArray(recentRes.data?.receipts) ? recentRes.data.receipts : []);
-        setTopParties(Array.isArray(topRes.data?.data) ? topRes.data.data : []);
-        setBranches(Array.isArray(branchesRes.data) ? branchesRes.data : []);
+        setStats(statsRes?.data || null);
+        setRecentBilties(Array.isArray(recentRes?.data?.bilties) ? recentRes.data.bilties : []);
+        setRecentMR(Array.isArray(recentRes?.data?.receipts) ? recentRes.data.receipts : []);
+        setTopParties(Array.isArray(topRes?.data?.data) ? topRes.data.data : []);
+        setBranches(Array.isArray(branchesRes?.data) ? branchesRes.data : []);
       } catch (error) {
         console.error('Dashboard fetch error:', error);
-        setRecentBilties([]);
-        setRecentMR([]);
-        setTopParties([]);
-        setBranches([]);
       } finally {
         setLoading(false);
       }
@@ -64,56 +61,61 @@ const Dashboard = () => {
     setSelectedBranch(e.target.value);
   };
 
+  const toggleCategory = (id) => {
+    setExpandedCategory(expandedCategory === id ? null : id);
+  };
+
+  // ========== 8 CATEGORIES WITH ALL 46 FUNCTIONS ==========
   const categories = [
     {
       id: 'bilty',
-      name: 'Bilty/LR Management',
+      name: 'Bilty/LR',
       icon: '🚚',
       gradient: 'from-blue-500 to-blue-700',
       functions: [
         { name: 'New Bilty', icon: '📝', path: '/consignments/new' },
         { name: 'Bilty List', icon: '📋', path: '/consignments' },
-        { name: 'Bilty Print', icon: '️', path: '/bilty-print' },
-        { name: 'Track Bilty', icon: '', path: '/track' },
+        { name: 'Bilty Print', icon: '🖨️', path: '/bilty-print' },
+        { name: 'Track Bilty', icon: '📍', path: '/track' },
         { name: 'POD', icon: '✅', path: '/pod' },
         { name: 'POD Upload', icon: '📤', path: '/pod-upload' },
       ]
     },
     {
       id: 'billing',
-      name: 'Billing & Payments',
+      name: 'Billing',
       icon: '💰',
       gradient: 'from-emerald-500 to-emerald-700',
       functions: [
-        { name: 'New Bill', icon: '', path: '/bill-entry' },
-        { name: 'Bill List', icon: '', path: '/bills' },
+        { name: 'New Bill', icon: '📄', path: '/bill-entry' },
+        { name: 'Bill List', icon: '📑', path: '/bills' },
         { name: 'Bill Print', icon: '🖨️', path: '/bill-print' },
         { name: 'Money Receipt', icon: '💵', path: '/mr' },
-        { name: 'Create MR', icon: '', path: '/mr/create' },
+        { name: 'Create MR', icon: '➕', path: '/mr/create' },
         { name: 'MR Print', icon: '🧾', path: '/mr-print' },
-        { name: 'Outstanding', icon: '', path: '/outstanding' },
-        { name: 'Payments', icon: '💸', path: '/branch-payments' },
+        { name: 'Outstanding', icon: '⏳', path: '/outstanding' },
+        { name: 'Payments', icon: '', path: '/branch-payments' },
       ]
     },
     {
       id: 'party',
-      name: 'Parties & Customers',
+      name: 'Parties',
       icon: '👥',
       gradient: 'from-purple-500 to-purple-700',
       functions: [
-        { name: 'Customers', icon: '', path: '/customers' },
-        { name: 'Party List', icon: '', path: '/party' },
-        { name: 'New Party', icon: '', path: '/party/new' },
-        { name: 'Ledger', icon: '📒', path: '/ledger' },
+        { name: 'Customers', icon: '👤', path: '/customers' },
+        { name: 'Party List', icon: '📇', path: '/party' },
+        { name: 'New Party', icon: '➕', path: '/party/new' },
+        { name: 'Ledger', icon: '', path: '/ledger' },
       ]
     },
     {
       id: 'vehicle',
       name: 'Vehicle & Driver',
-      icon: '',
+      icon: '🚛',
       gradient: 'from-red-500 to-red-700',
       functions: [
-        { name: 'Drivers', icon: '‍️', path: '/drivers' },
+        { name: 'Drivers', icon: '👨‍️', path: '/drivers' },
         { name: 'Vehicles', icon: '🚗', path: '/vehicles' },
         { name: 'Trips', icon: '️', path: '/trips' },
         { name: 'Transit', icon: '🔄', path: '/transit' },
@@ -123,7 +125,7 @@ const Dashboard = () => {
     },
     {
       id: 'branch',
-      name: 'Branch Operations',
+      name: 'Branch',
       icon: '🏢',
       gradient: 'from-teal-500 to-teal-700',
       functions: [
@@ -135,37 +137,37 @@ const Dashboard = () => {
     },
     {
       id: 'accounts',
-      name: 'Accounts & Finance',
-      icon: '',
+      name: 'Accounts',
+      icon: '💼',
       gradient: 'from-indigo-500 to-indigo-700',
       functions: [
         { name: 'Accounts', icon: '💼', path: '/accounts' },
         { name: 'Expenses', icon: '💰', path: '/expenses' },
         { name: 'Commissions', icon: '💵', path: '/commissions' },
-        { name: 'Claims', icon: '📑', path: '/claims' },
-        { name: 'E-Way Bill', icon: '🧾', path: '/eway' },
+        { name: 'Claims', icon: '', path: '/claims' },
+        { name: 'E-Way Bill', icon: '', path: '/eway' },
       ]
     },
     {
       id: 'reports',
-      name: 'Reports & Analytics',
+      name: 'Reports',
       icon: '📈',
       gradient: 'from-orange-500 to-orange-700',
       functions: [
         { name: 'Reports', icon: '📊', path: '/reports' },
-        { name: 'Audit Logs', icon: '', path: '/audit' },
+        { name: 'Audit Logs', icon: '📋', path: '/audit' },
         { name: 'Analytics', icon: '', path: '/reports' },
         { name: 'Backup', icon: '💾', path: '/backup' },
       ]
     },
     {
       id: 'master',
-      name: 'Master Data & Settings',
-      icon: '️',
+      name: 'Master Data',
+      icon: '⚙️',
       gradient: 'from-pink-500 to-pink-700',
       functions: [
         { name: 'Freight Rates', icon: '💲', path: '/rates' },
-        { name: 'Stock Mgmt', icon: '', path: '/stock' },
+        { name: 'Stock Mgmt', icon: '📦', path: '/stock' },
         { name: 'Users', icon: '', path: '/users' },
         { name: 'Settings', icon: '⚙️', path: '/settings' },
       ]
@@ -178,7 +180,6 @@ const Dashboard = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-20 w-20 border-4 border-blue-500 border-t-transparent mx-auto"></div>
           <p className="mt-6 text-xl text-white font-medium">Loading Dashboard...</p>
-          <p className="text-sm text-gray-400 mt-2">Bharat Transport Company</p>
         </div>
       </div>
     );
@@ -186,12 +187,13 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Professional Header */}
-      <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-2xl border-b border-slate-700 sticky top-0 z-50">
+      {/* ===== PROFESSIONAL HEADER ===== */}
+      <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-2xl border-b-4 border-blue-600 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
+            {/* Left: BTC Logo + Company Name */}
             <div className="flex items-center space-x-4">
-              <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-3 shadow-lg">
+              <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-3 shadow-lg border-2 border-blue-400">
                 <span className="text-3xl font-bold text-white">BTC</span>
               </div>
               <div>
@@ -200,9 +202,10 @@ const Dashboard = () => {
               </div>
             </div>
 
+            {/* Right: Branch Selector + User + Logout */}
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2">
-                <span className="text-sm text-gray-300">🏬</span>
+              <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
+                <span className="text-sm">🏬</span>
                 <select
                   value={selectedBranch}
                   onChange={handleBranchChange}
@@ -218,7 +221,7 @@ const Dashboard = () => {
               </div>
 
               {user && (
-                <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2">
+                <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center">
                     <span className="text-white font-bold text-sm">{(user.username || 'U')[0].toUpperCase()}</span>
                   </div>
@@ -241,17 +244,18 @@ const Dashboard = () => {
         </div>
       </header>
 
+      {/* ===== MAIN CONTENT ===== */}
       <div className="max-w-7xl mx-auto px-6 py-6">
         {/* Stats Cards */}
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold opacity-95">Today's LR</h3>
-                <span className="text-4xl"></span>
+                <span className="text-4xl">🚚</span>
               </div>
               <p className="text-5xl font-bold mb-3">{stats.today_lr || 0}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block backdrop-blur-sm">
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
                 Month: {stats.month_lr || 0} | Total: {stats.total_lr || 0}
               </div>
             </div>
@@ -262,7 +266,7 @@ const Dashboard = () => {
                 <span className="text-4xl">💰</span>
               </div>
               <p className="text-5xl font-bold mb-3">₹{(stats.today_revenue || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block backdrop-blur-sm">
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
                 Month: ₹{(stats.month_revenue || 0).toLocaleString()}
               </div>
             </div>
@@ -270,10 +274,10 @@ const Dashboard = () => {
             <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold opacity-95">Pending Amount</h3>
-                <span className="text-4xl"></span>
+                <span className="text-4xl">⏳</span>
               </div>
               <p className="text-5xl font-bold mb-3">₹{(stats.pending_amount || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block backdrop-blur-sm">
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
                 Pending LR: {stats.pending_lr || 0}
               </div>
             </div>
@@ -281,24 +285,24 @@ const Dashboard = () => {
             <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold opacity-95">Total Revenue</h3>
-                <span className="text-4xl"></span>
+                <span className="text-4xl">📊</span>
               </div>
               <p className="text-5xl font-bold mb-3">₹{(stats.total_revenue || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block backdrop-blur-sm">
+              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
                 Paid Bilties: {stats.paid_lr || 0}
               </div>
             </div>
           </div>
         )}
 
-        {/* Quick Access Modules */}
+        {/* ===== 8 CATEGORY BUTTONS - SINGLE LINE ===== */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-                <span className="mr-2"></span> Quick Access Modules
+                <span className="mr-2">🎯</span> Quick Access Modules
               </h2>
-              <p className="text-sm text-gray-500 mt-1">All 45+ features organized by category</p>
+              <p className="text-sm text-gray-500 mt-1">Click any category to view functions</p>
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold text-gray-900">
@@ -310,39 +314,68 @@ const Dashboard = () => {
             </div>
           </div>
 
-          <div className="space-y-6">
+          {/* 8 Buttons in Single Line */}
+          <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
             {categories.map((category) => (
-              <div key={category.id} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                <div className={`bg-gradient-to-r ${category.gradient} px-6 py-3 flex items-center justify-between`}>
-                  <h3 className="text-white font-bold text-lg flex items-center">
-                    <span className="mr-2 text-2xl">{category.icon}</span>
-                    {category.name}
-                  </h3>
-                  <span className="text-white text-sm bg-white bg-opacity-20 px-3 py-1 rounded-full">
-                    {Array.isArray(category.functions) ? category.functions.length : 0} features
-                  </span>
-                </div>
-                <div className="p-4 bg-gray-50">
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {Array.isArray(category.functions) && category.functions.map((func, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => navigate(func.path)}
-                        className="flex flex-col items-center justify-center p-4 rounded-xl bg-gray-100 hover:bg-blue-50 hover:shadow-lg transition-all duration-200 transform hover:-translate-y-1 border border-transparent hover:border-gray-300"
-                      >
-                        <span className="text-2xl mb-2">{func.icon}</span>
-                        <span className="text-xs font-semibold text-center text-gray-700">{func.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <button
+                key={category.id}
+                onClick={() => toggleCategory(category.id)}
+                className={`flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-300 transform hover:-translate-y-1 ${
+                  expandedCategory === category.id
+                    ? `bg-gradient-to-br ${category.gradient} text-white shadow-2xl scale-105`
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-2 border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <span className="text-3xl mb-2">{category.icon}</span>
+                <span className="text-xs font-bold text-center">{category.name}</span>
+                <span className={`text-xs mt-1 ${expandedCategory === category.id ? 'text-white' : 'text-gray-500'}`}>
+                  {Array.isArray(category.functions) ? category.functions.length : 0}
+                </span>
+              </button>
             ))}
           </div>
         </div>
 
-        {/* Monthly Report + Recent Bilties */}
+        {/* ===== EXPANDED CATEGORY FUNCTIONS ===== */}
+        {expandedCategory && (
+          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border-2 border-blue-200 animate-fadeIn">
+            {categories.map((category) => {
+              if (category.id !== expandedCategory) return null;
+              return (
+                <div key={category.id}>
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className={`text-2xl font-bold text-white bg-gradient-to-r ${category.gradient} px-5 py-3 rounded-xl shadow-lg flex items-center`}>
+                      <span className="mr-2 text-3xl">{category.icon}</span>
+                      {category.name} - Functions
+                    </h3>
+                    <button
+                      onClick={() => setExpandedCategory(null)}
+                      className="bg-red-500 hover:bg-red-600 text-white w-10 h-10 rounded-full text-xl font-bold shadow-lg transition-all"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {Array.isArray(category.functions) && category.functions.map((func, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => navigate(func.path)}
+                        className="flex flex-col items-center justify-center p-5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 hover:from-blue-50 hover:to-blue-100 hover:shadow-xl transition-all duration-200 transform hover:-translate-y-1 border-2 border-gray-200 hover:border-blue-400"
+                      >
+                        <span className="text-3xl mb-2">{func.icon}</span>
+                        <span className="text-sm font-bold text-center text-gray-700">{func.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ===== MONTHLY REPORT + RECENT BILTIES ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* Monthly Report */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">📊</span> Monthly Report Summary
@@ -354,7 +387,7 @@ const Dashboard = () => {
                     <p className="text-sm text-gray-600 font-medium">Total Bilties (Month)</p>
                     <p className="text-3xl font-bold text-blue-600">{stats.month_lr || 0}</p>
                   </div>
-                  <span className="text-5xl opacity-80"></span>
+                  <span className="text-5xl opacity-80">🚚</span>
                 </div>
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl border-l-4 border-emerald-500">
                   <div>
@@ -368,7 +401,7 @@ const Dashboard = () => {
                     <p className="text-sm text-gray-600 font-medium">Pending Amount</p>
                     <p className="text-3xl font-bold text-orange-600">₹{(stats.pending_amount || 0).toLocaleString()}</p>
                   </div>
-                  <span className="text-5xl opacity-80">⏳</span>
+                  <span className="text-5xl opacity-80"></span>
                 </div>
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border-l-4 border-purple-500">
                   <div>
@@ -381,13 +414,14 @@ const Dashboard = () => {
             )}
           </div>
 
+          {/* Recent Bilties */}
           <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
               <span className="mr-2">📋</span> Recent 5 Bilties - LIVE
             </h2>
             {!Array.isArray(recentBilties) || recentBilties.length === 0 ? (
               <div className="text-center py-12">
-                <span className="text-6xl"></span>
+                <span className="text-6xl">📭</span>
                 <p className="text-gray-500 mt-4 text-lg">No recent bilties</p>
               </div>
             ) : (
@@ -477,6 +511,7 @@ const Dashboard = () => {
           </div>
         )}
 
+        {/* Footer */}
         <div className="text-center mt-8 pb-4">
           <p className="text-sm text-gray-500">© 2026 Bharat Transport Company. All rights reserved.</p>
           <p className="text-xs text-gray-400 mt-1">Powered by BTC TMS v6.0</p>
