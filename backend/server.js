@@ -15,26 +15,36 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 app.set('trust proxy', 1);
 
-// ✅ CORS - PERMANENT & SECURE FIX FOR VERCEL
+// ✅ CORS - PERMANENT FIX - Allow all Vercel domains + localhost
 const allowedOrigins = [
+  'https://bharat-transport-lite.vercel.app',
+  'https://bharat-transport-lite-iemb.vercel.app',
   'https://bharat-transport-company-72pc1cqft-nakshcargo-1758.vercel.app',
   'http://localhost:3000',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  'null'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
+    
+    // Allow if it's in the allowed list or ends with .vercel.app
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
+      console.log('Blocked by CORS:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug', 'X-Api-Version']
 }));
+
+// Handle OPTIONS preflight requests explicitly
+app.options('*', cors());
 
 app.options('*', cors());
 app.use(bodyParser.json({ limit: '10mb' }));
