@@ -583,20 +583,31 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
       branchCondition = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
     }
 
-    const [recentBilties, recentMR, recentClaims] = await Promise.all([
-      pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') as payment_status, created_at FROM consignments ${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY created_at DESC LIMIT 5`),
-      pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${branchCondition} ORDER BY created_at DESC LIMIT 5`),
-      pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') as status, created_at FROM claims ${branchCondition} ORDER BY created_at DESC LIMIT 3`)
+    const consignmentWhere = branchCondition
+      ? `${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE`
+      : 'WHERE COALESCE(is_deleted, FALSE) = FALSE';
+
+    const [recentBilties, recentMR, recentClaims] = await Promise.allSettled([
+      pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') as payment_status, created_at FROM consignments ${consignmentWhere} ORDER BY created_at DESC NULLS LAST LIMIT 5`),
+      pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${branchCondition} ORDER BY created_at DESC NULLS LAST LIMIT 5`),
+      pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') as status, created_at FROM claims ${branchCondition} ORDER BY created_at DESC NULLS LAST LIMIT 3`)
     ]);
-    res.json({ 
+
+    const rowsOrEmpty = (result, label) => {
+      if (result.status === 'fulfilled') return result.value?.rows || [];
+      console.error(`Dashboard recent ${label} query error:`, result.reason?.message);
+      return [];
+    };
+
+    res.json({
       success: true,
-      bilties: recentBilties.rows, 
-      receipts: recentMR.rows, 
-      claims: recentClaims.rows 
+      bilties: rowsOrEmpty(recentBilties, 'bilties'),
+      receipts: rowsOrEmpty(recentMR, 'receipts'),
+      claims: rowsOrEmpty(recentClaims, 'claims')
     });
-  } catch (err) { 
+  } catch (err) {
     console.error('Dashboard recent error:', err.message);
-    res.status(500).json({ error: err.message }); 
+    res.json({ success: true, bilties: [], receipts: [], claims: [] });
   }
 });
 
@@ -640,11 +651,15 @@ app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
       branchCondition = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
     }
 
-    const result = await pool.query(`SELECT consignor_name, consignor_code, COUNT(*) as total_bilties, SUM(CAST(grand_total AS NUMERIC)) as total_revenue FROM consignments ${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE GROUP BY consignor_name, consignor_code ORDER BY total_revenue DESC LIMIT 5`);
-    res.json({ success: true, data: result.rows });
-  } catch (err) { 
+    const consignmentWhere = branchCondition
+      ? `${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE`
+      : 'WHERE COALESCE(is_deleted, FALSE) = FALSE';
+
+    const result = await pool.query(`SELECT consignor_name, consignor_code, COUNT(*) as total_bilties, COALESCE(SUM(NULLIF(grand_total::text, '')::NUMERIC), 0) as total_revenue FROM consignments ${consignmentWhere} AND consignor_name IS NOT NULL GROUP BY consignor_name, consignor_code ORDER BY total_revenue DESC NULLS LAST LIMIT 5`);
+    res.json({ success: true, data: result?.rows || [] });
+  } catch (err) {
     console.error('Dashboard top parties error:', err.message);
-    res.status(500).json({ error: err.message }); 
+    res.json({ success: true, data: [] });
   }
 });
 
