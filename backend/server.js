@@ -543,54 +543,67 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
   }
 });
 
+const ALL_BRANCH_VALUES = new Set(['', 'all', 'all branches', 'all_branches', 'undefined', 'null']);
+
+function resolveDashboardBranch(req) {
+  const isAdmin = (req.user?.role || 'operator') === 'admin';
+  const toId = (value) => {
+    const parsed = parseInt(value, 10);
+    return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === String(value).trim() ? parsed : null;
+  };
+
+  if (!isAdmin) {
+    const branchId = toId(req.user?.branch_id);
+    if (!branchId) return { forbidden: true };
+    return { branchId, branchCode: req.user?.branch_code ? String(req.user.branch_code).trim() : null };
+  }
+
+  const raw = req.query.branch_id ?? req.query.branch ?? '';
+  const selected = String(raw).trim();
+  if (ALL_BRANCH_VALUES.has(selected.toLowerCase())) return { branchId: null, branchCode: null };
+  const branchId = toId(selected);
+  if (branchId) return { branchId, branchCode: null };
+  return { branchId: null, branchCode: selected };
+}
+
+function buildBranchCondition({ branchId, branchCode }, startIndex = 1) {
+  const params = [];
+  const parts = [];
+  if (branchId) {
+    params.push(branchId);
+    parts.push(`branch_id = $${startIndex + params.length - 1}`);
+  }
+  if (branchCode) {
+    params.push(branchCode);
+    parts.push(`(branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($${startIndex + params.length - 1})))`);
+  }
+  return { sql: parts.length ? `(${parts.join(' OR ')})` : '', params };
+}
+
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
-    const userRole = req.user?.role || 'operator';
-    const userBranchId = req.user?.branch_id ? parseInt(req.user.branch_id, 10) : null;
-    const userBranchCode = req.user?.branch_code || null;
-    const isAdmin = userRole === 'admin';
+    const scope = resolveDashboardBranch(req);
+    if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
 
-    if (!isAdmin && (!Number.isSafeInteger(userBranchId) || userBranchId <= 0)) {
-      return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
-    }
-
-    let effectiveBranchId = userBranchId;
-    let effectiveBranchCode = userBranchCode;
-
-    if (isAdmin) {
-      const selectedBranchId = req.query.branch_id;
-      if (selectedBranchId && selectedBranchId !== 'all') {
-        const parsed = parseInt(selectedBranchId, 10);
-        if (Number.isSafeInteger(parsed) && parsed > 0) {
-          effectiveBranchId = parsed;
-          effectiveBranchCode = null;
-        } else {
-          effectiveBranchId = null;
-          effectiveBranchCode = null;
-        }
-      } else {
-        effectiveBranchId = null;
-        effectiveBranchCode = null;
-      }
-    }
-
-    let branchCondition = '';
-    if (effectiveBranchId) {
-      const safeCode = effectiveBranchCode ? effectiveBranchCode.replace(/'/g, "''") : '';
-      branchCondition = `WHERE (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
-    } else if (effectiveBranchCode) {
-      const safeCode = effectiveBranchCode.replace(/'/g, "''");
-      branchCondition = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
-    }
-
-    const consignmentWhere = branchCondition
-      ? `${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE`
-      : 'WHERE COALESCE(is_deleted, FALSE) = FALSE';
+    const branch = buildBranchCondition(scope);
+    const where = (...conditions) => {
+      const all = [branch.sql, ...conditions].filter(Boolean);
+      return all.length ? `WHERE ${all.join(' AND ')}` : '';
+    };
 
     const [recentBilties, recentMR, recentClaims] = await Promise.allSettled([
-      pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') as payment_status, created_at FROM consignments ${consignmentWhere} ORDER BY created_at DESC NULLS LAST LIMIT 5`),
-      pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${branchCondition} ORDER BY created_at DESC NULLS LAST LIMIT 5`),
-      pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') as status, created_at FROM claims ${branchCondition} ORDER BY created_at DESC NULLS LAST LIMIT 3`)
+      pool.query(
+        `SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') AS payment_status, created_at FROM consignments ${where('COALESCE(is_deleted, FALSE) = FALSE')} ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 5`,
+        branch.params
+      ),
+      pool.query(
+        `SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 5`,
+        branch.params
+      ),
+      pool.query(
+        `SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') AS status, created_at FROM claims ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 3`,
+        branch.params
+      )
     ]);
 
     const rowsOrEmpty = (result, label) => {
@@ -613,49 +626,22 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
 
 app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
   try {
-    const userRole = req.user?.role || 'operator';
-    const userBranchId = req.user?.branch_id ? parseInt(req.user.branch_id, 10) : null;
-    const userBranchCode = req.user?.branch_code || null;
-    const isAdmin = userRole === 'admin';
+    const scope = resolveDashboardBranch(req);
+    if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
 
-    if (!isAdmin && (!Number.isSafeInteger(userBranchId) || userBranchId <= 0)) {
-      return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
-    }
+    const branch = buildBranchCondition(scope);
+    const conditions = [branch.sql, 'COALESCE(is_deleted, FALSE) = FALSE', 'consignor_name IS NOT NULL'].filter(Boolean);
 
-    let effectiveBranchId = userBranchId;
-    let effectiveBranchCode = userBranchCode;
-
-    if (isAdmin) {
-      const selectedBranchId = req.query.branch_id;
-      if (selectedBranchId && selectedBranchId !== 'all') {
-        const parsed = parseInt(selectedBranchId, 10);
-        if (Number.isSafeInteger(parsed) && parsed > 0) {
-          effectiveBranchId = parsed;
-          effectiveBranchCode = null;
-        } else {
-          effectiveBranchId = null;
-          effectiveBranchCode = null;
-        }
-      } else {
-        effectiveBranchId = null;
-        effectiveBranchCode = null;
-      }
-    }
-
-    let branchCondition = '';
-    if (effectiveBranchId) {
-      const safeCode = effectiveBranchCode ? effectiveBranchCode.replace(/'/g, "''") : '';
-      branchCondition = `WHERE (branch_id = ${effectiveBranchId} ${safeCode ? `OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))` : ''})`;
-    } else if (effectiveBranchCode) {
-      const safeCode = effectiveBranchCode.replace(/'/g, "''");
-      branchCondition = `WHERE (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${safeCode}')))`;
-    }
-
-    const consignmentWhere = branchCondition
-      ? `${branchCondition} AND COALESCE(is_deleted, FALSE) = FALSE`
-      : 'WHERE COALESCE(is_deleted, FALSE) = FALSE';
-
-    const result = await pool.query(`SELECT consignor_name, consignor_code, COUNT(*) as total_bilties, COALESCE(SUM(NULLIF(grand_total::text, '')::NUMERIC), 0) as total_revenue FROM consignments ${consignmentWhere} AND consignor_name IS NOT NULL GROUP BY consignor_name, consignor_code ORDER BY total_revenue DESC NULLS LAST LIMIT 5`);
+    const result = await pool.query(
+      `SELECT consignor_name, consignor_code, COUNT(*) AS total_bilties,
+        COALESCE(SUM(CASE WHEN grand_total::text ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN grand_total::text::NUMERIC ELSE 0 END), 0) AS total_revenue
+       FROM consignments
+       WHERE ${conditions.join(' AND ')}
+       GROUP BY consignor_name, consignor_code
+       ORDER BY total_revenue DESC NULLS LAST
+       LIMIT 5`,
+      branch.params
+    );
     res.json({ success: true, data: result?.rows || [] });
   } catch (err) {
     console.error('Dashboard top parties error:', err.message);
