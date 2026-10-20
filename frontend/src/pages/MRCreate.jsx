@@ -41,7 +41,7 @@ export default function MRCreate() {
   const fetchBilties = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/consignments`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -139,7 +139,7 @@ export default function MRCreate() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const payload = {
         ...formData,

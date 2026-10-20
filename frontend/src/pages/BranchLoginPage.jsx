@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 
-const API_URL = 'https://bharat-transport-api.onrender.com'
+const API_URL = (import.meta.env.VITE_API_URL || '')
 
 export default function BranchLoginPage() {
   const { slug } = useParams()

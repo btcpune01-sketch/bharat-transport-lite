@@ -10,7 +10,7 @@ export default function Customers() {
     const fetchCustomers = async () => {
       try {
         const token = localStorage.getItem('token')
-        const apiUrl = 'https://bharat-transport-api.onrender.com'
+        const apiUrl = (import.meta.env.VITE_API_URL || '')
         const res = await fetch(`${apiUrl}/api/customers`, { headers: { 'Authorization': `Bearer ${token}` } })
         const data = await res.json()
         setCustomers(Array.isArray(data) ? data : [])

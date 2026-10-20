@@ -35,7 +35,7 @@ export default function Drivers() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/drivers`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setDrivers(data.data || [])
@@ -49,7 +49,7 @@ export default function Drivers() {
   const fetchExpiryAlerts = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setExpiryAlerts(data.data || [])
@@ -71,7 +71,7 @@ export default function Drivers() {
     }
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       let res
       if (editingDriver) {
         res = await fetch(`${apiUrl}/api/drivers/${editingDriver.id}`, {
@@ -123,7 +123,7 @@ export default function Drivers() {
     if (!confirm(`क्या आप ${driver.driver_name} का status बदलना चाहते हैं?`)) return
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       await fetch(`${apiUrl}/api/drivers/${driver.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

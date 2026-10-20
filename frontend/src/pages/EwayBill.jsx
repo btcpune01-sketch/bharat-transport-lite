@@ -23,7 +23,7 @@ export default function EwayBill() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const res = await fetch(`${apiUrl}/api/eway-bills`, { headers })
@@ -56,7 +56,7 @@ export default function EwayBill() {
     e.preventDefault()
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const res = await fetch(`${apiUrl}/api/eway-bills/${editId}`, {
         method: 'PUT',

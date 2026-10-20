@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import api from '../api';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://bharat-transport-api.onrender.com';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 const preferredMeasurement = (primary, legacy) => {
   const primaryNumber = Number(primary);

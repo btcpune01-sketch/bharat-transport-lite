@@ -33,7 +33,7 @@ export default function POD({ branchMode = false }) {
   const fetchBranches = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/branches`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setBranches(data.data || [])
@@ -44,7 +44,7 @@ export default function POD({ branchMode = false }) {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const branchParam = branchFilter ? `?branch_id=${branchFilter}` : ''
       const [podRes, biltyRes] = await Promise.all([
@@ -75,7 +75,7 @@ export default function POD({ branchMode = false }) {
     }
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/pod`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

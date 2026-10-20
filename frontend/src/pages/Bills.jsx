@@ -11,7 +11,7 @@ export default function Bills() {
     const fetchBills = async () => {
       try {
         const token = localStorage.getItem('token')
-        const apiUrl = 'https://bharat-transport-api.onrender.com'
+        const apiUrl = (import.meta.env.VITE_API_URL || '')
         const res = await fetch(`${apiUrl}/api/bills`, { headers: { 'Authorization': `Bearer ${token}` } })
         const data = await res.json()
         setBills(data.data || [])

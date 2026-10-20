@@ -17,7 +17,7 @@ export default function Accounts() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const resSummary = await fetch(`${apiUrl}/api/accounts/summary`, { headers })

@@ -14,7 +14,7 @@ export default function Outstanding() {
     try {
       setLoading(true); setError(null)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/outstanding`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to fetch outstanding')
       const d = await res.json()

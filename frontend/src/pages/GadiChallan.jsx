@@ -49,7 +49,7 @@ export default function GadiChallan() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const res = await fetch(`${apiUrl}/api/gadi-challan`, { headers })
@@ -67,7 +67,7 @@ export default function GadiChallan() {
   const fetchBilties = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const res = await fetch(`${apiUrl}/api/consignments`, { headers })
@@ -134,7 +134,7 @@ export default function GadiChallan() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
 
       const url = editId ? `${apiUrl}/api/gadi-challan/${editId}` : `${apiUrl}/api/gadi-challan`
       const method = editId ? 'PUT' : 'POST'

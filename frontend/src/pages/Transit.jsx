@@ -27,7 +27,7 @@ export default function Transit() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       // Fetch Manifests
@@ -68,7 +68,7 @@ export default function Transit() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const payload = {
         ...formData,

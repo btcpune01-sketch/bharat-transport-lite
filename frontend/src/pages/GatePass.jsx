@@ -24,7 +24,7 @@ export default function GatePass() {
     
     try {
       const token = localStorage.getItem('token')
-      const response = await fetch(`${'https://bharat-transport-api.onrender.com'}/api/gate-pass`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/gate-pass`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

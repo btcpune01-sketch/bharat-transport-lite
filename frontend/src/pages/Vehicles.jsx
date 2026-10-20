@@ -34,7 +34,7 @@ export default function Vehicles() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/vehicles`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setVehicles(data.data || [])
@@ -48,7 +48,7 @@ export default function Vehicles() {
   const fetchExpiryAlerts = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setExpiryAlerts(data.data || [])
@@ -70,7 +70,7 @@ export default function Vehicles() {
     }
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       let res
       if (editingVehicle) {
         res = await fetch(`${apiUrl}/api/vehicles/${editingVehicle.id}`, {
@@ -122,7 +122,7 @@ export default function Vehicles() {
     if (!confirm(`क्या आप ${vehicle.vehicle_no} का status बदलना चाहते हैं?`)) return
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       await fetch(`${apiUrl}/api/vehicles/${vehicle.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

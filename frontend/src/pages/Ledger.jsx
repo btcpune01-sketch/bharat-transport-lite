@@ -16,7 +16,7 @@ export default function Ledger() {
   const fetchParties = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/parties`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (res.ok) { const d = await res.json(); setParties(d.data || []) }
     } catch (e) { console.error(e) }
@@ -27,7 +27,7 @@ export default function Ledger() {
     try {
       setLoading(true); setError(null)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/ledger/${code}`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Ledger fetch failed')
       const d = await res.json()

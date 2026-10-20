@@ -17,7 +17,7 @@ export default function MR() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const res = await fetch(`${apiUrl}/api/mr`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setMrs(data.data || [])
@@ -32,7 +32,7 @@ export default function MR() {
     if (!confirm('क्या आप इस MR को delete करना चाहते हैं?')) return
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const response = await fetch(`${apiUrl}/api/mr/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }

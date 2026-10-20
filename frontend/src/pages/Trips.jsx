@@ -34,7 +34,7 @@ export default function Trips() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const res = await fetch(`${apiUrl}/api/trips`, { headers })
@@ -59,7 +59,7 @@ export default function Trips() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
 
       const url = editId ? `${apiUrl}/api/trips/${editId}` : `${apiUrl}/api/trips`
       const method = editId ? 'PUT' : 'POST'
@@ -120,7 +120,7 @@ export default function Trips() {
   const handleStatusChange = async (tripId, newStatus) => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const res = await fetch(`${apiUrl}/api/trips/${tripId}`, {
         method: 'PUT',

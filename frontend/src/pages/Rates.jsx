@@ -36,7 +36,7 @@ export default function Rates() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const res = await fetch(`${apiUrl}/api/rates`, { headers })
@@ -61,7 +61,7 @@ export default function Rates() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
 
       const url = editId ? `${apiUrl}/api/rates/${editId}` : `${apiUrl}/api/rates`
       const method = editId ? 'PUT' : 'POST'
@@ -123,7 +123,7 @@ export default function Rates() {
     
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const res = await fetch(`${apiUrl}/api/rates/${id}`, {
         method: 'DELETE',
@@ -146,7 +146,7 @@ export default function Rates() {
 
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       
       const res = await fetch(`${apiUrl}/api/rates/calculate`, {
         method: 'POST',

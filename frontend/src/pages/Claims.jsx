@@ -28,7 +28,7 @@ export default function Claims() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       const res = await fetch(`${apiUrl}/api/claims`, { headers })
@@ -53,7 +53,7 @@ export default function Claims() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = 'https://bharat-transport-api.onrender.com'
+      const apiUrl = (import.meta.env.VITE_API_URL || '')
 
       const url = editId ? `${apiUrl}/api/claims/${editId}` : `${apiUrl}/api/claims`
       const method = editId ? 'PUT' : 'POST'
