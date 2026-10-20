@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dashboardAPI } from '../api';
 
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
@@ -31,7 +33,7 @@ const Dashboard = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return [];
-      const res = await fetch('/api/branches', {
+      const res = await fetch(`${API_BASE}/api/branches`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
@@ -58,9 +60,9 @@ const Dashboard = () => {
           : '';
 
         const [statsRes, recentRes, topRes, branchesList] = await Promise.allSettled([
-          fetch(`/api/dashboard/stats${branchFilterParam}`, { headers }).then(r => r.json()),
-          fetch(`/api/dashboard/recent${branchFilterParam}`, { headers }).then(r => r.json()),
-          fetch(`/api/dashboard/top-parties${branchFilterParam}`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/dashboard/stats${branchFilterParam}`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/dashboard/recent${branchFilterParam}`, { headers }).then(r => r.json()),
+          fetch(`${API_BASE}/api/dashboard/top-parties${branchFilterParam}`, { headers }).then(r => r.json()),
           fetchBranches()
         ]);
 
