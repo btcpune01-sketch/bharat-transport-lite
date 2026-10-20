@@ -1,9 +1,9 @@
 import axios from 'axios'
 
-// ✅ FIX: Use empty string to route to the same domain (Vercel backend)
-const API_URL = import.meta.env.VITE_API_URL || 'https://bharat-transport-lite-iemb.vercel.app'
+// ✅ FIX: Monorepo Setup - Use current domain (Empty string = same origin)
+const API_URL = import.meta.env.VITE_API_URL || ''
 
-console.info('API base URL:', API_URL || 'Current Domain (Relative)')
+console.info('API base URL:', API_URL || 'Current Domain (Same Origin)')
 
 function getActiveBranchSession() {
   const match = window.location.hash.match(/^#\/branch\/([^/?#]+)/)
@@ -310,7 +310,7 @@ export const auditAPI = {
 // PUBLIC TRACKING API (No auth needed)
 // ============================================
 export const trackAPI = {
-  track: (lr_no) => axios.get(`/api/consignments/track?lr_no=${lr_no}`)
+  track: (lr_no) => api.get(`/api/consignments/track?lr_no=${lr_no}`)
 }
 
 // ============================================
