@@ -71,7 +71,8 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/rates\/calculate$/,
   /^\/api\/accounts\/summary$/,
   /^\/api\/accounts\/tds-register$/,
-  /^\/api\/eway-bills(?:\/\d+)?$/
+  /^\/api\/eway-bills(?:\/\d+)?$/,
+  /^\/api\/branch-payments(?:\/summary)?$/
 ]
 
 function getRecordRoute(path) {

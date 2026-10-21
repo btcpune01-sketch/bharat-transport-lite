@@ -37,6 +37,7 @@ const Claims = lazy(() => import('./pages/Claims'))
 const Users = lazy(() => import('./pages/Users'))
 const Backup = lazy(() => import('./pages/Backup'))
 const BranchPayments = lazy(() => import('./pages/BranchPayments'))
+const Settings = lazy(() => import('./pages/Settings'))
 const StockManagement = lazy(() => import('./pages/StockManagement'))
 const BranchPortal = lazy(() => import('./pages/BranchPortal'))
 const BranchLoginPage = lazy(() => import('./pages/BranchLoginPage'))
@@ -156,6 +157,7 @@ function App() {
           <Route path="/pod-upload" element={<PODUpload />} />
           <Route path="/pod-view" element={<PODView />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
+          <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
           <Route path="/branch/:branchSlug" element={<BranchPortal />} />
 
           {/* --- FIXED BRANCH LAYOUT ROUTES - Nested with Outlet --- */}
@@ -201,6 +203,7 @@ function App() {
           <Route path="/eway" element={<PrivateRoute><EwayBill /></PrivateRoute>} />
           <Route path="/claims" element={<PrivateRoute><Claims /></PrivateRoute>} />
           <Route path="/users" element={<PrivateRoute><Users /></PrivateRoute>} />
+          <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
           <Route path="/backup" element={<PrivateRoute><Backup /></PrivateRoute>} />
           <Route path="/branch-payments" element={<PrivateRoute><BranchPayments /></PrivateRoute>} />
           <Route path="/stock" element={<PrivateRoute><StockManagement /></PrivateRoute>} />

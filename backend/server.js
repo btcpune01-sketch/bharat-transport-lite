@@ -64,6 +64,117 @@ const pool = new Pool({
   max: 20,
 });
 const branchAccessMiddleware = createBranchAccessMiddleware(pool);
+let branchPaymentsSchemaPromise = null;
+
+async function ensureBranchPaymentsSchema() {
+  if (!branchPaymentsSchemaPromise) {
+    branchPaymentsSchemaPromise = (async () => {
+      let client;
+      try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(71402026)');
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS branch_payments (
+            id BIGSERIAL PRIMARY KEY,
+            branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+            branch_name TEXT NOT NULL,
+            payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            amount NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+            type TEXT NOT NULL CHECK (type IN ('given', 'received')),
+            payment_mode TEXT NOT NULL CHECK (payment_mode IN ('Cash', 'UPI', 'Bank')),
+            notes TEXT,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS branch_ledger (
+            id BIGSERIAL PRIMARY KEY,
+            branch_id INTEGER NOT NULL UNIQUE REFERENCES branches(id) ON DELETE RESTRICT,
+            branch_name TEXT NOT NULL,
+            total_given NUMERIC(14,2) NOT NULL DEFAULT 0,
+            total_received NUMERIC(14,2) NOT NULL DEFAULT 0,
+            current_balance NUMERIC(14,2) NOT NULL DEFAULT 0,
+            last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS branch_payments_branch_name_idx
+          ON branch_payments (branch_name)
+        `);
+        await client.query(`
+          CREATE INDEX IF NOT EXISTS branch_payments_branch_date_idx
+          ON branch_payments (branch_id, payment_date DESC, created_at DESC)
+        `);
+        await client.query(`
+          CREATE OR REPLACE FUNCTION sync_branch_ledger_from_payment()
+          RETURNS TRIGGER AS $$
+          BEGIN
+            INSERT INTO branch_ledger (
+              branch_id, branch_name, total_given, total_received, current_balance, last_updated
+            )
+            VALUES (
+              NEW.branch_id,
+              NEW.branch_name,
+              CASE WHEN NEW.type = 'given' THEN NEW.amount ELSE 0 END,
+              CASE WHEN NEW.type = 'received' THEN NEW.amount ELSE 0 END,
+              CASE WHEN NEW.type = 'given' THEN NEW.amount ELSE -NEW.amount END,
+              NOW()
+            )
+            ON CONFLICT (branch_id) DO UPDATE SET
+              branch_name = EXCLUDED.branch_name,
+              total_given = branch_ledger.total_given + EXCLUDED.total_given,
+              total_received = branch_ledger.total_received + EXCLUDED.total_received,
+              current_balance = (branch_ledger.total_given + EXCLUDED.total_given)
+                - (branch_ledger.total_received + EXCLUDED.total_received),
+              last_updated = NOW();
+            RETURN NEW;
+          END;
+          $$ LANGUAGE plpgsql
+        `);
+        await client.query(`
+          DROP TRIGGER IF EXISTS branch_payments_sync_ledger ON branch_payments
+        `);
+        await client.query(`
+          CREATE TRIGGER branch_payments_sync_ledger
+          AFTER INSERT ON branch_payments
+          FOR EACH ROW EXECUTE FUNCTION sync_branch_ledger_from_payment()
+        `);
+        await client.query(`
+          INSERT INTO branch_ledger (
+            branch_id, branch_name, total_given, total_received, current_balance, last_updated
+          )
+          SELECT
+            p.branch_id,
+            COALESCE(MAX(b.branch_name), MAX(p.branch_name)),
+            COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN p.type = 'received' THEN p.amount ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END), 0),
+            NOW()
+          FROM branch_payments p
+          LEFT JOIN branches b ON b.id = p.branch_id
+          GROUP BY p.branch_id
+          ON CONFLICT (branch_id) DO UPDATE SET
+            branch_name = EXCLUDED.branch_name,
+            total_given = EXCLUDED.total_given,
+            total_received = EXCLUDED.total_received,
+            current_balance = EXCLUDED.current_balance,
+            last_updated = NOW()
+        `);
+        await client.query('COMMIT');
+      } catch (error) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        branchPaymentsSchemaPromise = null;
+        throw error;
+      } finally {
+        if (client) client.release();
+      }
+    })();
+  }
+
+  return branchPaymentsSchemaPromise;
+}
 
 app.use('/api/branch-login', createBranchAuthRouter(pool));
 
@@ -391,6 +502,185 @@ function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 }
+
+function getBranchPaymentsScope(req, res) {
+  const role = String(req.user?.role || '').toLowerCase();
+  const isBranchUser = role === 'branch' || role === 'branch_user';
+  if (role !== 'admin' && !isBranchUser) {
+    res.status(403).json({ error: 'Only admins and branch staff can access the branch payment ledger.' });
+    return null;
+  }
+
+  if (isBranchUser) {
+    const branchId = Number(req.user?.branch_id);
+    if (!Number.isSafeInteger(branchId) || branchId < 1) {
+      res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+      return null;
+    }
+    return { branchId, isBranchUser: true };
+  }
+
+  if (req.query.branch_id === undefined || req.query.branch_id === '') {
+    return { branchId: null, isBranchUser: false };
+  }
+
+  const branchId = Number(req.query.branch_id);
+  if (!Number.isSafeInteger(branchId) || branchId < 1) {
+    res.status(400).json({ error: 'Branch filter must be a valid branch ID.' });
+    return null;
+  }
+  return { branchId, isBranchUser: false };
+}
+
+app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
+  const scope = getBranchPaymentsScope(req, res);
+  if (!scope) return;
+
+  try {
+    await ensureBranchPaymentsSchema();
+    const params = scope.branchId === null ? [] : [scope.branchId];
+    const branchFilter = scope.branchId === null ? '' : 'WHERE b.id = $1';
+    const ledgerFilter = scope.branchId === null ? '' : 'WHERE branch_id = $1';
+    const [branchesResult, totalsResult] = await Promise.all([
+      pool.query(
+        `SELECT b.id, b.branch_code, b.branch_name, b.is_active,
+                COALESCE(l.total_given, 0) AS total_given,
+                COALESCE(l.total_received, 0) AS total_received,
+                COALESCE(l.current_balance, 0) AS current_balance,
+                l.last_updated
+         FROM branches b
+         LEFT JOIN branch_ledger l ON l.branch_id = b.id
+         ${branchFilter}
+         ORDER BY b.branch_name`,
+        params
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(total_given), 0) AS total_given,
+                COALESCE(SUM(total_received), 0) AS total_received,
+                COALESCE(SUM(current_balance), 0) AS current_balance
+         FROM branch_ledger ${ledgerFilter}`,
+        params
+      )
+    ]);
+
+    return res.json({
+      success: true,
+      summary: totalsResult.rows[0],
+      branches: branchesResult.rows
+    });
+  } catch (error) {
+    console.error('GET /api/branch-payments/summary error:', error.message);
+    return res.status(500).json({ error: 'Unable to load branch payment balances.' });
+  }
+});
+
+app.get('/api/branch-payments', authMiddleware, async (req, res) => {
+  const scope = getBranchPaymentsScope(req, res);
+  if (!scope) return;
+
+  try {
+    await ensureBranchPaymentsSchema();
+    const conditions = [];
+    const params = [];
+    if (scope.branchId !== null) {
+      params.push(scope.branchId);
+      conditions.push(`p.branch_id = $${params.length}`);
+    }
+    if (typeof req.query.search === 'string' && req.query.search.trim()) {
+      params.push(`%${req.query.search.trim().slice(0, 100)}%`);
+      conditions.push(`b.branch_name ILIKE $${params.length}`);
+    }
+
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isSafeInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 250;
+    params.push(limit);
+    const result = await pool.query(
+      `SELECT p.id, p.branch_id, COALESCE(b.branch_name, p.branch_name) AS branch_name,
+              TO_CHAR(p.payment_date, 'YYYY-MM-DD') AS date, p.amount, p.type,
+              p.payment_mode, p.notes, p.created_by, p.created_at,
+              SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END)
+                OVER (
+                  PARTITION BY p.branch_id
+                  ORDER BY p.payment_date ASC, p.created_at ASC, p.id ASC
+                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS balance_after_transaction
+       FROM branch_payments p
+       LEFT JOIN branches b ON b.id = p.branch_id
+       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+       ORDER BY p.payment_date DESC, p.created_at DESC, p.id DESC
+       LIMIT $${params.length}`,
+      params
+    );
+    return res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('GET /api/branch-payments error:', error.message);
+    return res.status(500).json({ error: 'Unable to load branch payment transactions.' });
+  }
+});
+
+app.post('/api/branch-payments', authMiddleware, async (req, res) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  const isBranchUser = role === 'branch' || role === 'branch_user';
+  if (role !== 'admin' && !isBranchUser) {
+    return res.status(403).json({ error: 'Only admins and branch staff can create branch payment entries.' });
+  }
+
+  const type = String(req.body?.type || '').toLowerCase();
+  if (!['given', 'received'].includes(type)) {
+    return res.status(400).json({ error: 'Payment type must be given or received.' });
+  }
+  if (isBranchUser && type !== 'received') {
+    return res.status(403).json({ error: 'Branch staff can only record payments returned to admin.' });
+  }
+
+  const amountText = String(req.body?.amount ?? '').trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(amountText) || Number(amountText) <= 0 || Number(amountText) > 999999999999) {
+    return res.status(400).json({ error: 'Enter a valid positive payment amount with up to two decimal places.' });
+  }
+
+  const date = String(req.body?.date || req.body?.payment_date || '').trim();
+  const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
+  if (!parsedDate || Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== date) {
+    return res.status(400).json({ error: 'Enter a valid payment date.' });
+  }
+
+  const paymentMode = String(req.body?.payment_mode || '').trim();
+  if (!['Cash', 'UPI', 'Bank'].includes(paymentMode)) {
+    return res.status(400).json({ error: 'Payment mode must be Cash, UPI, or Bank.' });
+  }
+
+  const branchId = isBranchUser ? Number(req.user.branch_id) : Number(req.body?.branch_id);
+  if (!Number.isSafeInteger(branchId) || branchId < 1) {
+    return res.status(400).json({ error: 'Select a valid branch.' });
+  }
+
+  const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 1000) : '';
+  const createdBy = String(req.user?.username || req.user?.full_name || 'user').slice(0, 120);
+
+  try {
+    await ensureBranchPaymentsSchema();
+    const branchResult = await pool.query(
+      `SELECT id, branch_name FROM branches
+       WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE`,
+      [branchId]
+    );
+    const branch = branchResult.rows[0];
+    if (!branch) return res.status(404).json({ error: 'The selected branch is unavailable.' });
+
+    const result = await pool.query(
+      `INSERT INTO branch_payments
+         (branch_id, branch_name, payment_date, amount, type, payment_mode, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, branch_id, branch_name, TO_CHAR(payment_date, 'YYYY-MM-DD') AS date,
+                 amount, type, payment_mode, notes, created_by, created_at`,
+      [branch.id, branch.branch_name, date, amountText, type, paymentMode, notes, createdBy]
+    );
+    return res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('POST /api/branch-payments error:', error.message);
+    return res.status(500).json({ error: 'Unable to save the branch payment entry.' });
+  }
+});
 
 async function logAudit(action, module, recordId, details, performedBy, branchId = null) {
   try {

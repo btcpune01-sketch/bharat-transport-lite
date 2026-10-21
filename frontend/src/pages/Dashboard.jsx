@@ -1,582 +1,401 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { dashboardAPI } from '../api';
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  BarChart3,
+  Building2,
+  ChevronRight,
+  LayoutDashboard,
+  LogOut,
+  RefreshCw,
+  Search,
+  Settings,
+  Wallet
+} from 'lucide-react'
+import { useAuth } from '../AuthContext'
+import { branchAPI, branchPaymentsAPI } from '../api'
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const navItems = [
+  { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
+  { label: 'Branch Portal', to: '/branch-portal', icon: Building2 },
+  { label: 'Branch Payments', to: '/branch-payments', icon: Wallet },
+  { label: 'Reports', to: '/reports', icon: BarChart3 },
+  { label: 'Settings', to: '/settings', icon: Settings }
+]
 
-const Dashboard = () => {
-  const navigate = useNavigate();
-  const [stats, setStats] = useState(null);
-  const [recentBilties, setRecentBilties] = useState([]);
-  const [recentMR, setRecentMR] = useState([]);
-  const [topParties, setTopParties] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [selectedBranch, setSelectedBranch] = useState('all');
-  const [expandedCategory, setExpandedCategory] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [user, setUser] = useState(null);
+const numeric = (value) => Number(value || 0)
+const formatINR = (value) =>
+  `₹${numeric(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+const formatDate = (value) => {
+  if (!value) return '—'
+  const dateValue = String(value).slice(0, 10)
+  const date = new Date(`${dateValue}T00:00:00`)
+  return Number.isNaN(date.valueOf())
+    ? '—'
+    : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+}
 
-  useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) setUser(JSON.parse(storedUser));
-    } catch(e) {}
-  }, []);
+function Navigation({ mobile = false }) {
+  const location = useLocation()
 
-  const fetchBranches = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return [];
-      const res = await fetch(`${API_BASE}/api/branches`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data && Array.isArray(data.data)) {
-        return data.data;
-      }
-      return [];
-    } catch (err) {
-      console.error('Branches fetch error:', err);
-      return [];
-    }
-  };
+  return (
+    <nav className={mobile ? 'flex gap-2 overflow-x-auto px-4 pb-3 lg:hidden' : 'space-y-1'}>
+      {navItems.map(({ label, to, icon: Icon }) => {
+        const active = location.pathname === to ||
+          (to !== '/dashboard' && location.pathname.startsWith(`${to}/`))
+        return (
+          <Link
+            key={label}
+            to={to}
+            className={mobile
+              ? `flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${active ? 'bg-blue-700 text-white' : 'bg-white text-slate-600'}`
+              : `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active ? 'bg-blue-700 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
+            }
+          >
+            <Icon size={18} strokeWidth={2} />
+            <span>{label}</span>
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const isAdmin = user?.role === 'admin';
-        
-        // Admin can filter by branch, branch users are automatically filtered by backend
-        const branchFilterParam = (isAdmin && selectedBranch !== 'all') 
-          ? `?branch_id=${selectedBranch}` 
-          : '';
-
-        const [statsRes, recentRes, topRes, branchesList] = await Promise.allSettled([
-          fetch(`${API_BASE}/api/dashboard/stats${branchFilterParam}`, { headers }).then(r => r.json()),
-          fetch(`${API_BASE}/api/dashboard/recent${branchFilterParam}`, { headers }).then(r => r.json()),
-          fetch(`${API_BASE}/api/dashboard/top-parties${branchFilterParam}`, { headers }).then(r => r.json()),
-          fetchBranches()
-        ]);
-
-        if (statsRes.status === 'fulfilled' && statsRes.value?.success) {
-          setStats(statsRes.value);
-        }
-
-        if (recentRes.status === 'fulfilled' && recentRes.value?.success) {
-          setRecentBilties(Array.isArray(recentRes.value.bilties) ? recentRes.value.bilties : []);
-          setRecentMR(Array.isArray(recentRes.value.receipts) ? recentRes.value.receipts : []);
-        }
-
-        if (topRes.status === 'fulfilled' && topRes.value?.success) {
-          setTopParties(Array.isArray(topRes.value.data) ? topRes.value.data : []);
-        }
-
-        if (branchesList.status === 'fulfilled' && Array.isArray(branchesList.value)) {
-          setBranches(branchesList.value);
-        }
-      } catch (error) {
-        console.error('Dashboard fetch error:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [selectedBranch, user]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login');
-  };
-
-  const handleBranchChange = (e) => {
-    setSelectedBranch(e.target.value);
-  };
-
-  const toggleCategory = (id) => {
-    setExpandedCategory(expandedCategory === id ? null : id);
-  };
-
-  const isAdmin = user?.role === 'admin';
-
-  const categories = [
-    {
-      id: 'bilty',
-      name: 'Bilty/LR',
-      icon: '🚚',
-      gradient: 'from-blue-500 to-blue-700',
-      functions: [
-        { name: 'New Bilty', icon: '📝', path: '/consignments/new' },
-        { name: 'Bilty List', icon: '📋', path: '/consignments' },
-        { name: 'Bilty Print', icon: '🖨️', path: '/bilty-print' },
-        { name: 'Track Bilty', icon: '📍', path: '/track' },
-        { name: 'POD', icon: '✅', path: '/pod' },
-        { name: 'POD Upload', icon: '📤', path: '/pod-upload' },
-      ]
-    },
-    {
-      id: 'billing',
-      name: 'Billing',
-      icon: '💰',
-      gradient: 'from-emerald-500 to-emerald-700',
-      functions: [
-        { name: 'New Bill', icon: '📄', path: '/bill-entry' },
-        { name: 'Bill List', icon: '📑', path: '/bills' },
-        { name: 'Bill Print', icon: '🖨️', path: '/bill-print' },
-        { name: 'Money Receipt', icon: '💵', path: '/mr' },
-        { name: 'Create MR', icon: '➕', path: '/mr/create' },
-        { name: 'MR Print', icon: '🧾', path: '/mr-print' },
-        { name: 'Outstanding', icon: '⏳', path: '/outstanding' },
-        { name: 'Payments', icon: '💸', path: '/branch-payments' },
-      ]
-    },
-    {
-      id: 'party',
-      name: 'Parties',
-      icon: '👥',
-      gradient: 'from-purple-500 to-purple-700',
-      functions: [
-        { name: 'Customers', icon: '👤', path: '/customers' },
-        { name: 'Party List', icon: '📇', path: '/party' },
-        { name: 'New Party', icon: '➕', path: '/party/new' },
-        { name: 'Ledger', icon: '📒', path: '/ledger' },
-      ]
-    },
-    {
-      id: 'vehicle',
-      name: 'Vehicle & Driver',
-      icon: '🚛',
-      gradient: 'from-red-500 to-red-700',
-      functions: [
-        { name: 'Drivers', icon: '👨‍✈️', path: '/drivers' },
-        { name: 'Vehicles', icon: '🚗', path: '/vehicles' },
-        { name: 'Trips', icon: '🗺️', path: '/trips' },
-        { name: 'Transit', icon: '🔄', path: '/transit' },
-        { name: 'Gadi Challan', icon: '📄', path: '/gadi-challan' },
-        { name: 'Gadi Print', icon: '🖨️', path: '/gadi-challan-print' },
-      ]
-    },
-    {
-      id: 'branch',
-      name: 'Branch',
-      icon: '🏢',
-      gradient: 'from-teal-500 to-teal-700',
-      functions: [
-        { name: 'Branches', icon: '🏬', path: '/branches' },
-        { name: 'Gate Pass', icon: '🎫', path: '/gate-pass' },
-        { name: 'Branch Portal', icon: '🌐', path: '/branch-portal' },
-        { name: 'Branch Login', icon: '🔐', path: '/branch-login' },
-      ]
-    },
-    {
-      id: 'accounts',
-      name: 'Accounts',
-      icon: '💼',
-      gradient: 'from-indigo-500 to-indigo-700',
-      functions: [
-        { name: 'Accounts', icon: '💼', path: '/accounts' },
-        { name: 'Expenses', icon: '💰', path: '/expenses' },
-        { name: 'Commissions', icon: '💵', path: '/commissions' },
-        { name: 'Claims', icon: '📑', path: '/claims' },
-        { name: 'E-Way Bill', icon: '🧾', path: '/eway' },
-      ]
-    },
-    {
-      id: 'reports',
-      name: 'Reports',
-      icon: '📈',
-      gradient: 'from-orange-500 to-orange-700',
-      functions: [
-        { name: 'Reports', icon: '📊', path: '/reports' },
-        { name: 'Audit Logs', icon: '📋', path: '/audit' },
-        { name: 'Analytics', icon: '📉', path: '/reports' },
-        { name: 'Backup', icon: '💾', path: '/backup' },
-      ]
-    },
-    {
-      id: 'master',
-      name: 'Master Data',
-      icon: '⚙️',
-      gradient: 'from-pink-500 to-pink-700',
-      functions: [
-        { name: 'Freight Rates', icon: '💲', path: '/rates' },
-        { name: 'Stock Mgmt', icon: '📦', path: '/stock' },
-        { name: 'Users', icon: '👤', path: '/users' },
-        { name: 'Settings', icon: '⚙️', path: '/settings' },
-      ]
-    }
-  ];
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-20 w-20 border-4 border-blue-500 border-t-transparent mx-auto"></div>
-          <p className="mt-6 text-xl text-white font-medium">Loading Dashboard...</p>
-        </div>
-      </div>
-    );
+function MetricCard({ label, value, detail, icon: Icon, tone }) {
+  const tones = {
+    blue: 'bg-blue-50 text-blue-800 ring-blue-100',
+    green: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
+    amber: 'bg-amber-50 text-amber-800 ring-amber-100',
+    slate: 'bg-slate-100 text-slate-700 ring-slate-200'
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* ===== HEADER ===== */}
-      <header className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 shadow-2xl border-b-4 border-blue-600 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-xl p-3 shadow-lg border-2 border-blue-400">
-                <span className="text-3xl font-bold text-white">BTC</span>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white tracking-wide">Bharat Transport Company</h1>
-                <p className="text-xs text-blue-300 font-medium tracking-widest">SMART LOGISTICS • QUANTUM SUPPLY CHAIN</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              {/* Branch Selector - ONLY for Admin */}
-              {isAdmin && branches.length > 0 && (
-                <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
-                  <span className="text-sm">🏬</span>
-                  <select
-                    value={selectedBranch}
-                    onChange={handleBranchChange}
-                    className="bg-transparent text-white text-sm font-medium outline-none cursor-pointer"
-                  >
-                    <option value="all" className="text-gray-900">All Branches</option>
-                    {branches.map((branch) => (
-                      <option key={branch.id} value={branch.id} className="text-gray-900">
-                        {branch.branch_name} ({branch.branch_code})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Branch Name Badge - ONLY for Branch Users */}
-              {!isAdmin && user?.branch_name && (
-                <div className="flex items-center space-x-2 bg-teal-700 rounded-lg px-3 py-2 border border-teal-600">
-                  <span className="text-sm">🏬</span>
-                  <span className="text-white text-sm font-medium">{user.branch_name}</span>
-                </div>
-              )}
-
-              {user && (
-                <div className="flex items-center space-x-2 bg-slate-700 rounded-lg px-3 py-2 border border-slate-600">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">{(user.username || 'U')[0].toUpperCase()}</span>
-                  </div>
-                  <div>
-                    <p className="text-white text-sm font-medium">{user.username || 'User'}</p>
-                    <p className="text-xs text-gray-400 capitalize">{user.role || 'operator'}</p>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={handleLogout}
-                className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center space-x-2"
-              >
-                <span>🚪</span>
-                <span>Logout</span>
-              </button>
-            </div>
-          </div>
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-500">{label}</p>
+          <p className="mt-3 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">{value}</p>
+          <p className="mt-2 text-xs text-slate-500">{detail}</p>
         </div>
-      </header>
+        <span className={`rounded-xl p-3 ring-1 ${tones[tone]}`}>
+          <Icon size={20} />
+        </span>
+      </div>
+    </article>
+  )
+}
 
-      {/* ===== MAIN CONTENT ===== */}
-      <div className="max-w-7xl mx-auto px-6 py-6">
-        
-        {/* Role Indicator */}
-        <div className={`mb-4 p-3 rounded-lg ${isAdmin ? 'bg-blue-100 border border-blue-300' : 'bg-teal-100 border border-teal-300'}`}>
-          <p className={`text-sm font-medium ${isAdmin ? 'text-blue-800' : 'text-teal-800'}`}>
-            {isAdmin 
-              ? '👑 Admin Mode - You can view and filter all branches data' 
-              : `🏢 Branch Mode - Viewing data for: ${user?.branch_name || 'Your Branch'}`
-            }
-          </p>
-        </div>
+export default function Dashboard() {
+  const { currentUser, logout } = useAuth()
+  const navigate = useNavigate()
+  const [branches, setBranches] = useState([])
+  const [branchBalances, setBranchBalances] = useState([])
+  const [recentTransactions, setRecentTransactions] = useState([])
+  const [summary, setSummary] = useState({
+    total_given: 0,
+    total_received: 0,
+    current_balance: 0
+  })
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState('')
+  const [refreshVersion, setRefreshVersion] = useState(0)
 
-        {/* ===== QUICK ACCESS MODULES ===== */}
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-5">
+  useEffect(() => {
+    let active = true
+    let requestInFlight = false
+
+    const loadDashboard = async () => {
+      if (requestInFlight) return
+      requestInFlight = true
+      setRefreshing(true)
+      try {
+        const [branchResponse, summaryResponse, transactionResponse] = await Promise.all([
+          branchAPI.getAll(),
+          branchPaymentsAPI.getSummary(),
+          branchPaymentsAPI.getAll({ limit: 10 })
+        ])
+        if (!active) return
+
+        const branchRows = Array.isArray(branchResponse.data?.data) ? branchResponse.data.data : []
+        const summaryData = summaryResponse.data?.summary || {}
+        setBranches(branchRows)
+        setSummary(summaryData)
+        setBranchBalances(Array.isArray(summaryResponse.data?.branches) ? summaryResponse.data.branches : [])
+        setRecentTransactions(Array.isArray(transactionResponse.data?.data) ? transactionResponse.data.data : [])
+        setError('')
+      } catch (requestError) {
+        if (active) setError(requestError.response?.data?.error || 'Dashboard data could not be loaded.')
+      } finally {
+        if (active) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+        requestInFlight = false
+      }
+    }
+
+    loadDashboard()
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadDashboard()
+    }, 15000)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [refreshVersion])
+
+  const visibleBranches = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase()
+    return [...branchBalances]
+      .filter((branch) => !query || String(branch.branch_name || '').toLocaleLowerCase().includes(query))
+      .sort((a, b) => numeric(b.current_balance) - numeric(a.current_balance))
+  }, [branchBalances, search])
+
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+
+  const displayName = currentUser?.username || currentUser?.full_name || 'Administrator'
+  const netPending = numeric(summary.current_balance)
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-slate-950 text-white lg:flex">
+        <div className="border-b border-slate-800 px-6 py-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-700 font-extrabold">BT</div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-                <span className="mr-2">🎯</span> Quick Access Modules
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">Click any category to view functions</p>
+              <p className="font-bold leading-tight">Bharat Transport</p>
+              <p className="mt-1 text-xs text-slate-400">Company operations</p>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-gray-900">
-                {currentTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-              </p>
-              <p className="text-sm text-gray-500">
-                {currentTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => toggleCategory(category.id)}
-                className={`flex flex-col items-center justify-center p-4 rounded-xl transition-all duration-300 transform hover:-translate-y-1 ${
-                  expandedCategory === category.id
-                    ? `bg-gradient-to-br ${category.gradient} text-white shadow-2xl scale-105`
-                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700 border-2 border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <span className="text-3xl mb-2">{category.icon}</span>
-                <span className="text-xs font-bold text-center">{category.name}</span>
-                <span className={`text-xs mt-1 ${expandedCategory === category.id ? 'text-white' : 'text-gray-500'}`}>
-                  {Array.isArray(category.functions) ? category.functions.length : 0}
-                </span>
-              </button>
-            ))}
           </div>
         </div>
-
-        {/* ===== EXPANDED FUNCTIONS ===== */}
-        {expandedCategory && (
-          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border-2 border-blue-200">
-            {categories.map((category) => {
-              if (category.id !== expandedCategory) return null;
-              return (
-                <div key={category.id}>
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className={`text-2xl font-bold text-white bg-gradient-to-r ${category.gradient} px-5 py-3 rounded-xl shadow-lg flex items-center`}>
-                      <span className="mr-2 text-3xl">{category.icon}</span>
-                      {category.name} - Functions
-                    </h3>
-                    <button
-                      onClick={() => setExpandedCategory(null)}
-                      className="bg-red-500 hover:bg-red-600 text-white w-10 h-10 rounded-full text-xl font-bold shadow-lg transition-all"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                    {Array.isArray(category.functions) && category.functions.map((func, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => navigate(func.path)}
-                        className="flex flex-col items-center justify-center p-5 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 hover:from-blue-50 hover:to-blue-100 hover:shadow-xl transition-all duration-200 transform hover:-translate-y-1 border-2 border-gray-200 hover:border-blue-400"
-                      >
-                        <span className="text-3xl mb-2">{func.icon}</span>
-                        <span className="text-sm font-bold text-center text-gray-700">{func.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+        <div className="flex-1 px-4 py-6">
+          <p className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Workspace</p>
+          <Navigation />
+        </div>
+        <div className="border-t border-slate-800 p-4">
+          <div className="mb-3 px-3">
+            <p className="truncate text-sm font-semibold">{displayName}</p>
+            <p className="mt-1 text-xs capitalize text-slate-400">{currentUser?.role || 'Admin'}</p>
           </div>
-        )}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+          >
+            <LogOut size={18} />
+            Sign out
+          </button>
+        </div>
+      </aside>
 
-        {/* ===== STATS CARDS ===== */}
-        {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            <div className="bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Today's LR</h3>
-                <span className="text-4xl">🚚</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">{stats.today_lr || 0}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Month: {stats.month_lr || 0} | Total: {stats.total_lr || 0}
-              </div>
+      <div className="lg:pl-64">
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+          <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Operations</p>
+              <h1 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Admin dashboard</h1>
             </div>
-
-            <div className="bg-gradient-to-br from-emerald-500 via-emerald-600 to-emerald-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Today's Revenue</h3>
-                <span className="text-4xl">💰</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">₹{(stats.today_revenue || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Month: ₹{(stats.month_revenue || 0).toLocaleString()}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Pending Amount</h3>
-                <span className="text-4xl">⏳</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">₹{(stats.pending_amount || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Pending LR: {stats.pending_lr || 0}
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 rounded-2xl p-6 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-2">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold opacity-95">Total Revenue</h3>
-                <span className="text-4xl">📊</span>
-              </div>
-              <p className="text-5xl font-bold mb-3">₹{(stats.total_revenue || 0).toLocaleString()}</p>
-              <div className="text-sm opacity-90 bg-white bg-opacity-20 rounded-lg px-3 py-1.5 inline-block">
-                Paid Bilties: {stats.paid_lr || 0}
-              </div>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-right sm:block">
+                <span className="block text-sm font-semibold text-slate-800">{displayName}</span>
+                <span className="block text-xs capitalize text-slate-500">{currentUser?.role || 'Admin'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setRefreshVersion((version) => version + 1)}
+                disabled={refreshing}
+                aria-label="Refresh dashboard data"
+                className="rounded-xl border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                aria-label="Sign out"
+                className="rounded-xl border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50 lg:hidden"
+              >
+                <LogOut size={18} />
+              </button>
             </div>
           </div>
-        )}
+          <Navigation mobile />
+        </header>
 
-        {/* ===== MONTHLY REPORT + RECENT BILTIES ===== */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
-              <span className="mr-2">📊</span> Monthly Report Summary
-            </h2>
-            {stats && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl border-l-4 border-blue-500">
-                  <div>
-                    <p className="text-sm text-gray-600 font-medium">Total Bilties (Month)</p>
-                    <p className="text-3xl font-bold text-blue-600">{stats.month_lr || 0}</p>
-                  </div>
-                  <span className="text-5xl opacity-80">🚚</span>
-                </div>
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-emerald-50 to-emerald-100 rounded-xl border-l-4 border-emerald-500">
-                  <div>
-                    <p className="text-sm text-gray-600 font-medium">Monthly Revenue</p>
-                    <p className="text-3xl font-bold text-emerald-600">₹{(stats.month_revenue || 0).toLocaleString()}</p>
-                  </div>
-                  <span className="text-5xl opacity-80">💰</span>
-                </div>
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl border-l-4 border-orange-500">
-                  <div>
-                    <p className="text-sm text-gray-600 font-medium">Pending Amount</p>
-                    <p className="text-3xl font-bold text-orange-600">₹{(stats.pending_amount || 0).toLocaleString()}</p>
-                  </div>
-                  <span className="text-5xl opacity-80">⏳</span>
-                </div>
-                <div className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border-l-4 border-purple-500">
-                  <div>
-                    <p className="text-sm text-gray-600 font-medium">Paid Bilties</p>
-                    <p className="text-3xl font-bold text-purple-600">{stats.paid_lr || 0}</p>
-                  </div>
-                  <span className="text-5xl opacity-80">✅</span>
-                </div>
-              </div>
-            )}
-          </div>
+        <main className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:space-y-8 lg:p-8">
+          <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Branch payments at a glance</h2>
+              <p className="mt-1 text-sm text-slate-500">Balances and recent activity across your branches.</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Auto-refreshes every 15 seconds
+            </div>
+          </section>
 
-          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
-              <span className="mr-2">📋</span> Recent 5 Bilties - LIVE
-            </h2>
-            {!Array.isArray(recentBilties) || recentBilties.length === 0 ? (
-              <div className="text-center py-12">
-                <span className="text-6xl">📭</span>
-                <p className="text-gray-500 mt-4 text-lg">No recent bilties</p>
+          {error && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              {error}
+            </div>
+          )}
+
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Company KPIs">
+            <MetricCard
+              label="Total branches"
+              value={loading ? '—' : branches.length.toLocaleString('en-IN')}
+              detail="Active branch locations"
+              icon={Building2}
+              tone="slate"
+            />
+            <MetricCard
+              label="Total payment given"
+              value={formatINR(summary.total_given)}
+              detail="Funds sent to branches"
+              icon={ArrowUpRight}
+              tone="blue"
+            />
+            <MetricCard
+              label="Total payment received"
+              value={formatINR(summary.total_received)}
+              detail="Funds returned to admin"
+              icon={ArrowDownLeft}
+              tone="green"
+            />
+            <MetricCard
+              label="Net pending with branches"
+              value={formatINR(summary.current_balance)}
+              detail={netPending >= 0 ? 'Pending cash held by branches' : 'Net amount returned in excess'}
+              icon={Wallet}
+              tone="amber"
+            />
+          </section>
+
+          <section className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.1fr_0.9fr]">
+            <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-bold text-slate-900">Branch-wise pending</h2>
+                  <p className="mt-1 text-sm text-slate-500">Given, received, and current balance by location.</p>
+                </div>
+                <label className="relative block w-full sm:max-w-xs">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search branch"
+                    className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                </label>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {recentBilties.map((bilty) => (
-                  <div key={bilty.id} className="flex items-center justify-between p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl hover:shadow-md transition-all border border-gray-200">
-                    <div className="flex-1">
-                      <p className="font-bold text-blue-600 text-lg">{bilty.lr_no}</p>
-                      <p className="text-sm text-gray-600">{bilty.from_name} → {bilty.to_name}</p>
-                      <p className="text-xs text-gray-500 mt-1">{bilty.consignor_name}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-gray-900 text-lg">{parseInt(bilty.grand_total || 0).toLocaleString()}</p>
-                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        bilty.status === 'Booked' ? 'bg-green-100 text-green-800' :
-                        bilty.status === 'In-Transit' ? 'bg-blue-100 text-blue-800' :
-                        'bg-gray-100 text-gray-800'
+              <div className="overflow-x-auto">
+                <table className="min-w-[620px] w-full text-left text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3 font-bold">Branch</th>
+                      <th className="px-5 py-3 text-right font-bold">Total given</th>
+                      <th className="px-5 py-3 text-right font-bold">Total received</th>
+                      <th className="px-5 py-3 text-right font-bold">Pending balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {visibleBranches.length === 0 ? (
+                      <tr>
+                        <td colSpan="4" className="px-5 py-12 text-center text-slate-500">
+                          {loading ? 'Loading branch balances…' : 'No matching branch balances.'}
+                        </td>
+                      </tr>
+                    ) : visibleBranches.map((branch) => {
+                      const balance = numeric(branch.current_balance)
+                      return (
+                        <tr key={branch.id} className="hover:bg-slate-50/80">
+                          <td className="px-5 py-4">
+                            <Link
+                              to={`/branch-payments?branch_id=${branch.id}`}
+                              className="group inline-flex items-center gap-2 font-semibold text-slate-900 hover:text-blue-700"
+                            >
+                              <span>{branch.branch_name}</span>
+                              <ChevronRight size={15} className="text-slate-400 transition group-hover:translate-x-0.5" />
+                            </Link>
+                            <p className="mt-1 text-xs text-slate-500">{branch.branch_code || 'Branch'}</p>
+                          </td>
+                          <td className="whitespace-nowrap px-5 py-4 text-right text-slate-700">{formatINR(branch.total_given)}</td>
+                          <td className="whitespace-nowrap px-5 py-4 text-right text-emerald-700">{formatINR(branch.total_received)}</td>
+                          <td className={`whitespace-nowrap px-5 py-4 text-right font-bold ${balance > 0 ? 'text-amber-800' : balance < 0 ? 'text-rose-700' : 'text-slate-700'}`}>
+                            {formatINR(branch.current_balance)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-end border-t border-slate-100 px-5 py-3">
+                <Link to="/branch-payments" className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 hover:text-blue-900">
+                  Open full ledger <ChevronRight size={16} />
+                </Link>
+              </div>
+            </article>
+
+            <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5">
+                <div>
+                  <h2 className="font-bold text-slate-900">Recent transactions</h2>
+                  <p className="mt-1 text-sm text-slate-500">Latest branch payment activity.</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+                  Last 10
+                </span>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {recentTransactions.length === 0 ? (
+                  <div className="px-5 py-12 text-center text-sm text-slate-500">
+                    {loading ? 'Loading recent transactions…' : 'No branch payments recorded yet.'}
+                  </div>
+                ) : recentTransactions.map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                        transaction.type === 'given' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
                       }`}>
-                        {bilty.status}
+                        {transaction.type === 'given' ? <ArrowUpRight size={19} /> : <ArrowDownLeft size={19} />}
                       </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{transaction.branch_name}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {transaction.type === 'given' ? 'Given to branch' : 'Received from branch'} · {formatDate(transaction.date)} · {transaction.payment_mode}
+                        </p>
+                      </div>
                     </div>
+                    <p className={`shrink-0 text-sm font-extrabold ${transaction.type === 'given' ? 'text-blue-800' : 'text-emerald-800'}`}>
+                      {transaction.type === 'given' ? '−' : '+'}{formatINR(transaction.amount)}
+                    </p>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        </div>
+              <div className="flex justify-end border-t border-slate-100 px-5 py-3">
+                <Link to="/branch-payments" className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 hover:text-blue-900">
+                  View all transactions <ChevronRight size={16} />
+                </Link>
+              </div>
+            </article>
+          </section>
 
-        {/* ===== TOP PARTIES ===== */}
-        {Array.isArray(topParties) && topParties.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
-              <span className="mr-2">🏆</span> Top 5 Parties by Revenue
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              {topParties.map((party, idx) => (
-                <div key={idx} className={`rounded-xl p-4 border-2 ${
-                  idx === 0 ? 'bg-gradient-to-br from-yellow-50 to-orange-50 border-yellow-300' :
-                  idx === 1 ? 'bg-gradient-to-br from-gray-50 to-gray-100 border-gray-300' :
-                  idx === 2 ? 'bg-gradient-to-br from-orange-50 to-orange-100 border-orange-300' :
-                  'bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200'
-                }`}>
-                  <div className="text-3xl mb-2">{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🏅'}</div>
-                  <p className="font-bold text-gray-900 text-sm truncate">{party.consignor_name}</p>
-                  <p className="text-xs text-gray-600 mt-1">{party.total_bilties} bilties</p>
-                  <p className="text-lg font-bold text-orange-600 mt-2">₹{parseInt(party.total_revenue || 0).toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ===== RECENT MONEY RECEIPTS ===== */}
-        {Array.isArray(recentMR) && recentMR.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-xl p-6 border border-gray-200">
-            <h2 className="text-xl font-bold text-gray-800 mb-5 flex items-center">
-              <span className="mr-2">💵</span> Recent Money Receipts
-            </h2>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gradient-to-r from-gray-100 to-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">MR No</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Party</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Amount</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Mode</th>
-                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {recentMR.map((mr) => (
-                    <tr key={mr.id} className="hover:bg-blue-50 transition-colors">
-                      <td className="px-4 py-3 text-sm font-bold text-blue-600">{mr.mr_no}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 font-medium">{mr.party_name}</td>
-                      <td className="px-4 py-3 text-sm font-bold text-green-600 text-lg">₹{parseInt(mr.amount || 0).toLocaleString()}</td>
-                      <td className="px-4 py-3">
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
-                          {mr.payment_mode}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{mr.mr_date}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="text-center mt-8 pb-4">
-          <p className="text-sm text-gray-500">© 2026 Bharat Transport Company. All rights reserved.</p>
-          <p className="text-xs text-gray-400 mt-1">Powered by BTC TMS v6.0</p>
-        </div>
+          <footer className="flex flex-col gap-2 border-t border-slate-200 pt-5 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span>Bharat Transport • Branch accounts</span>
+            <span>{refreshing ? 'Syncing latest figures…' : 'Financial totals update automatically.'}</span>
+          </footer>
+        </main>
       </div>
     </div>
-  );
-};
-
-export default Dashboard;
+  )
+}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import { autoTable } from 'jspdf-autotable'
 import { getNextSerialNumber } from '../utils/billSerial'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 
@@ -445,7 +445,7 @@ export default function BillEntry({ branchMode = false }) {
       doc.setFontSize(9); doc.text(`GST No: ${inv.partyGst || 'N/A'}`, 10, 44)
       
       const tripBody = (inv.rows || []).map(r => [r.date || '', r.lr || '', r.inv || '', r.from || '', r.to || '', r.wt || '', r.load || '0', r.unload || '0', r.oth || '0', r.freight || '0', r.total || '0'])
-      doc.autoTable({ 
+      autoTable(doc, {
         startY: 55, 
         head: [['Date', 'LR No.', 'Inv no.', 'From', 'To', 'Wt(MT)', 'Loading', 'Unloading', 'Other', 'Freight', 'Total']], 
         body: tripBody, 

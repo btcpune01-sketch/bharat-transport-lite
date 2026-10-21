@@ -1,249 +1,463 @@
-import { useState, useEffect } from 'react'
-import { branchAPI } from '../api'
-import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { branchAPI, branchPaymentsAPI } from '../api'
 
-export default function BranchPayments() {
-  const [branches, setBranches] = useState([])
-  
-  // ✅ FIX 1: Safe LocalStorage parsing (App crash nahi hogi agar data corrupt ho)
-  const [transactions, setTransactions] = useState(() => {
-    try {
-      const saved = localStorage.getItem('branchTransactions')
-      return saved ? JSON.parse(saved) : []
-    } catch (error) {
-      console.error('Error parsing transactions from localStorage:', error)
-      return []
-    }
-  })
-  
-  const [activeTab, setActiveTab] = useState('send')
-  
-  const [sendForm, setSendForm] = useState({
-    branch_name: '', amount: '', vehicle_no: '', destination: '', date: formatDateForInput(new Date())
-  })
-  
-  const [receiveForm, setReceiveForm] = useState({
-    branch_name: '', incharge_name: '', amount: '', date: formatDateForInput(new Date())
-  })
+const initialDate = () => {
+  const now = new Date()
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+  return localDate.toISOString().slice(0, 10)
+}
 
-  useEffect(() => {
-    fetchBranches()
-  }, [])
+const amount = (value) => Number(value || 0)
+const formatINR = (value) =>
+  `₹${amount(value).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 
-  // ✅ FIX 2: Safe LocalStorage save
-  useEffect(() => {
-    try {
-      localStorage.setItem('branchTransactions', JSON.stringify(transactions))
-    } catch (error) {
-      console.error('Error saving transactions to localStorage:', error)
-    }
-  }, [transactions])
+const formatDate = (value) => {
+  if (!value) return '—'
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`)
+  return Number.isNaN(date.valueOf())
+    ? '—'
+    : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 
-  const fetchBranches = async () => {
-    try {
-      const res = await branchAPI.getAll()
-      // ✅ FIX 3: Ensure branches is ALWAYS an array
-      const branchData = res?.data || res?.branches || []
-      setBranches(Array.isArray(branchData) ? branchData : [])
-    } catch (err) {
-      console.error('Failed to fetch branches', err)
-      setBranches([]) // Fallback to empty array
-    }
+function getSavedBranchName(fallback) {
+  try {
+    const session = JSON.parse(localStorage.getItem('branch_session') || 'null')
+    return session?.branch?.branch_name || fallback || 'Your branch'
+  } catch {
+    return fallback || 'Your branch'
   }
+}
 
-  const handleSendSubmit = (e) => {
-    e.preventDefault()
-    if (!sendForm.branch_name || !sendForm.amount) {
-      alert('Branch and Amount are required!')
-      return
-    }
-    
-    const newTransaction = {
-      id: Date.now().toString(),
-      type: 'SENT',
-      ...sendForm,
-      timestamp: new Date().toLocaleString('en-IN')
-    }
-    
-    setTransactions(prev => [newTransaction, ...prev])
-    setSendForm({ branch_name: '', amount: '', vehicle_no: '', destination: '', date: formatDateForInput(new Date()) })
-    alert('✅ Payment record saved successfully!')
+function SummaryCard({ label, value, detail, tone }) {
+  const tones = {
+    blue: 'border-blue-100 bg-blue-50 text-blue-950',
+    green: 'border-emerald-100 bg-emerald-50 text-emerald-950',
+    amber: 'border-amber-100 bg-amber-50 text-amber-950'
   }
-
-  const handleReceiveSubmit = (e) => {
-    e.preventDefault()
-    if (!receiveForm.branch_name || !receiveForm.incharge_name || !receiveForm.amount) {
-      alert('Branch, Incharge Name, and Amount are required!')
-      return
-    }
-    
-    const newTransaction = {
-      id: Date.now().toString(),
-      type: 'RECEIVED',
-      ...receiveForm,
-      timestamp: new Date().toLocaleString('en-IN')
-    }
-    
-    setTransactions(prev => [newTransaction, ...prev])
-    setReceiveForm({ branch_name: '', incharge_name: '', amount: '', date: formatDateForInput(new Date()) })
-    alert('✅ Branch payment receipt recorded successfully!')
-  }
-
-  const clearHistory = () => {
-    if (window.confirm('Are you sure you want to clear all transaction history? This cannot be undone.')) {
-      setTransactions([])
-    }
-  }
-
-  // ✅ FIX 4: Ensure arrays are ALWAYS safe before .map()
-  const safeTransactions = Array.isArray(transactions) ? transactions : []
-  const safeBranches = Array.isArray(branches) ? branches : []
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6 text-gray-800">💸 Branch Payment & Remittance Tracking</h1>
+    <article className={`rounded-2xl border p-5 shadow-sm ${tones[tone]}`}>
+      <p className="text-sm font-semibold opacity-70">{label}</p>
+      <p className="mt-3 text-2xl font-extrabold tracking-tight">{formatINR(value)}</p>
+      <p className="mt-2 text-xs font-medium opacity-70">{detail}</p>
+    </article>
+  )
+}
 
-      {/* Tabs */}
-      <div className="flex gap-4 mb-6 border-b">
-        <button 
-          onClick={() => setActiveTab('send')}
-          className={`px-6 py-3 font-medium transition ${activeTab === 'send' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          📤 Send Payment to Branch
-        </button>
-        <button 
-          onClick={() => setActiveTab('receive')}
-          className={`px-6 py-3 font-medium transition ${activeTab === 'receive' ? 'border-b-2 border-green-600 text-green-600' : 'text-gray-500 hover:text-gray-700'}`}
-        >
-          📥 Receive Payment from Branch
-        </button>
-      </div>
+export default function BranchPayments({ branchMode = false, branchCode }) {
+  const [searchParams] = useSearchParams()
+  const [branches, setBranches] = useState([])
+  const [selectedBranchId, setSelectedBranchId] = useState(
+    () => searchParams.get('branch_id') || ''
+  )
+  const [transactions, setTransactions] = useState([])
+  const [summary, setSummary] = useState({
+    total_given: 0,
+    total_received: 0,
+    current_balance: 0
+  })
+  const [activeTab, setActiveTab] = useState(branchMode ? 'received' : 'given')
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [refreshVersion, setRefreshVersion] = useState(0)
+  const [form, setForm] = useState(() => ({
+    branch_id: searchParams.get('branch_id') || '',
+    date: initialDate(),
+    amount: '',
+    payment_mode: 'Cash',
+    notes: ''
+  }))
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Forms Section */}
-        <div className="lg:col-span-1">
-          {activeTab === 'send' ? (
-            <div className="bg-white p-6 rounded-lg shadow-md border">
-              <h2 className="text-xl font-semibold mb-4 text-blue-700">Send Payment Details</h2>
-              <form onSubmit={handleSendSubmit} className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Select Branch *</label>
-                  <select required value={sendForm.branch_name} onChange={(e) => setSendForm({...sendForm, branch_name: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-2 focus:ring-blue-500">
-                    <option value="">-- Select Branch --</option>
-                    {safeBranches.map(b => <option key={b.id || b._id || b.name} value={b.name}>{b.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Amount (₹) *</label>
-                  <input type="number" required value={sendForm.amount} onChange={(e) => setSendForm({...sendForm, amount: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Vehicle No / Transport Details</label>
-                  <input type="text" value={sendForm.vehicle_no} onChange={(e) => setSendForm({...sendForm, vehicle_no: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="e.g., MH12 AB 1234" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Destination / Purpose</label>
-                  <input type="text" value={sendForm.destination} onChange={(e) => setSendForm({...sendForm, destination: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Date</label>
-                  <input type="date" value={sendForm.date} onChange={(e) => setSendForm({...sendForm, date: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                </div>
-                <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-md hover:bg-blue-700 font-medium transition">Record Payment Sent</button>
-              </form>
-            </div>
-          ) : (
-            <div className="bg-white p-6 rounded-lg shadow-md border">
-              <h2 className="text-xl font-semibold mb-4 text-green-700">Receive Payment Details</h2>
-              <form onSubmit={handleReceiveSubmit} className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Select Branch *</label>
-                  <select required value={receiveForm.branch_name} onChange={(e) => setReceiveForm({...receiveForm, branch_name: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-2 focus:ring-green-500">
-                    <option value="">-- Select Branch --</option>
-                    {safeBranches.map(b => <option key={b.id || b._id || b.name} value={b.name}>{b.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Branch Incharge Name *</label>
-                  <input type="text" required value={receiveForm.incharge_name} onChange={(e) => setReceiveForm({...receiveForm, incharge_name: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-2 focus:ring-green-500" placeholder="Name of the person returning payment" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Amount Received (₹) *</label>
-                  <input type="number" required value={receiveForm.amount} onChange={(e) => setReceiveForm({...receiveForm, amount: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Date</label>
-                  <input type="date" value={receiveForm.date} onChange={(e) => setReceiveForm({...receiveForm, date: e.target.value})} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                </div>
-                <button type="submit" className="w-full bg-green-600 text-white py-2.5 rounded-md hover:bg-green-700 font-medium transition">Record Payment Received</button>
-              </form>
+  const branchName = useMemo(() => getSavedBranchName(branchCode), [branchCode])
+
+  useEffect(() => {
+    if (branchMode) return undefined
+
+    let active = true
+    branchAPI.getAll()
+      .then((response) => {
+        if (active) setBranches(Array.isArray(response.data?.data) ? response.data.data : [])
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.error || 'Could not load branches.')
+      })
+
+    return () => { active = false }
+  }, [branchMode])
+
+  useEffect(() => {
+    let active = true
+    const params = !branchMode && selectedBranchId ? { branch_id: selectedBranchId } : {}
+
+    const loadLedger = async () => {
+      try {
+        const [summaryResponse, transactionsResponse] = await Promise.all([
+          branchPaymentsAPI.getSummary(params),
+          branchPaymentsAPI.getAll({ ...params, limit: 500 })
+        ])
+        if (!active) return
+        setSummary(summaryResponse.data?.summary || {
+          total_given: 0,
+          total_received: 0,
+          current_balance: 0
+        })
+        setTransactions(Array.isArray(transactionsResponse.data?.data) ? transactionsResponse.data.data : [])
+        setError('')
+      } catch (requestError) {
+        if (active) {
+          setError(requestError.response?.data?.error || 'Could not load the branch payment ledger.')
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadLedger()
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadLedger()
+    }, 8000)
+
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [branchMode, selectedBranchId, refreshVersion])
+
+  const filteredTransactions = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase()
+    if (!query) return transactions
+    return transactions.filter((transaction) =>
+      String(transaction.branch_name || '').toLocaleLowerCase().includes(query)
+    )
+  }, [transactions, search])
+
+  const selectedBranch = branches.find((branch) => String(branch.id) === String(selectedBranchId))
+  const balance = amount(summary.current_balance)
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+
+    if (!branchMode && !form.branch_id) {
+      setError('Select a branch before saving the payment.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await branchPaymentsAPI.create({
+        branch_id: branchMode ? undefined : form.branch_id,
+        date: form.date,
+        amount: form.amount,
+        type: activeTab,
+        payment_mode: form.payment_mode,
+        notes: form.notes
+      })
+      setNotice(activeTab === 'given' ? 'Payment given to the branch was recorded.' : 'Returned payment was recorded.')
+      setForm((current) => ({
+        ...current,
+        date: initialDate(),
+        amount: '',
+        notes: ''
+      }))
+      setRefreshVersion((version) => version + 1)
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || 'Could not save the payment. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <main className="mx-auto min-h-screen w-full max-w-[1440px] space-y-6 bg-slate-50 p-4 text-slate-900 sm:p-6 lg:p-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Accounts • Branches</p>
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-3xl">Branch payment ledger</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Track funds sent to branches and payments returned to admin.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 self-start rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 sm:self-auto">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" />
+          Auto-sync every 8 seconds
+        </div>
+      </header>
+
+      {error && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {notice}
+        </div>
+      )}
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3" aria-label="Payment summary">
+        <SummaryCard
+          label="Total given"
+          value={summary.total_given}
+          detail="Payments sent from admin to branches"
+          tone="blue"
+        />
+        <SummaryCard
+          label="Total received"
+          value={summary.total_received}
+          detail="Payments returned by branches"
+          tone="green"
+        />
+        <SummaryCard
+          label="Net pending balance"
+          value={summary.current_balance}
+          detail={balance >= 0 ? 'Currently pending with branches' : 'More has been returned than sent'}
+          tone="amber"
+        />
+      </section>
+
+      {selectedBranch && !branchMode && (
+        <div className="rounded-xl border border-blue-100 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+          <span className="font-bold text-slate-900">{selectedBranch.branch_name}:</span>{' '}
+          {balance > 0
+            ? `${formatINR(balance)} ${selectedBranch.branch_name} Branch ke paas pending hai.`
+            : balance < 0
+              ? `Branch ne ${formatINR(Math.abs(balance))} extra return kiya hai.`
+              : 'Branch ka balance settled hai.'}
+        </div>
+      )}
+      {branchMode && (
+        <div className="rounded-xl border border-blue-100 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+          <span className="font-bold text-slate-900">{branchName}:</span>{' '}
+          {balance > 0
+            ? `${formatINR(balance)} ${branchName} Branch ke paas pending hai.`
+            : balance < 0
+              ? `Branch ne ${formatINR(Math.abs(balance))} extra return kiya hai.`
+              : 'Branch ka balance settled hai.'}
+        </div>
+      )}
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,420px)_1fr]">
+        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-500">New entry</p>
+            <h2 className="mt-1 text-lg font-bold">
+              {activeTab === 'given' ? 'Give payment to branch' : 'Receive payment from branch'}
+            </h2>
+          </div>
+
+          {!branchMode && (
+            <div className="flex gap-2 border-b border-slate-100 px-5 pt-4">
+              <button
+                type="button"
+                onClick={() => setActiveTab('given')}
+                aria-pressed={activeTab === 'given'}
+                className={`rounded-t-lg px-3 py-2 text-sm font-semibold transition ${
+                  activeTab === 'given'
+                    ? 'border-b-2 border-blue-700 text-blue-800'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Give to branch
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('received')}
+                aria-pressed={activeTab === 'received'}
+                className={`rounded-t-lg px-3 py-2 text-sm font-semibold transition ${
+                  activeTab === 'received'
+                    ? 'border-b-2 border-emerald-700 text-emerald-800'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                Receive from branch
+              </button>
             </div>
           )}
-        </div>
 
-        {/* Transactions History Table */}
-        <div className="lg:col-span-2 bg-white rounded-lg shadow-md border overflow-hidden">
-          <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-700">Transaction History</h2>
-            <div className="flex gap-2">
-              <span className="text-sm text-gray-500 bg-gray-200 px-3 py-1 rounded-full">{safeTransactions.length} Records</span>
-              {safeTransactions.length > 0 && (
-                <button onClick={clearHistory} className="text-xs text-red-600 hover:text-red-800 font-medium px-2 py-1 border border-red-200 rounded hover:bg-red-50 transition">
-                  🗑️ Clear All
-                </button>
+          <form onSubmit={handleSubmit} className="space-y-4 p-5">
+            {branchMode ? (
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Branch</label>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-800">
+                  {branchName}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">This entry is tied to your signed-in branch.</p>
+              </div>
+            ) : (
+              <div>
+                <label htmlFor="payment-branch" className="mb-1 block text-sm font-semibold text-slate-700">
+                  Branch
+                </label>
+                <select
+                  id="payment-branch"
+                  required
+                  value={form.branch_id}
+                  onChange={(event) => setForm((current) => ({ ...current, branch_id: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="">Select a branch</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>{branch.branch_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="payment-date" className="mb-1 block text-sm font-semibold text-slate-700">Date</label>
+                <input
+                  id="payment-date"
+                  type="date"
+                  required
+                  value={form.date}
+                  onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <div>
+                <label htmlFor="payment-amount" className="mb-1 block text-sm font-semibold text-slate-700">Amount (₹)</label>
+                <input
+                  id="payment-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={form.amount}
+                  onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}
+                  placeholder="0.00"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="payment-mode" className="mb-1 block text-sm font-semibold text-slate-700">Payment mode</label>
+              <select
+                id="payment-mode"
+                value={form.payment_mode}
+                onChange={(event) => setForm((current) => ({ ...current, payment_mode: event.target.value }))}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="Cash">Cash</option>
+                <option value="UPI">UPI</option>
+                <option value="Bank">Bank</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="payment-notes" className="mb-1 block text-sm font-semibold text-slate-700">Notes</label>
+              <textarea
+                id="payment-notes"
+                rows="3"
+                maxLength="1000"
+                value={form.notes}
+                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+                placeholder="Reference, purpose, or other details"
+                className="w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={saving || (!branchMode && branches.length === 0)}
+              className={`w-full rounded-lg px-4 py-3 text-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                activeTab === 'given' ? 'bg-blue-700 hover:bg-blue-800' : 'bg-emerald-700 hover:bg-emerald-800'
+              }`}
+            >
+              {saving ? 'Saving…' : activeTab === 'given' ? 'Record payment given' : 'Record payment received'}
+            </button>
+          </form>
+        </article>
+
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Activity</p>
+              <h2 className="mt-1 text-lg font-bold">Transaction ledger</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {loading ? 'Loading records…' : `${filteredTransactions.length} records shown`}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {!branchMode && (
+                <select
+                  aria-label="Filter ledger by branch"
+                  value={selectedBranchId}
+                  onChange={(event) => setSelectedBranchId(event.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                >
+                  <option value="">All branches</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>{branch.branch_name}</option>
+                  ))}
+                </select>
               )}
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search branch name"
+                aria-label="Search branch name"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500"
+              />
             </div>
           </div>
+
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-100">
+            <table className="min-w-[900px] w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Branch</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Details</th>
-                  <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date/Time</th>
+                  <th className="px-4 py-3 font-bold">Date</th>
+                  <th className="px-4 py-3 font-bold">Branch</th>
+                  <th className="px-4 py-3 text-right font-bold">Given</th>
+                  <th className="px-4 py-3 text-right font-bold">Received</th>
+                  <th className="px-4 py-3 text-right font-bold">Balance after</th>
+                  <th className="px-4 py-3 font-bold">Mode</th>
+                  <th className="px-4 py-3 font-bold">Notes</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {safeTransactions.length === 0 ? (
+              <tbody className="divide-y divide-slate-100">
+                {filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">No transactions recorded yet.</td>
+                    <td colSpan="7" className="px-5 py-12 text-center text-slate-500">
+                      {loading ? 'Loading transactions…' : 'No branch payments found for this filter.'}
+                    </td>
                   </tr>
-                ) : (
-                  safeTransactions.map((t) => (
-                    <tr key={t.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-bold rounded-full ${t.type === 'SENT' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                          {t.type === 'SENT' ? '📤 SENT' : '📥 RECEIVED'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{t.branch_name || 'Unknown'}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {t.type === 'SENT' ? (
-                          <>
-                            <div>Vehicle: {t.vehicle_no || 'N/A'}</div>
-                            <div className="text-xs text-gray-500">Dest: {t.destination || 'N/A'}</div>
-                          </>
-                        ) : (
-                          <>
-                            <div>Incharge: {t.incharge_name || 'N/A'}</div>
-                            <div className="text-xs text-gray-500">Payment returned</div>
-                          </>
-                        )}
-                      </td>
-                      <td className={`px-4 py-3 whitespace-nowrap text-sm font-bold text-right ${t.type === 'SENT' ? 'text-red-600' : 'text-green-600'}`}>
-                        {t.type === 'SENT' ? '-' : '+'}₹{parseFloat(t.amount || 0).toLocaleString('en-IN')}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">{formatDate(t.timestamp)}</td>
-                    </tr>
-                  ))
-                )}
+                ) : filteredTransactions.map((transaction) => (
+                  <tr key={transaction.id} className="hover:bg-slate-50/80">
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatDate(transaction.date)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{transaction.branch_name}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-rose-700">
+                      {transaction.type === 'given' ? formatINR(transaction.amount) : '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-emerald-700">
+                      {transaction.type === 'received' ? formatINR(transaction.amount) : '—'}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-slate-800">
+                      {formatINR(transaction.balance_after_transaction)}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        {transaction.payment_mode}
+                      </span>
+                    </td>
+                    <td className="max-w-[220px] px-4 py-3 text-slate-600">
+                      <span className="block truncate" title={transaction.notes || ''}>{transaction.notes || '—'}</span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
-    </div>
+        </article>
+      </section>
+    </main>
   )
 }

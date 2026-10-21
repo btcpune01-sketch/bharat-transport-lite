@@ -106,6 +106,15 @@ export const branchAPI = {
 }
 
 // ============================================
+// BRANCH PAYMENT LEDGER API
+// ============================================
+export const branchPaymentsAPI = {
+  getAll: (params) => api.get('/api/branch-payments', { params }),
+  getSummary: (params) => api.get('/api/branch-payments/summary', { params }),
+  create: (data) => api.post('/api/branch-payments', data)
+}
+
+// ============================================
 // DRIVER API
 // ============================================
 export const driverAPI = {
