@@ -75,6 +75,18 @@ pool.on('error', (err) => console.error('Unexpected pool error:', err.message));
 
 const branchAccessMiddleware = createBranchAccessMiddleware(pool);
 
+let migrationStarted = false;
+async function ensureMigrationsRun() {
+  if (!migrationStarted) {
+    migrationStarted = true;
+    try { await runMigrations(); await ensureAdminUser(); } catch(e) { migrationStarted = false; }
+  }
+}
+app.use(async (req, res, next) => {
+  if (process.env.VERCEL) { await ensureMigrationsRun(); }
+  next();
+});
+
 // ✅ FIX 4: health check
 app.get('/api/health', async (req, res) => {
   try {
@@ -1187,7 +1199,15 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     const values = Object.values(c);
     // Wrapped keys in double quotes to prevent SQL syntax errors with reserved words
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-    const result = await client.query(`INSERT INTO consignments (${keys.map(k => `"${k}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`, values);
+    const colRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'consignments'");
+    const validCols = new Set(colRes.rows.map(r => r.column_name));
+    const finalKeys = [];
+    const finalVals = [];
+    for (const [k, v] of Object.entries(c)) {
+      if (validCols.has(k)) { finalKeys.push('"' + k + '"'); finalVals.push(v === "" ? null : v); }
+    }
+    const placeholders = finalKeys.map((_, i) => "$" + (i + 1)).join(", ");
+    const result = await client.query("INSERT INTO consignments (" + finalKeys.join(", ") + ") VALUES (" + placeholders + ") RETURNING *", finalVals);
     await client.query('COMMIT');
     transactionStarted = false;
     res.json(result.rows[0]);
