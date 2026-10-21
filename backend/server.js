@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const createBranchAuthRouter = require('./routes/branchAuth');
+const branchPaymentsRouter = require('./routes/branchPayments');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 
 require('dotenv').config();
@@ -185,6 +186,7 @@ async function ensureBranchPaymentsSchema() {
 }
 
 app.use('/api/branch-login', createBranchAuthRouter(pool));
+app.use('/api/branch-payments', branchPaymentsRouter(pool));
 
 // ==========================================
 // SAFE MIGRATION
