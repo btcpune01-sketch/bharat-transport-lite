@@ -1,0 +1,7 @@
+{
+  "name": "bharat-transport-lite",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm run build"
+  }
+}
