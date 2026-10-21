@@ -1,401 +1,368 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../AuthContext';
+import api from '../api';
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  BarChart3,
-  Building2,
-  ChevronRight,
-  LayoutDashboard,
-  LogOut,
-  RefreshCw,
-  Search,
-  Settings,
-  Wallet
-} from 'lucide-react'
-import { useAuth } from '../AuthContext'
-import { branchAPI, branchPaymentsAPI } from '../api'
-
-const navItems = [
-  { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
-  { label: 'Branch Portal', to: '/branch-portal', icon: Building2 },
-  { label: 'Branch Payments', to: '/branch-payments', icon: Wallet },
-  { label: 'Reports', to: '/reports', icon: BarChart3 },
-  { label: 'Settings', to: '/settings', icon: Settings }
-]
-
-const numeric = (value) => Number(value || 0)
-const formatINR = (value) =>
-  `₹${numeric(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-
-const formatDate = (value) => {
-  if (!value) return '—'
-  const dateValue = String(value).slice(0, 10)
-  const date = new Date(`${dateValue}T00:00:00`)
-  return Number.isNaN(date.valueOf())
-    ? '—'
-    : date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-}
-
-function Navigation({ mobile = false }) {
-  const location = useLocation()
-
-  return (
-    <nav className={mobile ? 'flex gap-2 overflow-x-auto px-4 pb-3 lg:hidden' : 'space-y-1'}>
-      {navItems.map(({ label, to, icon: Icon }) => {
-        const active = location.pathname === to ||
-          (to !== '/dashboard' && location.pathname.startsWith(`${to}/`))
-        return (
-          <Link
-            key={label}
-            to={to}
-            className={mobile
-              ? `flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${active ? 'bg-blue-700 text-white' : 'bg-white text-slate-600'}`
-              : `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${active ? 'bg-blue-700 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}`
-            }
-          >
-            <Icon size={18} strokeWidth={2} />
-            <span>{label}</span>
-          </Link>
-        )
-      })}
-    </nav>
-  )
-}
-
-function MetricCard({ label, value, detail, icon: Icon, tone }) {
-  const tones = {
-    blue: 'bg-blue-50 text-blue-800 ring-blue-100',
-    green: 'bg-emerald-50 text-emerald-800 ring-emerald-100',
-    amber: 'bg-amber-50 text-amber-800 ring-amber-100',
-    slate: 'bg-slate-100 text-slate-700 ring-slate-200'
-  }
-
-  return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-500">{label}</p>
-          <p className="mt-3 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">{value}</p>
-          <p className="mt-2 text-xs text-slate-500">{detail}</p>
-        </div>
-        <span className={`rounded-xl p-3 ring-1 ${tones[tone]}`}>
-          <Icon size={20} />
-        </span>
-      </div>
-    </article>
-  )
-}
+  LayoutDashboard, Package, FileText, Users, Truck, TrendingUp,
+  DollarSign, AlertCircle, CheckCircle, Clock, MapPin,
+  ClipboardList, BarChart3, PieChart, Activity, Zap,
+  Briefcase, Shield, Database, Settings, Bell, Search,
+  RefreshCw, Plus, Eye, Edit, Trash2, Download, Upload,
+  Calculator, Receipt, CreditCard, TrendingDown, Award,
+  Target, Layers, Archive, UserCheck, FileCheck, TruckIcon,
+  Route, Fuel, Wrench, Calendar, Phone, Mail, Building2,
+  UserPlus, LogOut, Menu, X, ChevronRight, Filter
+} from 'lucide-react';
 
 export default function Dashboard() {
-  const { currentUser, logout } = useAuth()
-  const navigate = useNavigate()
-  const [branches, setBranches] = useState([])
-  const [branchBalances, setBranchBalances] = useState([])
-  const [recentTransactions, setRecentTransactions] = useState([])
-  const [summary, setSummary] = useState({
-    total_given: 0,
-    total_received: 0,
-    current_balance: 0
-  })
-  const [search, setSearch] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState('')
-  const [refreshVersion, setRefreshVersion] = useState(0)
+  const { currentUser, logout } = useAuth();
+  const navigate = useNavigate();
+  const [stats, setStats] = useState(null);
+  const [recentBilties, setRecentBilties] = useState([]);
+  const [recentMR, setRecentMR] = useState([]);
+  const [recentClaims, setRecentClaims] = useState([]);
+  const [topParties, setTopParties] = useState([]);
+  const [branchBalances, setBranchBalances] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    let active = true
-    let requestInFlight = false
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-    const loadDashboard = async () => {
-      if (requestInFlight) return
-      requestInFlight = true
-      setRefreshing(true)
-      try {
-        const [branchResponse, summaryResponse, transactionResponse] = await Promise.all([
-          branchAPI.getAll(),
-          branchPaymentsAPI.getSummary(),
-          branchPaymentsAPI.getAll({ limit: 10 })
-        ])
-        if (!active) return
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [statsRes, recentRes, partiesRes, branchRes] = await Promise.all([
+        api.get('/api/dashboard/stats'),
+        api.get('/api/dashboard/recent'),
+        api.get('/api/dashboard/top-parties'),
+        api.get('/api/branch-payments/summary')
+      ]);
 
-        const branchRows = Array.isArray(branchResponse.data?.data) ? branchResponse.data.data : []
-        const summaryData = summaryResponse.data?.summary || {}
-        setBranches(branchRows)
-        setSummary(summaryData)
-        setBranchBalances(Array.isArray(summaryResponse.data?.branches) ? summaryResponse.data.branches : [])
-        setRecentTransactions(Array.isArray(transactionResponse.data?.data) ? transactionResponse.data.data : [])
-        setError('')
-      } catch (requestError) {
-        if (active) setError(requestError.response?.data?.error || 'Dashboard data could not be loaded.')
-      } finally {
-        if (active) {
-          setLoading(false)
-          setRefreshing(false)
-        }
-        requestInFlight = false
+      if (statsRes.data.success) setStats(statsRes.data);
+      if (recentRes.data.success) {
+        setRecentBilties(recentRes.data.bilties || []);
+        setRecentMR(recentRes.data.receipts || []);
+        setRecentClaims(recentRes.data.claims || []);
       }
+      if (partiesRes.data.success) setTopParties(partiesRes.data.data || []);
+      if (branchRes.data.success) {
+        setSummary(branchRes.data.summary);
+        setBranchBalances(branchRes.data.branches || []);
+      }
+    } catch (error) {
+      console.error('Dashboard fetch error:', error);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    loadDashboard()
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') loadDashboard()
-    }, 15000)
-
-    return () => {
-      active = false
-      window.clearInterval(timer)
+  // 9 Main Categories with all 46+ functions
+  const categories = [
+    {
+      id: 'overview',
+      name: 'Dashboard Overview',
+      icon: LayoutDashboard,
+      color: 'bg-blue-500',
+      description: 'Complete business overview',
+      functions: [
+        { name: 'Today LR', value: stats?.today_lr || 0, icon: Package },
+        { name: 'Month LR', value: stats?.month_lr || 0, icon: Calendar },
+        { name: 'Total LR', value: stats?.total_lr || 0, icon: FileText },
+        { name: 'Pending LR', value: stats?.pending_lr || 0, icon: Clock },
+        { name: 'Paid LR', value: stats?.paid_lr || 0, icon: CheckCircle },
+        { name: 'Total Revenue', value: `₹${(stats?.total_revenue || 0).toLocaleString()}`, icon: DollarSign },
+        { name: 'Pending Amount', value: `₹${(stats?.pending_amount || 0).toLocaleString()}`, icon: AlertCircle },
+        { name: 'Today Revenue', value: `₹${(stats?.today_revenue || 0).toLocaleString()}`, icon: TrendingUp },
+        { name: 'Month Revenue', value: `₹${(stats?.month_revenue || 0).toLocaleString()}`, icon: BarChart3 }
+      ]
+    },
+    {
+      id: 'consignments',
+      name: 'Consignments (Bilty/LR)',
+      icon: Package,
+      color: 'bg-green-500',
+      description: 'LR management & tracking',
+      functions: [
+        { name: 'Create Bilty', icon: Plus, route: '/consignments/new' },
+        { name: 'All Bilties', icon: FileText, route: '/consignments', count: stats?.total_lr },
+        { name: 'Track LR', icon: Search, route: '/track' },
+        { name: 'Next LR No', icon: Calculator, route: '/consignments/new' },
+        { name: 'Pending POD', icon: Clock, route: '/pod', count: stats?.pending_pod },
+        { name: 'POD Records', icon: FileCheck, route: '/pod' },
+        { name: 'E-Way Bills', icon: FileText, route: '/eway-bills' }
+      ]
+    },
+    {
+      id: 'billing',
+      name: 'Billing & Payments',
+      icon: Receipt,
+      color: 'bg-purple-500',
+      description: 'Bills, MR & payments',
+      functions: [
+        { name: 'Create Bill', icon: Plus, route: '/bills/new' },
+        { name: 'All Bills', icon: FileText, route: '/bills', count: stats?.total_bills },
+        { name: 'Pending Bills', icon: AlertCircle, route: '/bills', count: stats?.pending_bills },
+        { name: 'Money Receipts', icon: Receipt, route: '/mr', count: stats?.total_mr },
+        { name: 'Create MR', icon: Plus, route: '/mr/new' },
+        { name: 'Party Ledger', icon: BookOpen, route: '/ledger' },
+        { name: 'Outstanding', icon: AlertCircle, route: '/outstanding' }
+      ]
+    },
+    {
+      id: 'branches',
+      name: 'Branch Management',
+      icon: Building2,
+      color: 'bg-orange-500',
+      description: 'Branches & branch payments',
+      functions: [
+        { name: 'All Branches', icon: Building2, route: '/branches', count: stats?.total_branches },
+        { name: 'Create Branch', icon: Plus, route: '/branches/new' },
+        { name: 'Branch Payments', icon: DollarSign, route: '/branch-payments' },
+        { name: 'Branch Summary', icon: BarChart3, route: '/branch-payments' },
+        { name: 'Branch Login', icon: UserCheck, route: '/branches' },
+        { name: 'Branch Portal', icon: Globe, route: '/branch-portal' }
+      ]
+    },
+    {
+      id: 'parties',
+      name: 'Parties & Customers',
+      icon: Users,
+      color: 'bg-pink-500',
+      description: 'Parties, customers & ledger',
+      functions: [
+        { name: 'All Parties', icon: Users, route: '/parties', count: stats?.total_parties },
+        { name: 'Create Party', icon: UserPlus, route: '/parties/new' },
+        { name: 'Customers', icon: Users, route: '/customers', count: stats?.total_customers },
+        { name: 'Create Customer', icon: UserPlus, route: '/customers/new' },
+        { name: 'Party Ledger', icon: BookOpen, route: '/ledger' },
+        { name: 'Top Parties', icon: Award, route: '/parties', count: topParties?.length }
+      ]
+    },
+    {
+      id: 'transport',
+      name: 'Transport Operations',
+      icon: Truck,
+      color: 'bg-teal-500',
+      description: 'Drivers, vehicles, trips',
+      functions: [
+        { name: 'Drivers', icon: UserCheck, route: '/drivers', count: stats?.active_drivers },
+        { name: 'Add Driver', icon: UserPlus, route: '/drivers/new' },
+        { name: 'Vehicles', icon: Truck, route: '/vehicles', count: stats?.active_vehicles },
+        { name: 'Add Vehicle', icon: Plus, route: '/vehicles/new' },
+        { name: 'Trips', icon: Route, route: '/trips' },
+        { name: 'Create Trip', icon: Plus, route: '/trips/new' },
+        { name: 'Manifests', icon: ClipboardList, route: '/manifests' },
+        { name: 'Freight Rates', icon: Calculator, route: '/rates' }
+      ]
+    },
+    {
+      id: 'documents',
+      name: 'Documents & Stock',
+      icon: Archive,
+      color: 'bg-indigo-500',
+      description: 'Gate pass, challan, stock',
+      functions: [
+        { name: 'Gate Pass', icon: FileCheck, route: '/gate-pass' },
+        { name: 'Create Gate Pass', icon: Plus, route: '/gate-pass/new' },
+        { name: 'Gadi Challan', icon: TruckIcon, route: '/gadi-challan' },
+        { name: 'Create Challan', icon: Plus, route: '/gadi-challan/new' },
+        { name: 'Document Stock', icon: Archive, route: '/stock' },
+        { name: 'Add Stock', icon: Plus, route: '/stock/add' },
+        { name: 'POD Upload', icon: Upload, route: '/pod/upload' }
+      ]
+    },
+    {
+      id: 'finance',
+      name: 'Finance & Accounts',
+      icon: Briefcase,
+      color: 'bg-red-500',
+      description: 'Expenses, claims, rates',
+      functions: [
+        { name: 'Expenses', icon: DollarSign, route: '/expenses' },
+        { name: 'Add Expense', icon: Plus, route: '/expenses/new' },
+        { name: 'Claims', icon: AlertCircle, route: '/claims', count: stats?.open_claims },
+        { name: 'Add Claim', icon: Plus, route: '/claims/new' },
+        { name: 'Commissions', icon: Percent, route: '/commissions' },
+        { name: 'Rate Contracts', icon: Calculator, route: '/rates' },
+        { name: 'Accounts Summary', icon: BarChart3, route: '/accounts' },
+        { name: 'TDS Register', icon: FileText, route: '/tds' }
+      ]
+    },
+    {
+      id: 'settings',
+      name: 'Settings & Admin',
+      icon: Settings,
+      color: 'bg-gray-500',
+      description: 'Users, audit, backup',
+      functions: [
+        { name: 'Users', icon: Users, route: '/users' },
+        { name: 'Add User', icon: UserPlus, route: '/users/new' },
+        { name: 'Audit Logs', icon: Activity, route: '/audit' },
+        { name: 'Backup', icon: Download, route: '/backup' },
+        { name: 'Restore', icon: Upload, route: '/backup/restore' },
+        { name: 'Materials', icon: Layers, route: '/materials' },
+        { name: 'Routes', icon: Route, route: '/routes' },
+        { name: 'Reports', icon: BarChart3, route: '/reports' }
+      ]
     }
-  }, [refreshVersion])
-
-  const visibleBranches = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase()
-    return [...branchBalances]
-      .filter((branch) => !query || String(branch.branch_name || '').toLocaleLowerCase().includes(query))
-      .sort((a, b) => numeric(b.current_balance) - numeric(a.current_balance))
-  }, [branchBalances, search])
+  ];
 
   const handleLogout = async () => {
-    await logout()
-    navigate('/login', { replace: true })
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+          <p className="text-gray-600">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
-  const displayName = currentUser?.username || currentUser?.full_name || 'Administrator'
-  const netPending = numeric(summary.current_balance)
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-slate-950 text-white lg:flex">
-        <div className="border-b border-slate-800 px-6 py-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-700 font-extrabold">BT</div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
+            >
+              {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
             <div>
-              <p className="font-bold leading-tight">Bharat Transport</p>
-              <p className="mt-1 text-xs text-slate-400">Company operations</p>
+              <h1 className="text-2xl font-bold text-gray-800">Welcome, {currentUser?.full_name || 'Admin'}!</h1>
+              <p className="text-sm text-gray-500">Bharat Transport Company - Complete Management System</p>
             </div>
           </div>
-        </div>
-        <div className="flex-1 px-4 py-6">
-          <p className="mb-3 px-3 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Workspace</p>
-          <Navigation />
-        </div>
-        <div className="border-t border-slate-800 p-4">
-          <div className="mb-3 px-3">
-            <p className="truncate text-sm font-semibold">{displayName}</p>
-            <p className="mt-1 text-xs capitalize text-slate-400">{currentUser?.role || 'Admin'}</p>
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <p className="text-sm text-gray-500">Today</p>
+              <p className="text-lg font-semibold text-gray-800">{new Date().toLocaleDateString('en-IN')}</p>
+            </div>
+            <button
+              onClick={fetchDashboardData}
+              className="p-2 rounded-lg hover:bg-gray-100"
+              title="Refresh"
+            >
+              <RefreshCw size={20} />
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              <LogOut size={18} />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
-          >
-            <LogOut size={18} />
-            Sign out
-          </button>
         </div>
-      </aside>
+      </header>
 
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Operations</p>
-              <h1 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Admin dashboard</h1>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="hidden text-right sm:block">
-                <span className="block text-sm font-semibold text-slate-800">{displayName}</span>
-                <span className="block text-xs capitalize text-slate-500">{currentUser?.role || 'Admin'}</span>
-              </span>
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Category Tabs */}
+        <div className="mb-6 overflow-x-auto">
+          <div className="flex gap-2 min-w-max">
+            {categories.map((cat) => (
               <button
-                type="button"
-                onClick={() => setRefreshVersion((version) => version + 1)}
-                disabled={refreshing}
-                aria-label="Refresh dashboard data"
-                className="rounded-xl border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                key={cat.id}
+                onClick={() => setActiveCategory(cat.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition ${
+                  activeCategory === cat.id
+                    ? `${cat.color} text-white shadow-md`
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
               >
-                <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+                <cat.icon size={18} />
+                <span className="whitespace-nowrap">{cat.name}</span>
               </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label="Sign out"
-                className="rounded-xl border border-slate-200 p-2.5 text-slate-600 transition hover:bg-slate-50 lg:hidden"
-              >
-                <LogOut size={18} />
-              </button>
-            </div>
+            ))}
           </div>
-          <Navigation mobile />
-        </header>
+        </div>
 
-        <main className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:space-y-8 lg:p-8">
-          <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Branch payments at a glance</h2>
-              <p className="mt-1 text-sm text-slate-500">Balances and recent activity across your branches.</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Auto-refreshes every 15 seconds
-            </div>
-          </section>
-
-          {error && (
-            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-              {error}
-            </div>
-          )}
-
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4" aria-label="Company KPIs">
-            <MetricCard
-              label="Total branches"
-              value={loading ? '—' : branches.length.toLocaleString('en-IN')}
-              detail="Active branch locations"
-              icon={Building2}
-              tone="slate"
-            />
-            <MetricCard
-              label="Total payment given"
-              value={formatINR(summary.total_given)}
-              detail="Funds sent to branches"
-              icon={ArrowUpRight}
-              tone="blue"
-            />
-            <MetricCard
-              label="Total payment received"
-              value={formatINR(summary.total_received)}
-              detail="Funds returned to admin"
-              icon={ArrowDownLeft}
-              tone="green"
-            />
-            <MetricCard
-              label="Net pending with branches"
-              value={formatINR(summary.current_balance)}
-              detail={netPending >= 0 ? 'Pending cash held by branches' : 'Net amount returned in excess'}
-              icon={Wallet}
-              tone="amber"
-            />
-          </section>
-
-          <section className="grid grid-cols-1 gap-6 2xl:grid-cols-[1.1fr_0.9fr]">
-            <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="font-bold text-slate-900">Branch-wise pending</h2>
-                  <p className="mt-1 text-sm text-slate-500">Given, received, and current balance by location.</p>
-                </div>
-                <label className="relative block w-full sm:max-w-xs">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search branch"
-                    className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                </label>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-[620px] w-full text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-5 py-3 font-bold">Branch</th>
-                      <th className="px-5 py-3 text-right font-bold">Total given</th>
-                      <th className="px-5 py-3 text-right font-bold">Total received</th>
-                      <th className="px-5 py-3 text-right font-bold">Pending balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {visibleBranches.length === 0 ? (
-                      <tr>
-                        <td colSpan="4" className="px-5 py-12 text-center text-slate-500">
-                          {loading ? 'Loading branch balances…' : 'No matching branch balances.'}
-                        </td>
-                      </tr>
-                    ) : visibleBranches.map((branch) => {
-                      const balance = numeric(branch.current_balance)
-                      return (
-                        <tr key={branch.id} className="hover:bg-slate-50/80">
-                          <td className="px-5 py-4">
-                            <Link
-                              to={`/branch-payments?branch_id=${branch.id}`}
-                              className="group inline-flex items-center gap-2 font-semibold text-slate-900 hover:text-blue-700"
-                            >
-                              <span>{branch.branch_name}</span>
-                              <ChevronRight size={15} className="text-slate-400 transition group-hover:translate-x-0.5" />
-                            </Link>
-                            <p className="mt-1 text-xs text-slate-500">{branch.branch_code || 'Branch'}</p>
-                          </td>
-                          <td className="whitespace-nowrap px-5 py-4 text-right text-slate-700">{formatINR(branch.total_given)}</td>
-                          <td className="whitespace-nowrap px-5 py-4 text-right text-emerald-700">{formatINR(branch.total_received)}</td>
-                          <td className={`whitespace-nowrap px-5 py-4 text-right font-bold ${balance > 0 ? 'text-amber-800' : balance < 0 ? 'text-rose-700' : 'text-slate-700'}`}>
-                            {formatINR(branch.current_balance)}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex justify-end border-t border-slate-100 px-5 py-3">
-                <Link to="/branch-payments" className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 hover:text-blue-900">
-                  Open full ledger <ChevronRight size={16} />
-                </Link>
-              </div>
-            </article>
-
-            <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5">
-                <div>
-                  <h2 className="font-bold text-slate-900">Recent transactions</h2>
-                  <p className="mt-1 text-sm text-slate-500">Latest branch payment activity.</p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
-                  Last 10
-                </span>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {recentTransactions.length === 0 ? (
-                  <div className="px-5 py-12 text-center text-sm text-slate-500">
-                    {loading ? 'Loading recent transactions…' : 'No branch payments recorded yet.'}
+        {/* Active Category Content */}
+        {categories.map((cat) => (
+          activeCategory === cat.id && (
+            <div key={cat.id} className="space-y-6">
+              {/* Category Header */}
+              <div className={`${cat.color} text-white rounded-xl shadow-md p-6`}>
+                <div className="flex items-center gap-4">
+                  <cat.icon size={48} />
+                  <div>
+                    <h2 className="text-3xl font-bold">{cat.name}</h2>
+                    <p className="text-white/80">{cat.description}</p>
                   </div>
-                ) : recentTransactions.map((transaction) => (
-                  <div key={transaction.id} className="flex items-center justify-between gap-4 px-5 py-4">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                        transaction.type === 'given' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'
-                      }`}>
-                        {transaction.type === 'given' ? <ArrowUpRight size={19} /> : <ArrowDownLeft size={19} />}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">{transaction.branch_name}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {transaction.type === 'given' ? 'Given to branch' : 'Received from branch'} · {formatDate(transaction.date)} · {transaction.payment_mode}
-                        </p>
+                </div>
+              </div>
+
+              {/* Functions Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {cat.functions.map((func, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => func.route && navigate(func.route)}
+                    className="bg-white p-6 rounded-xl shadow-md hover:shadow-lg transition-all group text-left"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className={`p-3 rounded-lg ${cat.color} text-white group-hover:scale-110 transition-transform`}>
+                        <func.icon size={24} />
                       </div>
+                      {func.count !== undefined && (
+                        <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-semibold">
+                          {func.count}
+                        </span>
+                      )}
                     </div>
-                    <p className={`shrink-0 text-sm font-extrabold ${transaction.type === 'given' ? 'text-blue-800' : 'text-emerald-800'}`}>
-                      {transaction.type === 'given' ? '−' : '+'}{formatINR(transaction.amount)}
-                    </p>
-                  </div>
+                    <h3 className="text-lg font-semibold text-gray-800 mt-4">{func.name}</h3>
+                    {func.value && (
+                      <p className="text-2xl font-bold text-gray-900 mt-2">{func.value}</p>
+                    )}
+                    {func.route && (
+                      <div className="flex items-center gap-1 text-sm text-blue-600 mt-3">
+                        <span>Open</span>
+                        <ChevronRight size={16} />
+                      </div>
+                    )}
+                  </button>
                 ))}
               </div>
-              <div className="flex justify-end border-t border-slate-100 px-5 py-3">
-                <Link to="/branch-payments" className="inline-flex items-center gap-1 text-sm font-semibold text-blue-700 hover:text-blue-900">
-                  View all transactions <ChevronRight size={16} />
-                </Link>
-              </div>
-            </article>
-          </section>
+            </div>
+          )
+        ))}
 
-          <footer className="flex flex-col gap-2 border-t border-slate-200 pt-5 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>Bharat Transport • Branch accounts</span>
-            <span>{refreshing ? 'Syncing latest figures…' : 'Financial totals update automatically.'}</span>
-          </footer>
-        </main>
+        {/* Quick Stats Summary */}
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-md p-6 mt-8 text-white">
+          <h2 className="text-xl font-bold mb-4">Business Summary</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-sm opacity-75">This Month LR</p>
+              <p className="text-3xl font-bold">{stats?.month_lr || 0}</p>
+            </div>
+            <div>
+              <p className="text-sm opacity-75">Month Revenue</p>
+              <p className="text-3xl font-bold">₹{(stats?.month_revenue || 0).toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-sm opacity-75">Total Parties</p>
+              <p className="text-3xl font-bold">{stats?.total_parties || 0}</p>
+            </div>
+            <div>
+              <p className="text-sm opacity-75">Open Claims</p>
+              <p className="text-3xl font-bold">{stats?.open_claims || 0}</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-  )
+  );
 }
