@@ -1775,7 +1775,7 @@ app.post('/api/customers', authMiddleware, async (req, res) => {
     }
     const result = await client.query(
       `INSERT INTO customers (customer_code, customer_name, mobile, phone, whatsapp, email, address, city, state, pincode, gst_no, pan_no, customer_type, credit_limit, credit_days, opening_balance)
-       VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [customerCode, customerName, mobile, req.body.whatsapp || mobile, req.body.email || null, req.body.address || null, req.body.city || null, req.body.state || null, req.body.pincode || null, req.body.gst_no || null, req.body.pan_no || null, req.body.customer_type || 'Cash', Number(req.body.credit_limit) || 0, Number(req.body.credit_days) || 0, Number(req.body.opening_balance) || 0]
     );
     await client.query('COMMIT');
