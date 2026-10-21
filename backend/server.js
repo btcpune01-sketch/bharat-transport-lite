@@ -20,6 +20,7 @@ const allowedOrigins = [
   'https://bharat-transport-lite.vercel.app',
   'https://bharat-transport-lite-iemb.vercel.app',
   'https://bharat-transport-company-72pc1cqft-nakshcargo-1758.vercel.app',
+  'https://bharat-transport-v2.pages.dev',
   'http://localhost:3000',
   'http://localhost:5173',
   'null'
@@ -49,21 +50,41 @@ app.options('*', cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-if (!process.env.DATABASE_URL) {
-  console.error('❌ DATABASE_URL is missing!');
-  process.exit(1);
+// ✅ FIX 1: env check - Vercel par crash ki jagah saaf error message
+const missingEnv = ['DATABASE_URL', 'JWT_SECRET'].filter((name) => !process.env[name]);
+if (missingEnv.length) {
+  console.error('❌ Missing environment variables:', missingEnv.join(', '));
+  if (!process.env.VERCEL) process.exit(1);
 }
-if (!process.env.JWT_SECRET) {
-  console.error('❌ JWT_SECRET is missing!');
-  process.exit(1);
-}
+app.use((req, res, next) => {
+  if (missingEnv.length) {
+    return res.status(500).json({
+      error: `Server configuration error: missing environment variable(s): ${missingEnv.join(', ')}`
+    });
+  }
+  next();
+});
 
+// ✅ FIX 2: serverless-friendly database pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
-  max: 20,
+  max: process.env.VERCEL ? 3 : 20,
+  connectionTimeoutMillis: 10000,
 });
+pool.on('error', (err) => console.error('Unexpected pool error:', err.message));
 const branchAccessMiddleware = createBranchAccessMiddleware(pool);
+
+// ✅ FIX 4 (TEMPORARY): health check - debugging ke baad hata dena
+app.get('/api/health', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT NOW() AS now');
+    res.json({ ok: true, db: 'connected', time: r.rows[0].now });
+  } catch (err) {
+    res.status(500).json({ ok: false, db: 'failed', error: err.message });
+  }
+});
+
 let branchPaymentsSchemaPromise = null;
 
 async function ensureBranchPaymentsSchema() {
@@ -2306,6 +2327,12 @@ app.get('/api/bills/next-number', authMiddleware, async (req, res) => {
     console.error('Bill number generation error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ✅ FIX 5: global error handler - sab routes ke BAAD
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', req.method, req.originalUrl, err.message);
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
 // ==========================================
