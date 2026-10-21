@@ -1,5 +1,5 @@
 {
-  "installCommand": "cd frontend && npm install --no-package-lock --legacy-peer-deps --registry=https://registry.npmjs.org/",
+  "installCommand": "cd frontend && npm install --include=dev --legacy-peer-deps --registry=https://registry.npmjs.org/",
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
