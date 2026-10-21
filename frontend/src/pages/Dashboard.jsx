@@ -11,7 +11,7 @@ import {
   Calculator, Receipt, CreditCard, TrendingDown, Award,
   Target, Layers, Archive, UserCheck, FileCheck, TruckIcon,
   Route, Fuel, Wrench, Calendar, Phone, Mail, Building2,
-  UserPlus, LogOut, Menu, X, ChevronRight, Filter
+  UserPlus, LogOut, Menu, X, ChevronRight, Filter, BookOpen
 } from 'lucide-react';
 
 export default function Dashboard() {
