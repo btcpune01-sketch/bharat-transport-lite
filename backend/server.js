@@ -9,7 +9,7 @@ const createBranchAuthRouter = require('./routes/branchAuth');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 
 require('dotenv').config();
- 
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
@@ -28,10 +28,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
-    // Allow if it's in the allowed list or ends with .vercel.app
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
@@ -56,6 +53,7 @@ if (missingEnv.length) {
   console.error('❌ Missing environment variables:', missingEnv.join(', '));
   if (!process.env.VERCEL) process.exit(1);
 }
+
 app.use((req, res, next) => {
   if (missingEnv.length) {
     return res.status(500).json({
@@ -72,10 +70,12 @@ const pool = new Pool({
   max: process.env.VERCEL ? 3 : 20,
   connectionTimeoutMillis: 10000,
 });
+
 pool.on('error', (err) => console.error('Unexpected pool error:', err.message));
+
 const branchAccessMiddleware = createBranchAccessMiddleware(pool);
 
-// ✅ FIX 4 (TEMPORARY): health check - debugging ke baad hata dena
+// ✅ FIX 4: health check
 app.get('/api/health', async (req, res) => {
   try {
     const r = await pool.query('SELECT NOW() AS now');
@@ -86,7 +86,6 @@ app.get('/api/health', async (req, res) => {
 });
 
 let branchPaymentsSchemaPromise = null;
-
 async function ensureBranchPaymentsSchema() {
   if (!branchPaymentsSchemaPromise) {
     branchPaymentsSchemaPromise = (async () => {
@@ -120,24 +119,16 @@ async function ensureBranchPaymentsSchema() {
             last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
           )
         `);
-        await client.query(`
-          CREATE INDEX IF NOT EXISTS branch_payments_branch_name_idx
-          ON branch_payments (branch_name)
-        `);
-        await client.query(`
-          CREATE INDEX IF NOT EXISTS branch_payments_branch_date_idx
-          ON branch_payments (branch_id, payment_date DESC, created_at DESC)
-        `);
+        await client.query(`CREATE INDEX IF NOT EXISTS branch_payments_branch_name_idx ON branch_payments (branch_name)`);
+        await client.query(`CREATE INDEX IF NOT EXISTS branch_payments_branch_date_idx ON branch_payments (branch_id, payment_date DESC, created_at DESC)`);
+        
         await client.query(`
           CREATE OR REPLACE FUNCTION sync_branch_ledger_from_payment()
           RETURNS TRIGGER AS $$
           BEGIN
-            INSERT INTO branch_ledger (
-              branch_id, branch_name, total_given, total_received, current_balance, last_updated
-            )
+            INSERT INTO branch_ledger (branch_id, branch_name, total_given, total_received, current_balance, last_updated)
             VALUES (
-              NEW.branch_id,
-              NEW.branch_name,
+              NEW.branch_id, NEW.branch_name,
               CASE WHEN NEW.type = 'given' THEN NEW.amount ELSE 0 END,
               CASE WHEN NEW.type = 'received' THEN NEW.amount ELSE 0 END,
               CASE WHEN NEW.type = 'given' THEN NEW.amount ELSE -NEW.amount END,
@@ -147,41 +138,26 @@ async function ensureBranchPaymentsSchema() {
               branch_name = EXCLUDED.branch_name,
               total_given = branch_ledger.total_given + EXCLUDED.total_given,
               total_received = branch_ledger.total_received + EXCLUDED.total_received,
-              current_balance = (branch_ledger.total_given + EXCLUDED.total_given)
-                - (branch_ledger.total_received + EXCLUDED.total_received),
+              current_balance = (branch_ledger.total_given + EXCLUDED.total_given) - (branch_ledger.total_received + EXCLUDED.total_received),
               last_updated = NOW();
             RETURN NEW;
           END;
           $$ LANGUAGE plpgsql
         `);
+        await client.query(`DROP TRIGGER IF EXISTS branch_payments_sync_ledger ON branch_payments`);
+        await client.query(`CREATE TRIGGER branch_payments_sync_ledger AFTER INSERT ON branch_payments FOR EACH ROW EXECUTE FUNCTION sync_branch_ledger_from_payment()`);
+        
         await client.query(`
-          DROP TRIGGER IF EXISTS branch_payments_sync_ledger ON branch_payments
-        `);
-        await client.query(`
-          CREATE TRIGGER branch_payments_sync_ledger
-          AFTER INSERT ON branch_payments
-          FOR EACH ROW EXECUTE FUNCTION sync_branch_ledger_from_payment()
-        `);
-        await client.query(`
-          INSERT INTO branch_ledger (
-            branch_id, branch_name, total_given, total_received, current_balance, last_updated
-          )
-          SELECT
-            p.branch_id,
-            COALESCE(MAX(b.branch_name), MAX(p.branch_name)),
+          INSERT INTO branch_ledger (branch_id, branch_name, total_given, total_received, current_balance, last_updated)
+          SELECT p.branch_id, COALESCE(MAX(b.branch_name), MAX(p.branch_name)),
             COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN p.type = 'received' THEN p.amount ELSE 0 END), 0),
-            COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END), 0),
-            NOW()
-          FROM branch_payments p
-          LEFT JOIN branches b ON b.id = p.branch_id
+            COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END), 0), NOW()
+          FROM branch_payments p LEFT JOIN branches b ON b.id = p.branch_id
           GROUP BY p.branch_id
           ON CONFLICT (branch_id) DO UPDATE SET
-            branch_name = EXCLUDED.branch_name,
-            total_given = EXCLUDED.total_given,
-            total_received = EXCLUDED.total_received,
-            current_balance = EXCLUDED.current_balance,
-            last_updated = NOW()
+            branch_name = EXCLUDED.branch_name, total_given = EXCLUDED.total_given,
+            total_received = EXCLUDED.total_received, current_balance = EXCLUDED.current_balance, last_updated = NOW()
         `);
         await client.query('COMMIT');
       } catch (error) {
@@ -193,7 +169,6 @@ async function ensureBranchPaymentsSchema() {
       }
     })();
   }
-
   return branchPaymentsSchemaPromise;
 }
 
@@ -531,7 +506,6 @@ function getBranchPaymentsScope(req, res) {
     res.status(403).json({ error: 'Only admins and branch staff can access the branch payment ledger.' });
     return null;
   }
-
   if (isBranchUser) {
     const branchId = Number(req.user?.branch_id);
     if (!Number.isSafeInteger(branchId) || branchId < 1) {
@@ -540,11 +514,9 @@ function getBranchPaymentsScope(req, res) {
     }
     return { branchId, isBranchUser: true };
   }
-
   if (req.query.branch_id === undefined || req.query.branch_id === '') {
     return { branchId: null, isBranchUser: false };
   }
-
   const branchId = Number(req.query.branch_id);
   if (!Number.isSafeInteger(branchId) || branchId < 1) {
     res.status(400).json({ error: 'Branch filter must be a valid branch ID.' });
@@ -556,7 +528,6 @@ function getBranchPaymentsScope(req, res) {
 app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
   const scope = getBranchPaymentsScope(req, res);
   if (!scope) return;
-
   try {
     await ensureBranchPaymentsSchema();
     const params = scope.branchId === null ? [] : [scope.branchId];
@@ -565,25 +536,24 @@ app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
     const [branchesResult, totalsResult] = await Promise.all([
       pool.query(
         `SELECT b.id, b.branch_code, b.branch_name, b.is_active,
-                COALESCE(l.total_given, 0) AS total_given,
-                COALESCE(l.total_received, 0) AS total_received,
-                COALESCE(l.current_balance, 0) AS current_balance,
-                l.last_updated
-         FROM branches b
-         LEFT JOIN branch_ledger l ON l.branch_id = b.id
-         ${branchFilter}
-         ORDER BY b.branch_name`,
+          COALESCE(l.total_given, 0) AS total_given,
+          COALESCE(l.total_received, 0) AS total_received,
+          COALESCE(l.current_balance, 0) AS current_balance,
+          l.last_updated
+        FROM branches b
+        LEFT JOIN branch_ledger l ON l.branch_id = b.id
+        ${branchFilter}
+        ORDER BY b.branch_name`,
         params
       ),
       pool.query(
         `SELECT COALESCE(SUM(total_given), 0) AS total_given,
-                COALESCE(SUM(total_received), 0) AS total_received,
-                COALESCE(SUM(current_balance), 0) AS current_balance
-         FROM branch_ledger ${ledgerFilter}`,
+          COALESCE(SUM(total_received), 0) AS total_received,
+          COALESCE(SUM(current_balance), 0) AS current_balance
+        FROM branch_ledger ${ledgerFilter}`,
         params
       )
     ]);
-
     return res.json({
       success: true,
       summary: totalsResult.rows[0],
@@ -598,7 +568,6 @@ app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
 app.get('/api/branch-payments', authMiddleware, async (req, res) => {
   const scope = getBranchPaymentsScope(req, res);
   if (!scope) return;
-
   try {
     await ensureBranchPaymentsSchema();
     const conditions = [];
@@ -611,25 +580,24 @@ app.get('/api/branch-payments', authMiddleware, async (req, res) => {
       params.push(`%${req.query.search.trim().slice(0, 100)}%`);
       conditions.push(`b.branch_name ILIKE $${params.length}`);
     }
-
     const requestedLimit = Number.parseInt(req.query.limit, 10);
     const limit = Number.isSafeInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 500) : 250;
     params.push(limit);
     const result = await pool.query(
       `SELECT p.id, p.branch_id, COALESCE(b.branch_name, p.branch_name) AS branch_name,
-              TO_CHAR(p.payment_date, 'YYYY-MM-DD') AS date, p.amount, p.type,
-              p.payment_mode, p.notes, p.created_by, p.created_at,
-              SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END)
-                OVER (
-                  PARTITION BY p.branch_id
-                  ORDER BY p.payment_date ASC, p.created_at ASC, p.id ASC
-                  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS balance_after_transaction
-       FROM branch_payments p
-       LEFT JOIN branches b ON b.id = p.branch_id
-       ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
-       ORDER BY p.payment_date DESC, p.created_at DESC, p.id DESC
-       LIMIT $${params.length}`,
+        TO_CHAR(p.payment_date, 'YYYY-MM-DD') AS date, p.amount, p.type,
+        p.payment_mode, p.notes, p.created_by, p.created_at,
+        SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END)
+        OVER (
+          PARTITION BY p.branch_id
+          ORDER BY p.payment_date ASC, p.created_at ASC, p.id ASC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS balance_after_transaction
+      FROM branch_payments p
+      LEFT JOIN branches b ON b.id = p.branch_id
+      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+      ORDER BY p.payment_date DESC, p.created_at DESC, p.id DESC
+      LIMIT $${params.length}`,
       params
     );
     return res.json({ success: true, data: result.rows });
@@ -645,7 +613,6 @@ app.post('/api/branch-payments', authMiddleware, async (req, res) => {
   if (role !== 'admin' && !isBranchUser) {
     return res.status(403).json({ error: 'Only admins and branch staff can create branch payment entries.' });
   }
-
   const type = String(req.body?.type || '').toLowerCase();
   if (!['given', 'received'].includes(type)) {
     return res.status(400).json({ error: 'Payment type must be given or received.' });
@@ -653,47 +620,37 @@ app.post('/api/branch-payments', authMiddleware, async (req, res) => {
   if (isBranchUser && type !== 'received') {
     return res.status(403).json({ error: 'Branch staff can only record payments returned to admin.' });
   }
-
   const amountText = String(req.body?.amount ?? '').trim();
   if (!/^\d+(?:\.\d{1,2})?$/.test(amountText) || Number(amountText) <= 0 || Number(amountText) > 999999999999) {
     return res.status(400).json({ error: 'Enter a valid positive payment amount with up to two decimal places.' });
   }
-
   const date = String(req.body?.date || req.body?.payment_date || '').trim();
   const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00.000Z`) : null;
   if (!parsedDate || Number.isNaN(parsedDate.valueOf()) || parsedDate.toISOString().slice(0, 10) !== date) {
     return res.status(400).json({ error: 'Enter a valid payment date.' });
   }
-
   const paymentMode = String(req.body?.payment_mode || '').trim();
   if (!['Cash', 'UPI', 'Bank'].includes(paymentMode)) {
     return res.status(400).json({ error: 'Payment mode must be Cash, UPI, or Bank.' });
   }
-
   const branchId = isBranchUser ? Number(req.user.branch_id) : Number(req.body?.branch_id);
   if (!Number.isSafeInteger(branchId) || branchId < 1) {
     return res.status(400).json({ error: 'Select a valid branch.' });
   }
-
   const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 1000) : '';
   const createdBy = String(req.user?.username || req.user?.full_name || 'user').slice(0, 120);
-
   try {
     await ensureBranchPaymentsSchema();
     const branchResult = await pool.query(
-      `SELECT id, branch_name FROM branches
-       WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE`,
+      `SELECT id, branch_name FROM branches WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE`,
       [branchId]
     );
     const branch = branchResult.rows[0];
     if (!branch) return res.status(404).json({ error: 'The selected branch is unavailable.' });
-
     const result = await pool.query(
-      `INSERT INTO branch_payments
-         (branch_id, branch_name, payment_date, amount, type, payment_mode, notes, created_by)
+      `INSERT INTO branch_payments (branch_id, branch_name, payment_date, amount, type, payment_mode, notes, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, branch_id, branch_name, TO_CHAR(payment_date, 'YYYY-MM-DD') AS date,
-                 amount, type, payment_mode, notes, created_by, created_at`,
+       RETURNING id, branch_id, branch_name, TO_CHAR(payment_date, 'YYYY-MM-DD') AS date, amount, type, payment_mode, notes, created_by, created_at`,
       [branch.id, branch.branch_name, date, amountText, type, paymentMode, notes, createdBy]
     );
     return res.status(201).json({ success: true, data: result.rows[0] });
@@ -848,7 +805,7 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       open_claims: get(15), today_expenses: get(16, 'total'), total_branches: get(17), today_revenue: get(18, 'total'),
       month_revenue: get(19, 'total'), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin
     });
-  } catch (err) { 
+  } catch (err) {
     console.error('Dashboard stats error:', err.message);
     res.json({ success: false, today_lr: 0, month_lr: 0, total_lr: 0, pending_lr: 0, paid_lr: 0, total_bills: 0, pending_bills: 0, total_mr: 0, total_parties: 0, total_customers: 0, total_revenue: 0, pending_amount: 0, pending_pod: 0, active_drivers: 0, active_vehicles: 0, open_claims: 0, today_expenses: 0, total_branches: 0, today_revenue: 0, month_revenue: 0 });
   }
@@ -860,20 +817,17 @@ function safeUserBranchId(req) {
 }
 
 const ALL_BRANCH_VALUES = new Set(['', 'all', 'all branches', 'all_branches', 'undefined', 'null']);
-
 function resolveDashboardBranch(req) {
   const isAdmin = (req.user?.role || 'operator') === 'admin';
   const toId = (value) => {
     const parsed = parseInt(value, 10);
     return Number.isSafeInteger(parsed) && parsed > 0 && String(parsed) === String(value).trim() ? parsed : null;
   };
-
   if (!isAdmin) {
     const branchId = toId(req.user?.branch_id);
     if (!branchId) return { forbidden: true };
     return { branchId, branchCode: req.user?.branch_code ? String(req.user.branch_code).trim() : null };
   }
-
   const raw = req.query.branch_id ?? req.query.branch ?? '';
   const selected = String(raw).trim();
   if (ALL_BRANCH_VALUES.has(selected.toLowerCase())) return { branchId: null, branchCode: null };
@@ -900,34 +854,21 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
     const scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
-
     const branch = buildBranchCondition(scope);
     const where = (...conditions) => {
       const all = [branch.sql, ...conditions].filter(Boolean);
       return all.length ? `WHERE ${all.join(' AND ')}` : '';
     };
-
     const [recentBilties, recentMR, recentClaims] = await Promise.allSettled([
-      pool.query(
-        `SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') AS payment_status, created_at FROM consignments ${where('COALESCE(is_deleted, FALSE) = FALSE')} ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 5`,
-        branch.params
-      ),
-      pool.query(
-        `SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 5`,
-        branch.params
-      ),
-      pool.query(
-        `SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') AS status, created_at FROM claims ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 3`,
-        branch.params
-      )
+      pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') AS payment_status, created_at FROM consignments ${where('COALESCE(is_deleted, FALSE) = FALSE')} ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 5`, branch.params),
+      pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 5`, branch.params),
+      pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') AS status, created_at FROM claims ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 3`, branch.params)
     ]);
-
     const rowsOrEmpty = (result, label) => {
       if (result.status === 'fulfilled') return result.value?.rows || [];
       console.error(`Dashboard recent ${label} query error:`, result.reason?.message);
       return [];
     };
-
     res.json({
       success: true,
       bilties: rowsOrEmpty(recentBilties, 'bilties'),
@@ -944,18 +885,16 @@ app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
   try {
     const scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
-
     const branch = buildBranchCondition(scope);
     const conditions = [branch.sql, 'COALESCE(is_deleted, FALSE) = FALSE', 'consignor_name IS NOT NULL'].filter(Boolean);
-
     const result = await pool.query(
       `SELECT consignor_name, consignor_code, COUNT(*) AS total_bilties,
         COALESCE(SUM(CASE WHEN grand_total::text ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN grand_total::text::NUMERIC ELSE 0 END), 0) AS total_revenue
-       FROM consignments
-       WHERE ${conditions.join(' AND ')}
-       GROUP BY consignor_name, consignor_code
-       ORDER BY total_revenue DESC NULLS LAST
-       LIMIT 5`,
+      FROM consignments
+      WHERE ${conditions.join(' AND ')}
+      GROUP BY consignor_name, consignor_code
+      ORDER BY total_revenue DESC NULLS LAST
+      LIMIT 5`,
       branch.params
     );
     res.json({ success: true, data: result?.rows || [] });
@@ -1164,7 +1103,6 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
     const consignmentBranch = { branchId: effectiveBranchId || null, branchCode: effectiveBranchCode || null };
     const searchCond = buildBranchCondition(consignmentBranch, 3);
     const listCond = buildBranchCondition(consignmentBranch, 1);
-
     let result;
     if (lrNumber) {
       if (isAdmin) {
@@ -1201,6 +1139,7 @@ app.get('/api/consignments/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ✅ FIX 3: Enhanced POST /api/consignments with Detailed Error Logging
 app.post('/api/consignments', authMiddleware, async (req, res) => {
   let client;
   let transactionStarted = false;
@@ -1244,18 +1183,34 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
       transactionStarted = false;
       return res.status(409).json({ error: 'This Bilty No already exists' });
     }
-    const keys = Object.keys(c); const values = Object.values(c);
+    const keys = Object.keys(c); 
+    const values = Object.values(c);
+    // Wrapped keys in double quotes to prevent SQL syntax errors with reserved words
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-    const result = await client.query(`INSERT INTO consignments (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`, values);
+    const result = await client.query(`INSERT INTO consignments (${keys.map(k => `"${k}"`).join(', ')}) VALUES (${placeholders}) RETURNING *`, values);
     await client.query('COMMIT');
     transactionStarted = false;
     res.json(result.rows[0]);
   } catch (err) {
+    // 🚨 DETAILED ERROR LOGGING FOR DEBUGGING
+    console.error('--- CONSIGNMENTS POST ERROR START ---');
+    console.error('Error Code    :', err.code);
+    console.error('Error Message :', err.message);
+    console.error('Error Detail  :', err.detail);
+    console.error('Error Stack   :', err.stack);
+    console.error('--- CONSIGNMENTS POST ERROR END ---');
+
     if (transactionStarted) {
       try { await client.query('ROLLBACK'); } catch (rollbackErr) { console.error('Consignment transaction rollback failed:', rollbackErr.message); }
     }
     if (err.code === '23505') return res.status(409).json({ error: 'This Bilty No already exists' });
-    res.status(500).json({ error: err.message });
+    if (err.code === '42703') return res.status(400).json({ error: 'Invalid field in request. Please check the data.' });
+    
+    res.status(500).json({ 
+      error: 'Failed to save consignment', 
+      details: err.message,
+      code: err.code
+    });
   } finally {
     if (client) client.release();
   }
@@ -1948,7 +1903,7 @@ app.get('/api/stock', authMiddleware, async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     console.error('Stock lookup error:', err.message);
-    console.error('GET /api/stock error:', err.message); res.json({ data: [] });
+    res.json({ data: [] });
   }
 });
 
