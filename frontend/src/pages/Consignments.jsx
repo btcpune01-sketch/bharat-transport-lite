@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-const API_URL = import.meta.env.VITE_API_URL || '';
+import api from '../api';
 
 const Consignments = () => {
   const navigate = useNavigate();
@@ -35,23 +33,14 @@ const Consignments = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      
-      if (!token) {
+
+      if (!token && !localStorage.getItem('branch_session')) {
         setError('Please login first');
         setLoading(false);
         return;
       }
 
-      const response = await axios.get(`${API_URL}/api/consignments`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log('API Response:', response.data);
-      
-      // Backend returns { data: [...] }
+      const response = await api.get('/api/consignments');
       const dataArray = response.data?.data || response.data || [];
       setConsignments(Array.isArray(dataArray) ? dataArray : []);
       setError('');
@@ -65,15 +54,15 @@ const Consignments = () => {
   };
 
   const filteredConsignments = consignments.filter(c => {
-    const matchesSearch = !searchTerm || 
+    const matchesSearch = !searchTerm ||
       c.lr_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.consignor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.consignee_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.from_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.to_name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -81,10 +70,7 @@ const Consignments = () => {
     if (!window.confirm(`Delete Bilty ${lr_no}?`)) return;
 
     try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/api/consignments/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.delete(`/api/consignments/${id}`);
       toast.success('Deleted');
       await fetchConsignments();
     } catch (err) {
@@ -112,8 +98,15 @@ const Consignments = () => {
 
   return (
     <div className="container mx-auto p-6">
-      <div className="mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-3xl font-bold text-gray-800">Consignments (Bilty)</h1>
+        <button
+          type="button"
+          onClick={() => navigate('/dashboard')}
+          className="self-start rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-50 sm:self-auto"
+        >
+          ← Back to Dashboard
+        </button>
       </div>
 
       {error && (
@@ -192,6 +185,7 @@ const Consignments = () => {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3 justify-start">
                         <button
+                          type="button"
                           onClick={() => navigate(`/bilty-print/${c.id}`)}
                           className="text-blue-600 hover:text-blue-800 p-1 transition"
                           title="Print Bilty"
@@ -199,6 +193,7 @@ const Consignments = () => {
                           🖨️
                         </button>
                         <button
+                          type="button"
                           onClick={() => navigate(`/consignments/${c.id}/edit`)}
                           className="text-green-600 hover:text-green-800 p-1 transition"
                           title="Edit"
@@ -206,6 +201,7 @@ const Consignments = () => {
                           ✏️
                         </button>
                         <button
+                          type="button"
                           onClick={() => handleDelete(c.id, c.lr_no)}
                           className="text-red-600 hover:text-red-800 p-1 transition"
                           title="Delete"

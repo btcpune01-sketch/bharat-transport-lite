@@ -1,159 +1,60 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { dashboardAPI, branchAPI } from '../api'
+
+const groups = [
+  { title: 'Dashboard APIs', items: [['getDashboardStats', 'All KPI statistics', '/dashboard/stats'], ['getRecentActivities', 'Recent bilties, MR and claims', '/dashboard/recent'], ['getTopParties', 'Top 5 parties by revenue', '/dashboard/top-parties']] },
+  { title: 'Dashboard Stats', items: [['getTodayLR', 'today_lr — Today LR count'], ['getMonthLR', 'month_lr — Monthly LR count'], ['getTotalLR', 'total_lr — Total LR count'], ['getPendingLR', 'pending_lr — Pending/In-transit LR'], ['getPaidLR', 'paid_lr — Paid LR count'], ['getTotalBills', 'total_bills — Total bills'], ['getPendingBills', 'pending_bills — Unpaid bills'], ['getTotalMR', 'total_mr — Money receipts'], ['getTotalParties', 'total_parties — Total parties'], ['getTotalCustomers', 'total_customers — Total customers'], ['getTotalRevenue', 'total_revenue — Paid revenue'], ['getPendingAmount', 'pending_amount — Pending amount'], ['getPendingPOD', 'pending_pod — Pending POD'], ['getActiveDrivers', 'active_drivers — Active drivers'], ['getActiveVehicles', 'active_vehicles — Active vehicles'], ['getOpenClaims', 'open_claims — Open claims'], ['getTodayExpenses', 'today_expenses — Today expenses'], ['getTotalBranches', 'total_branches — Branch count'], ['getTodayRevenue', 'today_revenue — Today revenue'], ['getMonthRevenue', 'month_revenue — Monthly revenue']] },
+  { title: 'Recent Activities', items: [['getRecentBilties', 'Last 5 bilties'], ['getRecentMR', 'Last 5 money receipts'], ['getRecentClaims', 'Last 3 claims']] },
+  { title: 'Branch Management', items: [['getAllBranches', 'All branches', '/branch-portal'], ['getBranchSummary', 'Branch payment summary', '/branch-payments'], ['getBranchPayments', 'Branch transactions', '/branch-payments'], ['createBranchPayment', 'Record branch payment', '/branch-payments'], ['getBranchLedger', 'Auto-calculated ledger', '/ledger']] },
+  { title: 'Consignment / Bilty', items: [['getAllConsignments', 'All bilties', '/consignments'], ['createConsignment', 'Create new bilty', '/consignments/new'], ['generateBiltyNo', 'Auto-generate LR number', '/consignments/new'], ['getConsignmentsByBranch', 'Branch-wise bilties', '/consignments'], ['searchConsignments', 'Search by LR number', '/consignments']] },
+  { title: 'Billing & Payment', items: [['getAllBills', 'All bills', '/bills'], ['createBill', 'Create new bill', '/bill-entry'], ['getAllMoneyReceipts', 'All money receipts', '/mr'], ['createMoneyReceipt', 'Create money receipt', '/mr/create'], ['getPartyLedger', 'Party-wise ledger', '/ledger']] },
+  { title: 'Master Data', items: [['getAllParties', 'All parties', '/party'], ['getAllDrivers', 'All drivers', '/drivers'], ['getAllVehicles', 'All vehicles', '/vehicles'], ['getAllCustomers', 'All customers', '/customers'], ['getDashboardUserRole', 'Role-based access control', '/settings']] }
+]
+
+const statKeys = { getTodayLR: 'today_lr', getMonthLR: 'month_lr', getTotalLR: 'total_lr', getPendingLR: 'pending_lr', getPaidLR: 'paid_lr', getTotalBills: 'total_bills', getPendingBills: 'pending_bills', getTotalMR: 'total_mr', getTotalParties: 'total_parties', getTotalCustomers: 'total_customers', getTotalRevenue: 'total_revenue', getPendingAmount: 'pending_amount', getPendingPOD: 'pending_pod', getActiveDrivers: 'active_drivers', getActiveVehicles: 'active_vehicles', getOpenClaims: 'open_claims', getTodayExpenses: 'today_expenses', getTotalBranches: 'total_branches', getTodayRevenue: 'today_revenue', getMonthRevenue: 'month_revenue' }
+const allItems = groups.flatMap((group) => group.items.map(([name, description, path]) => ({ name, description, path })))
+const number = (value) => Number(value || 0)
+const inr = (value) => `₹${number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+const statValue = (stats, name) => { const key = statKeys[name]; if (!key) return null; const value = stats?.[key]; return ['total_revenue', 'pending_amount', 'today_expenses', 'today_revenue', 'month_revenue'].includes(key) ? inr(value) : number(value).toLocaleString('en-IN') }
 
 export default function BranchDashboard() {
-  const { branchCode } = useParams();
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [stats, setStats] = useState({ 
-    todaysLR: 0, monthLR: 0, totalLR: 0, 
-    todaysRevenue: 0, monthRevenue: 0, 
-    pendingAmount: 0, pendingLR: 0, 
-    totalRevenue: 0, paidBilties: 0 
-  });
-  const [recentBilties, setRecentBilties] = useState([]);
+  const { branchCode } = useParams()
+  const navigate = useNavigate()
+  const [stats, setStats] = useState({})
+  const [recent, setRecent] = useState({})
+  const [topParties, setTopParties] = useState([])
+  const [branches, setBranches] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-    return () => clearInterval(timer);
-  }, []);
+    let active = true
+    Promise.allSettled([dashboardAPI.getStats(), dashboardAPI.recentBilties(), dashboardAPI.topParties(), branchAPI.getAll()]).then((results) => {
+      if (!active) return
+      const [statsResult, recentResult, partiesResult, branchesResult] = results
+      if (statsResult.status === 'fulfilled') setStats(statsResult.value.data || {})
+      if (recentResult.status === 'fulfilled') setRecent(recentResult.value.data || {})
+      if (partiesResult.status === 'fulfilled') { const data = partiesResult.value.data || {}; setTopParties(Array.isArray(data) ? data : (data.data || data.parties || [])) }
+      if (branchesResult.status === 'fulfilled') { const data = branchesResult.value.data || {}; setBranches(Array.isArray(data) ? data : (data.data || [])) }
+      if (results.every((result) => result.status === 'rejected')) setError('Dashboard data could not be loaded.')
+      setLoading(false)
+    })
+    return () => { active = false }
+  }, [branchCode])
 
-  useEffect(() => {
-    if (!branchCode) return;
-    const todayStr = currentTime.toISOString().split('T')[0];
-    const firstDayMonth = new Date(currentTime.getFullYear(), currentTime.getMonth(), 1);
-    const q = query(collection(db, 'consignments'), where('branch', '==', branchCode));
+  const visibleItems = useMemo(() => { const query = search.trim().toLowerCase(); return allItems.filter((item) => !query || `${item.name} ${item.description}`.toLowerCase().includes(query)) }, [search])
+  const recentBilties = recent.bilties || recent.recent_bilties || []
+  const recentMR = recent.mr || recent.money_receipts || recent.recent_mr || []
+  const recentClaims = recent.claims || recent.recent_claims || []
 
-    const unsub = onSnapshot(q, (snapshot) => {
-      let todaysLR=0, monthLR=0, totalLR=snapshot.size, todaysRevenue=0, monthRevenue=0, pendingAmount=0, pendingLR=0, totalRevenue=0, paidBilties=0;
-      let recents = [];
-      snapshot.forEach(doc => {
-        const d = { id: doc.id, ...doc.data() };
-        const createdDate = d.createdAt?.toDate ? d.createdAt.toDate() : (d.date ? new Date(d.date) : new Date());
-        const createdStr = createdDate.toISOString().split('T')[0];
-        const amount = Number(d.totalAmount || d.freight || d.grandTotal || 0);
-        const isPaid = (d.paymentStatus || d.status || '').toLowerCase() === 'paid';
-        if(createdStr===todayStr){todaysLR++; todaysRevenue+=amount;}
-        if(createdDate>=firstDayMonth){monthLR++; monthRevenue+=amount;}
-        if(!isPaid){pendingAmount+=amount; pendingLR++;} else {totalRevenue+=amount; paidBilties++;}
-        recents.push(d);
-      });
-      recents.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
-      setRecentBilties(recents.slice(0,5));
-      setStats({ todaysLR, monthLR, totalLR, todaysRevenue, monthRevenue, pendingAmount, pendingLR, totalRevenue, paidBilties });
-      setLoading(false);
-    }, (error) => {
-      console.error("Branch Dashboard Error:", error);
-      setLoading(false);
-    });
+  if (loading) return <div className="min-h-screen bg-slate-50 p-8 text-center font-semibold">Loading dashboard data…</div>
 
-    return () => unsub();
-  }, [branchCode, currentTime]);
-
-  const timeString = currentTime.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true });
-  const dateString = currentTime.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-  const toSlug = (s) => s.toLowerCase().replace(/ & /g, '-').replace(/\s+/g, '-');
-
-  const cards = [
-    { title:"Today's LR", value:stats.todaysLR, sub:`Month: ${stats.monthLR} | Total: ${stats.totalLR}`, gradient:"from-[#3f37c9] to-[#6c63ff]" },
-    { title:"Today's Revenue", value:`₹${stats.todaysRevenue.toLocaleString('en-IN')}`, sub:`Month: ₹${stats.monthRevenue.toLocaleString('en-IN')}`, gradient:"from-[#1d4e89] to-[#2bb5a6]" },
-    { title:"Pending Amount", value:`₹${stats.pendingAmount.toLocaleString('en-IN')}`, sub:`Pending LR: ${stats.pendingLR}`, gradient:"from-[#4a3f8a] to-[#f0a500]" },
-    { title:"Total Revenue", value:`₹${stats.totalRevenue.toLocaleString('en-IN')}`, sub:`Paid: ${stats.paidBilties}`, gradient:"from-[#2c3e8a] to-[#6c63ff]" }
-  ];
-
-  const quickActions = [
-    { label:'Bilty Entry', slug:'bilty-entry', color:'bg-[#2c5cc5]' },
-    { label:'Consignments', slug:'consignments', color:'bg-[#1a9e6e]' },
-    { label:'Bill Entry', slug:'bill-entry', color:'bg-[#e67e22]' },
-    { label:'Money Receipt', slug:'money-receipt', color:'bg-[#34495e]' },
-    { label:'Gadi Challan', slug:'gadi-challan', color:'bg-[#16a085]' },
-    { label:'Gate Pass', slug:'gate-pass', color:'bg-[#2c5cc5]' },
-    { label:'POD', slug:'pod', color:'bg-[#d4880f]' },
-    { label:'Stock Report', slug:'stock-report', color:'bg-[#2c3e50]' },
-  ];
-
-  const allModules = {
-    'BOOKING & BILTY': ['Bilty Entry', 'Consignments', 'Bilty Print', 'Gadi Challan', 'Gate Pass', 'Branch Transfer', 'Vehicle Tracking'],
-    'BILLING & PAYMENT': ['Bill Entry', 'Bill List', 'Bill Print', 'Money Receipt', 'Payment Entry', 'To-Pay Report', 'Outstanding', 'Challan Payment', 'Profit Loss'],
-    'POD & STOCK': ['POD', 'POD List', 'Stock Report', 'Stock Entry', 'Diesel Entry', 'Diesel Report'],
-    'COMMISSION & REPORT': ['Commission', 'Commission Report', 'Cash Book', 'Ledger', 'GST', 'TDS', 'Expense', 'Income'],
-    'MASTERS': ['Customer Master', 'Supplier', 'Driver', 'Vehicle', 'Tyre', 'Rate Master', 'City Master', 'Notification', 'Support']
-  };
-
-  if(loading) return <div className="p-10 text-center font-bold">Loading LIVE Branch Data for {branchCode}...</div>;
-
-  return (
-    <div className="min-h-screen bg-[#f5f7fb] -m-6 p-6">
-      <div className="flex justify-between items-start mb-6">
-        <div>
-          <h1 className="text-[26px] font-bold text-[#1e293b]">Dashboard Overview - {branchCode}</h1>
-          <p className="text-[14px] text-[#64748b]">Branch view - {branchCode} | LIVE Auto Update on Add/Delete/Edit</p>
-        </div>
-        <div className="text-right">
-          <div className="text-[28px] font-bold text-[#1e293b]">{timeString} <span className="text-[10px] bg-green-100 text-green-600 px-2 py-1 rounded-full ml-2 animate-pulse">LIVE</span></div>
-          <div className="text-[13px] text-[#94a3b8]">{dateString}</div>
-        </div>
-      </div>
-      <div className="bg-white rounded-xl shadow-sm border p-4 mb-6 flex items-center gap-3">
-        <div className="text-[14px] font-semibold text-[#334155]">🏢 Filter by Branch:</div>
-        <div className="bg-[#f1f5f9] border rounded-lg px-3 py-1.5 text-[13px] font-medium">📍 {branchCode} (Current - LIVE Connected)</div>
-        <div className="ml-auto flex gap-2">
-          <span className="text-[11px] bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">Today LR: {stats.todaysLR}</span>
-          <span className="text-[11px] bg-green-100 text-green-700 px-2.5 py-1 rounded-full">Total: {stats.totalLR}</span>
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-        {cards.map((c,i) => (
-          <div key={i} className={`bg-gradient-to-br ${c.gradient} rounded-xl p-5 text-white shadow-lg hover:scale-[1.02] transition`}>
-            <div className="text-[13px] opacity-90 font-medium">{c.title}</div>
-            <div className="text-[32px] font-bold mt-2">{c.value}</div>
-            <div className="text-[11px] opacity-80 mt-3 bg-white/20 inline-block px-2 py-1 rounded">{c.sub}</div>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-3 gap-6 mb-8">
-        <div className="col-span-2">
-          <h2 className="text-[16px] font-bold text-[#1e293b] mb-4">Quick Actions - {branchCode}</h2>
-          <div className="grid grid-cols-4 gap-4">
-            {quickActions.map((action) => (
-              <button key={action.slug} onClick={() => navigate(`/branch/${branchCode}/${action.slug}`)} className={`${action.color} rounded-xl p-4 text-white shadow-md hover:shadow-lg hover:scale-[1.02] transition text-center min-h-[90px] text-[12px] font-semibold`}>{action.label}</button>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border p-4 shadow-sm">
-          <h3 className="font-bold text-[14px] mb-3">Recent 5 Bilties - LIVE ({branchCode})</h3>
-          {recentBilties.length===0 ? <p className="text-[12px] text-gray-400">No bilty for this branch</p> :
-            recentBilties.map(r => (
-              <div key={r.id} className="flex justify-between py-2 border-b text-[12px]">
-                <span className="font-medium">{r.biltyNo||r.lrNo||r.id.slice(0,6)}</span>
-                <span className="font-bold">₹{Number(r.totalAmount||r.freight||0).toLocaleString()}</span>
-                <span className={(r.paymentStatus||'').toLowerCase()==='paid'?'text-green-600':'text-orange-500'}>{r.paymentStatus||'Pending'}</span>
-              </div>
-            ))
-          }
-        </div>
-      </div>
-      <div className="space-y-5">
-        {Object.entries(allModules).map(([catTitle, modules]) => (
-          <div key={catTitle} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="px-4 py-3 bg-[#f8fafc] border-b flex justify-between">
-              <h3 className="text-[13px] font-bold text-[#475569]">{catTitle} ({modules.length})</h3>
-              <span className="text-[11px] text-[#94a3b8]">LIVE - Delete/Edit pe auto update</span>
-            </div>
-            <div className="p-4 grid grid-cols-5 gap-3">
-              {modules.map((mod) => (
-                <button key={mod} onClick={() => navigate(`/branch/${branchCode}/${toSlug(mod)}`)} className="text-left p-3 border border-[#e2e8f0] rounded-lg hover:border-blue-400 hover:bg-blue-50 transition group">
-                  <div className="text-[13px] font-medium group-hover:text-blue-600">{mod}</div>
-                  <div className="text-[10px] text-[#94a3b8] mt-1">/{toSlug(mod)}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+  return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-6">
+    <header className="mb-6 flex flex-col gap-4 rounded-2xl bg-slate-950 p-5 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Bharat Transport</p><h1 className="mt-1 text-2xl font-extrabold">Dashboard Overview</h1><p className="mt-1 text-sm text-slate-300">Branch: {branchCode || 'Company'} · 46 functions connected</p></div><button type="button" onClick={() => navigate('/dashboard')} className="rounded-lg bg-white px-4 py-2 text-sm font-bold text-slate-900 hover:bg-blue-50">Back to Dashboard</button></header>
+    {error && <div role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error} Existing bills and bilties were not changed.</div>}
+    <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">{['getTodayLR', 'getMonthLR', 'getTotalLR', 'getPendingLR', 'getPaidLR', 'getTotalRevenue', 'getPendingAmount'].map((name) => <div key={name} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-500">{name.replace('get', '')}</p><p className="mt-2 text-xl font-extrabold">{statValue(stats, name) ?? '—'}</p></div>)}</section>
+    <div className="mb-6 grid gap-6 lg:grid-cols-3"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2"><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold">All Dashboard Functions (46)</h2><p className="text-sm text-slate-500">All Discord functions are listed without changing existing data.</p></div><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search functions…" className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" /></div><div className="space-y-5">{groups.map((group) => { const items = group.items.map(([name, description, path]) => ({ name, description, path })).filter((item) => visibleItems.some((visible) => visible.name === item.name)); return <div key={group.title}><h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-blue-700">{group.title} <span className="text-slate-400">({items.length})</span></h3><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{items.map((item) => <button key={item.name} type="button" onClick={() => item.path && navigate(item.path)} disabled={!item.path} className="rounded-xl border border-slate-200 p-3 text-left transition hover:border-blue-400 hover:bg-blue-50 disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:bg-white"><p className="text-sm font-bold">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.description}</p>{statValue(stats, item.name) !== null && <p className="mt-2 text-lg font-extrabold text-blue-700">{statValue(stats, item.name)}</p>}</button>)}</div></div>})}</div></section><aside className="space-y-6"><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="mb-3 font-bold">Recent Activities</h2><p className="text-sm text-slate-600">Bilties: <b>{recentBilties.length}</b></p><p className="text-sm text-slate-600">Money receipts: <b>{recentMR.length}</b></p><p className="text-sm text-slate-600">Claims: <b>{recentClaims.length}</b></p></section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="mb-3 font-bold">Top Parties</h2>{topParties.slice(0, 5).map((party, index) => <div key={party.id || party.party_id || index} className="flex justify-between border-b border-slate-100 py-2 text-sm"><span>{party.name || party.party_name || party.customer_name || 'Party'}</span><b>{inr(party.revenue || party.total_revenue || party.amount)}</b></div>)}{topParties.length === 0 && <p className="text-sm text-slate-500">No party data available.</p>}</section><section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="mb-3 font-bold">Branch Summary</h2><p className="text-sm text-slate-600">Total branches: <b>{branches.length || statValue(stats, 'getTotalBranches') || 0}</b></p><button type="button" onClick={() => navigate('/branch-portal')} className="mt-3 rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800">Open Branches</button></section></aside></div>
+  </div>
 }

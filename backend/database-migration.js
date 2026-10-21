@@ -23,21 +23,18 @@ async function runMigrations() {
     `);
     console.log('✅ Added branch login schema columns');
 
-    // Add consignor_email column
     await pool.query(`
-      ALTER TABLE consignments 
+      ALTER TABLE consignments
       ADD COLUMN IF NOT EXISTS consignor_email VARCHAR(255)
     `);
     console.log('✅ Added consignor_email column');
 
-    // Add consignee_email column
     await pool.query(`
-      ALTER TABLE consignments 
+      ALTER TABLE consignments
       ADD COLUMN IF NOT EXISTS consignee_email VARCHAR(255)
     `);
     console.log('✅ Added consignee_email column');
 
-    // Gate Pass Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS gate_passes (
         id SERIAL PRIMARY KEY,
@@ -58,20 +55,7 @@ async function runMigrations() {
       )
     `);
     console.log('✅ Gate passes table created');
-        // Add new columns to gadi_challans table
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS packages VARCHAR(20)`);
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS bilty_date DATE`);
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS consignor_name VARCHAR(100)`);
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS consignee_name VARCHAR(100)`);
-    console.log('✅ Added bilty detail columns to gadi_challans');
-        // Add new columns to gadi_challans table
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS packages VARCHAR(20)`);
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS bilty_date DATE`);
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS consignor_name VARCHAR(100)`);
-    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS consignee_name VARCHAR(100)`);
-    console.log('✅ Added bilty detail columns to gadi_challans');
 
-        // Gadi Challan (Vehicle Freight Receipt) Table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS gadi_challans (
         id SERIAL PRIMARY KEY,
@@ -103,6 +87,13 @@ async function runMigrations() {
       )
     `);
     console.log('✅ Gadi challans table created');
+
+    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS packages VARCHAR(20)`);
+    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS bilty_date DATE`);
+    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS consignor_name VARCHAR(100)`);
+    await pool.query(`ALTER TABLE gadi_challans ADD COLUMN IF NOT EXISTS consignee_name VARCHAR(100)`);
+    console.log('✅ Added bilty detail columns to gadi_challans');
+
     console.log('✅ All migrations completed successfully!');
   } catch (err) {
     console.error('❌ Migration error:', err.message);
@@ -111,7 +102,6 @@ async function runMigrations() {
   }
 }
 
-// Only run if this file is executed directly
 if (require.main === module) {
   runMigrations();
 }
