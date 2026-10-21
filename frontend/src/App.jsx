@@ -156,6 +156,7 @@ function App() {
           <Route path="/gadi-challan-print/:id?" element={<GadiChallanPrint />} />
           <Route path="/pod-upload" element={<PODUpload />} />
           <Route path="/pod-view" element={<PODView />} />
+          <Route path="/branch-login" element={<Navigate to="/login" replace />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
           <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
           <Route path="/branch/:branchSlug" element={<BranchPortal />} />
