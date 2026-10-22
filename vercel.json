@@ -1,8 +1,14 @@
 {
-  "installCommand": "cd frontend && npm install --include=dev --legacy-peer-deps --registry=https://registry.npmjs.org/",
-  "buildCommand": "cd frontend && npm run build",
+  "buildCommand": "cd frontend && npm install --legacy-peer-deps && npm run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }
