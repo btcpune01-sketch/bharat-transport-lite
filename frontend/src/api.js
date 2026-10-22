@@ -41,7 +41,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    const isLoginRequest = error.config?.url?.split('?')[0] === '/api/auth/login'
+    const isLoginRequest = error.config?.url?.split('?')[0] === '/auth/login'
     if (error.response?.status === 401 && !isLoginRequest) {
       const branchSession = getActiveBranchSession()
       if (branchSession) {
@@ -60,10 +60,10 @@ api.interceptors.response.use(
 )
 
 export const authAPI = {
-  login: (username, password) => api.post('/api/auth/login', { username, password }),
-  register: (data) => api.post('/api/auth/register', data),
-  me: () => api.get('/api/auth/me'),
-  changePassword: (old_password, new_password) => api.post('/api/auth/change-password', { old_password, new_password })
+  login: (username, password) => api.post('/auth/login', { username, password }),
+  register: (data) => api.post('/auth/register', data),
+  me: () => api.get('/auth/me'),
+  changePassword: (old_password, new_password) => api.post('/auth/change-password', { old_password, new_password })
 }
 
 export const customerAPI = {

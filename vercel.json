@@ -1,8 +1,9 @@
 {
   "rewrites": [
+    { "source": "/api/api/(.*)", "destination": "/api/index.js" },
     { "source": "/api/(.*)", "destination": "/api/index.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
-  "buildCommand": "rm -f .npmrc frontend/.npmrc backend/.npmrc && cd frontend && rm -f .npmrc && npm config set registry https://registry.npmjs.org/ && npm install --legacy-peer-deps && npm run build",
+  "buildCommand": "rm -rf .npmrc frontend/.npmrc backend/.npmrc && npm config set registry https://registry.npmjs.org/ && cd frontend && npm config set registry https://registry.npmjs.org/ && npm install --legacy-peer-deps && npm run build",
   "outputDirectory": "frontend/dist"
 }
