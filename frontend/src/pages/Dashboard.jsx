@@ -1,37 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Percent,
-  FileText,
-  Truck,
-  Users,
-  Clock,
-  CheckCircle2,
-  AlertTriangle,
-  ShieldCheck,
-  Plus,
-  RefreshCw,
-  Building,
-  Calendar,
-  CreditCard,
-  ChevronRight,
-  ChevronDown,
-  Search,
-  Layers,
-  AlertCircle,
-  Calculator,
-  Download,
-  Compass,
-  Table,
-  UserCheck,
-  LogOut,
-  Receipt,
-  Package,
-  History,
-  X
+  TrendingUp, FileText, Truck, Users, Clock, CheckCircle2, AlertTriangle,
+  ShieldCheck, Plus, RefreshCw, Building2, Calendar, CreditCard, ChevronRight,
+  ChevronDown, Package, Search, Layers, MapPin, AlertCircle, Calculator,
+  Download, ShieldAlert, Compass, User, LogOut, Navigation, FilePlus, Coins,
+  History, X, DollarSign, Percent, Receipt, Boxes, Activity, BarChart3
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -41,34 +15,12 @@ export default function Dashboard() {
   const [activeMenu, setActiveMenu] = useState(null);
   const menuTimeoutRef = useRef(null);
 
-  const [user, setUser] = useState({
-    username: 'User',
-    role: 'operator',
-    branch_name: '',
-    branch_code: ''
-  });
-
+  const [user, setUser] = useState({ username: 'User', role: 'operator', branch_name: '', branch_code: '' });
   const [stats, setStats] = useState({
-    today_lr: 0,
-    month_lr: 0,
-    total_lr: 0,
-    pending_lr: 0,
-    paid_lr: 0,
-    total_bills: 0,
-    pending_bills: 0,
-    total_mr: 0,
-    total_parties: 0,
-    total_customers: 0,
-    total_revenue: 0,
-    pending_amount: 0,
-    pending_pod: 0,
-    active_drivers: 0,
-    active_vehicles: 0,
-    today_expenses: 0,
-    total_branches: 0,
-    today_revenue: 0,
-    month_revenue: 0,
-    is_admin: false
+    today_lr: 0, month_lr: 0, total_lr: 0, pending_lr: 0, paid_lr: 0, total_bills: 0,
+    pending_bills: 0, total_mr: 0, total_parties: 0, total_customers: 0, total_revenue: 0,
+    pending_amount: 0, pending_pod: 0, active_drivers: 0, active_vehicles: 0,
+    today_expenses: 0, total_branches: 0, today_revenue: 0, month_revenue: 0, is_admin: false
   });
 
   const [recentData, setRecentData] = useState({ bilties: [], receipts: [], claims: [] });
@@ -87,7 +39,7 @@ export default function Dashboard() {
   const [calcForm, setCalcForm] = useState({ from_city: '', to_city: '', weight_kg: '', packages: '' });
   const [calcResult, setCalcResult] = useState(null);
 
-  const API_BASE = '';
+  const API_BASE = 'https://bharat-transport-lite-iemb.vercel.app';
 
   const getHeaders = () => {
     const token = localStorage.getItem('token') || '';
@@ -101,9 +53,7 @@ export default function Dashboard() {
     try {
       const storedUser = localStorage.getItem('user');
       if (storedUser) setUser(JSON.parse(storedUser));
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) {}
     fetchDashboardData();
   }, [selectedBranch]);
 
@@ -163,9 +113,9 @@ export default function Dashboard() {
       const res = await fetch(`${API_BASE}/api/consignments/track?lr_no=${encodeURIComponent(trackLr.trim())}`);
       const data = await res.json();
       if (res.ok && !data.error) setTrackResult(data);
-      else setTrackError(data.error || 'बिल्टी नहीं मिली।');
+      else setTrackError(data.error || 'Bilty not found. Please check the LR number.');
     } catch (err) {
-      setTrackError('ट्रैकिंग सर्वर एरर।');
+      setTrackError('Could not connect to tracking server.');
     } finally {
       setTrackLoading(false);
     }
@@ -182,7 +132,7 @@ export default function Dashboard() {
       const data = await res.json();
       setCalcResult(data);
     } catch (err) {
-      console.error(err);
+      console.error('Rate calculation error:', err);
     }
   };
 
@@ -192,185 +142,180 @@ export default function Dashboard() {
     navigate('/login');
   };
 
-  // 10 MAIN CATEGORIES CONFIGURATION (COMPATIBLE ICONS ONLY)
   const navCategories = [
     {
-      id: 'dashboard',
-      label: '1. डैशबोर्ड',
-      icon: TrendingUp,
-      color: 'text-blue-600',
+      id: 'dashboard', label: '1. Dashboard', icon: TrendingUp, color: 'text-blue-600',
       items: [
-        { title: 'डैशबोर्ड ओवरव्यू', desc: 'लाइव व्यापार स्थिति', path: '/', icon: TrendingUp },
-        { title: 'डेटा रीफ्रेश', desc: 'तुरंत अपडेट करें', action: fetchDashboardData, icon: RefreshCw }
+        { title: 'Dashboard Overview', desc: 'Live business status and key metrics', path: '/', icon: TrendingUp },
+        { title: 'Refresh Branch Data', desc: 'Update data instantly', action: fetchDashboardData, icon: RefreshCw }
       ]
     },
     {
-      id: 'bilty',
-      label: '2. बिल्टी / बुकिंग',
-      icon: FileText,
-      color: 'text-indigo-600',
+      id: 'bilty', label: '2. Bilty / Booking', icon: FileText, color: 'text-indigo-600',
       items: [
-        { title: 'नई बिल्टी बुकिंग', desc: 'नया LR बनाएं', path: '/consignments/new', icon: Plus },
-        { title: 'समस्त बिल्टी रजिस्टर', desc: 'सभी बिल्टियों की सूची', path: '/consignments', icon: FileText },
-        { title: 'ई-वे बिल', desc: 'ई-वे बिल स्टेटस', path: '/eway-bills', icon: ShieldCheck }
+        { title: 'New Bilty Booking', desc: 'Generate new LR', path: '/consignments/new', icon: Plus },
+        { title: 'All Bilty Register', desc: 'List of all booked bilties', path: '/consignments', icon: FileText },
+        { title: 'E-Way Bills', desc: 'E-way bill expiry and vehicle updates', path: '/eway-bills', icon: ShieldCheck },
+        { title: 'Quick LR Tracking', desc: 'Check LR status instantly', action: () => document.getElementById('lr-track-input')?.focus(), icon: Search }
       ]
     },
     {
-      id: 'fleet',
-      label: '3. वाहन व ड्राइवर',
-      icon: Truck,
-      color: 'text-emerald-600',
+      id: 'fleet', label: '3. Fleet & Drivers', icon: Truck, color: 'text-emerald-600',
       items: [
-        { title: 'वाहन प्रबंधन', desc: 'गाड़ियों का विवरण', path: '/vehicles', icon: Truck },
-        { title: 'चालक सूची', desc: 'ड्राइवर प्रोफाइल', path: '/drivers', icon: Users },
-        { title: 'एक्सपायरी अलर्ट', desc: 'बीमा, फिटनेस व परमिट', path: '/vehicles/expiring', icon: AlertTriangle }
+        { title: 'Vehicle Management', desc: 'Vehicle details and RC records', path: '/vehicles', icon: Truck },
+        { title: 'Driver List', desc: 'Driver profiles, licenses, and phones', path: '/drivers', icon: Users },
+        { title: 'Document Expiry Alerts', desc: 'Insurance, fitness, and permit renewals', path: '/vehicles/expiring', icon: ShieldAlert }
       ]
     },
     {
-      id: 'operations',
-      label: '4. ऑपरेशन्स',
-      icon: Compass,
-      color: 'text-amber-600',
+      id: 'operations', label: '4. Operations', icon: Navigation, color: 'text-amber-600',
       items: [
-        { title: 'गाड़ी चालान', desc: 'चालान व एडवांस पेमेंट', path: '/gadi-challan', icon: Table },
-        { title: 'गेट पास', desc: 'लोडिंग गेट पास', path: '/gate-pass', icon: FileText },
-        { title: 'मैनिफेस्ट', desc: 'गाड़ी लोडिंग चालान', path: '/manifests', icon: Layers },
-        { title: 'ट्रिप मैनेजमेंट', desc: 'रूट व ट्रिप', path: '/trips', icon: Compass }
+        { title: 'Vehicle Challan', desc: 'Lorry hire challan and advance payments', path: '/gadi-challan', icon: FileText },
+        { title: 'Gate Pass', desc: 'Loading and unloading passes', path: '/gate-pass', icon: CheckCircle2 },
+        { title: 'Manifest / Transit', desc: 'Vehicle loading challan and bilty list', path: '/manifests', icon: Layers },
+        { title: 'Trip Management', desc: 'Route, hub, and distance planning', path: '/trips', icon: Compass }
       ]
     },
     {
-      id: 'pod',
-      label: '5. डिलीवरी / POD',
-      icon: CheckCircle2,
-      color: 'text-teal-600',
+      id: 'pod', label: '5. Delivery / POD', icon: Package, color: 'text-teal-600',
       items: [
-        { title: 'POD रजिस्टर', desc: 'डिलीवरी रसीदें', path: '/pod', icon: CheckCircle2 },
-        { title: 'पब्लिक POD व्यू', desc: 'ग्राहक ट्रैकिंग पेज', path: '/public/pod-view', icon: CheckCircle2 }
+        { title: 'POD Register', desc: 'Received delivery receipts and signatures', path: '/pod', icon: Package },
+        { title: 'Public POD View', desc: 'Delivery status for customers', path: '/public/pod-view', icon: CheckCircle2 }
       ]
     },
     {
-      id: 'parties',
-      label: '6. पार्टी व ग्राहक',
-      icon: Users,
-      color: 'text-cyan-600',
+      id: 'parties', label: '6. Parties & Customers', icon: Users, color: 'text-cyan-600',
       items: [
-        { title: 'कस्टमर डायरेक्टरी', desc: 'नियमित ग्राहक', path: '/customers', icon: Users },
-        { title: 'पार्टी मास्टर', desc: 'कंसाइनर व कंसाइनी', path: '/parties', icon: Building },
-        { title: 'स्मार्ट रेट्स', desc: 'तय दरें', path: '/rates', icon: DollarSign },
-        { title: 'किराया कैलकुलेटर', desc: 'तुरंत भाड़ा निकालें', action: () => setShowCalculator(true), icon: Calculator }
+        { title: 'Customer Directory', desc: 'Regular customers and credit limits', path: '/customers', icon: Users },
+        { title: 'Party Master', desc: 'Consignor and consignee GST accounts', path: '/parties', icon: Building2 },
+        { title: 'Smart Rate Contracts', desc: 'Fixed rates per party', path: '/rates', icon: Coins },
+        { title: 'Freight Calculator', desc: 'Instant freight calculation by weight/packages', action: () => setShowCalculator(true), icon: Calculator }
       ]
     },
     {
-      id: 'billing',
-      label: '7. बिलिंग',
-      icon: FileText,
-      color: 'text-violet-600',
+      id: 'billing', label: '7. Billing / Invoice', icon: FileText, color: 'text-violet-600',
       items: [
-        { title: 'बिल बुक', desc: 'जीएसटी फ्रेट बिल्स', path: '/bills', icon: FileText },
-        { title: 'नया बिल बनाएं', desc: 'नया इनवॉइस', path: '/bills/new', icon: Plus }
+        { title: 'Bill Book', desc: 'Generated GST freight bills', path: '/bills', icon: FileText },
+        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bills/new', icon: Plus }
       ]
     },
     {
-      id: 'receipts',
-      label: '8. भुगतान / MR',
-      icon: CreditCard,
-      color: 'text-purple-600',
+      id: 'receipts', label: '8. Payments / MR', icon: CreditCard, color: 'text-purple-600',
       items: [
-        { title: 'मनी रिसीट (MR)', desc: 'पेमेंट रसीदें', path: '/mr', icon: CreditCard },
-        { title: 'पार्टी लेज़र', desc: 'लेन-देन खाता', path: '/ledger', icon: History },
-        { title: 'बकाया राशि', desc: 'पेंडिंग पेमेंट', path: '/outstanding', icon: AlertTriangle }
+        { title: 'Money Receipt (MR)', desc: 'Cash, UPI, and bank payment receipts', path: '/mr', icon: CreditCard },
+        { title: 'Party Ledger', desc: 'Transaction account and running balance', path: '/ledger', icon: History },
+        { title: 'Outstanding Amounts', desc: 'Recoverable amounts from parties', path: '/outstanding', icon: AlertTriangle }
       ]
     },
     {
-      id: 'finance',
-      label: '9. अकाउंट्स',
-      icon: DollarSign,
-      color: 'text-rose-600',
+      id: 'finance', label: '9. Accounts & Finance', icon: DollarSign, color: 'text-rose-600',
       items: [
-        { title: 'वित्तीय सारांश (P&L)', desc: 'कुल आमदनी व खर्च', path: '/accounts/summary', icon: DollarSign },
-        { title: 'दैनिक खर्चे', desc: 'खर्च रिकॉर्ड', path: '/expenses', icon: Receipt },
-        { title: 'टीडीएस रजिस्टर', desc: 'टीडीएस कटौती', path: '/accounts/tds-register', icon: Percent },
-        { title: 'कमीशन व क्लेम्स', desc: 'दलाल कमीशन', path: '/commissions', icon: ShieldCheck }
+        { title: 'Financial Summary (P&L)', desc: 'Total income, liabilities, and net profit', path: '/accounts/summary', icon: DollarSign },
+        { title: 'Daily Expenses', desc: 'Office, diesel, and toll expense records', path: '/expenses', icon: Receipt },
+        { title: 'TDS Register', desc: 'TDS deducted from vehicle challans', path: '/accounts/tds-register', icon: Percent },
+        { title: 'Commissions & Claims', desc: 'Broker commissions and claim settlements', path: '/commissions', icon: ShieldCheck }
       ]
     },
     {
-      id: 'admin',
-      label: '10. प्रशासन',
-      icon: Building,
-      color: 'text-slate-700',
+      id: 'admin', label: '10. Admin / System', icon: Building2, color: 'text-slate-700',
       items: [
-        { title: 'शाखाएं (Branches)', desc: 'ब्रांच नेटवर्क', path: '/branches', icon: Building },
-        { title: 'ब्रांच लेज़र', desc: 'ब्रांच लेन-देन', path: '/branch-payments', icon: DollarSign },
-        { title: 'दस्तावेज़ स्टॉक', desc: 'बिल्टी, एमआर स्टॉक', path: '/stock', icon: Package },
-        { title: 'यूज़र्स', desc: 'स्टाफ अधिकार', path: '/users', icon: UserCheck },
-        { title: 'ऑडिट लॉग्स', desc: 'सिस्टम हिस्ट्री', path: '/audit', icon: History },
-        { title: 'बैकअप व रिस्टोर', desc: 'डेटा डाउनलोड', path: '/backup', icon: Download }
+        { title: 'Branches', desc: 'Branch network and login setup', path: '/branches', icon: Building2 },
+        { title: 'Branch Ledger', desc: 'Transactions between head office and branches', path: '/branch-payments', icon: Coins },
+        { title: 'Document Stock', desc: 'Remaining bilty, MR, and challan copies', path: '/stock', icon: Boxes },
+        { title: 'Users & Operators', desc: 'Staff accounts and permissions', path: '/users', icon: User },
+        { title: 'Audit Logs', desc: 'History of system changes', path: '/audit', icon: History },
+        { title: 'Backup & Restore', desc: 'Database backup download and import', path: '/backup', icon: Download }
       ]
     }
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+          <p className="text-slate-600 font-medium">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-[1600px] mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-md">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-md shadow-blue-500/20">
               BTC
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-extrabold text-lg text-slate-900 tracking-tight">भारत ट्रांसपोर्ट कंपनी</h1>
-                <span className="text-[10px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-200">TMS v6.0</span>
+                <h1 className="font-extrabold text-lg text-slate-900 tracking-tight">Bharat Transport Company</h1>
+                <span className="text-[10px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-200">TMS v6.0 Live</span>
               </div>
-              <p className="text-xs text-slate-500">
-                {new Date().toLocaleDateString('hi-IN', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}
+              <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                <span>{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                <span className="inline-block w-1 h-1 rounded-full bg-slate-300"></span>
+                <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> System Online
+                </span>
               </p>
             </div>
           </div>
 
           <div className="hidden lg:flex items-center gap-3">
-            <form onSubmit={handleQuickTrack} className="relative w-64">
+            <form onSubmit={handleQuickTrack} className="relative w-72">
               <input
+                id="lr-track-input"
                 type="text"
-                placeholder="LR नंबर डालें..."
+                placeholder="Enter LR / Bilty Number..."
                 value={trackLr}
                 onChange={(e) => setTrackLr(e.target.value)}
-                className="w-full text-xs bg-slate-100 pl-8 pr-14 py-2 rounded-lg border border-slate-200 focus:outline-none focus:bg-white"
+                className="w-full text-xs bg-slate-100 hover:bg-slate-50 focus:bg-white pl-8 pr-16 py-2 rounded-lg border border-slate-200 focus:border-blue-500 focus:outline-none transition-all"
               />
               <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" />
-              <button type="submit" disabled={trackLoading} className="absolute right-1 top-1 bg-blue-600 text-white text-[11px] font-semibold px-2 py-1 rounded">
-                {trackLoading ? '...' : 'ट्रैक'}
+              <button type="submit" disabled={trackLoading} className="absolute right-1 top-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold px-2.5 py-1 rounded-md transition-colors">
+                {trackLoading ? '...' : 'Track'}
               </button>
             </form>
 
             {stats.is_admin && branches.length > 0 && (
               <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
-                <Building className="w-4 h-4 text-slate-500" />
+                <Building2 className="w-4 h-4 text-slate-500" />
                 <select
                   value={selectedBranch}
                   onChange={(e) => setSelectedBranch(e.target.value)}
                   className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
                 >
-                  <option value="all">सभी शाखाएं</option>
+                  <option value="all">All Branches</option>
                   {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.branch_name}</option>
+                    <option key={b.id} value={b.id}>{b.branch_name} ({b.branch_code})</option>
                   ))}
                 </select>
               </div>
             )}
 
-            <button onClick={fetchDashboardData} disabled={refreshing} title="रीफ्रेश" className="p-2 text-slate-600 bg-slate-100 hover:bg-blue-50 rounded-lg border border-slate-200">
+            <button onClick={fetchDashboardData} disabled={refreshing} title="Refresh Data" className="p-2 text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-blue-50 rounded-lg border border-slate-200 transition-colors">
               <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-600' : ''}`} />
             </button>
 
-            <button onClick={handleLogout} title="लॉगआउट" className="p-2 text-slate-400 hover:text-rose-600 bg-slate-100 rounded-lg">
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+              <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs uppercase">
+                {user.username ? user.username.slice(0, 2) : 'US'}
+              </div>
+              <div className="text-left hidden xl:block">
+                <div className="text-xs font-bold text-slate-900 leading-tight">{user.username}</div>
+                <div className="text-[10px] text-slate-500 font-medium capitalize">{user.role}</div>
+              </div>
+              <button onClick={handleLogout} title="Logout" className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors">
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50">
-          <div className="max-w-[1600px] mx-auto px-4 flex items-center justify-between overflow-x-auto py-1">
+        <div className="border-t border-slate-100 bg-slate-50/90 backdrop-blur-md">
+          <div className="max-w-[1600px] mx-auto px-4 flex items-center justify-between overflow-x-auto no-scrollbar py-1">
             <div className="flex items-center gap-1 w-full justify-between min-w-[1100px]">
               {navCategories.map((cat) => {
                 const IconComponent = cat.icon;
@@ -391,18 +336,19 @@ export default function Dashboard() {
                     <button
                       onClick={() => setActiveMenu(isOpen ? null : cat.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                        isOpen ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:bg-white hover:text-blue-700'
+                        isOpen ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:bg-white hover:text-blue-700 hover:shadow-xs'
                       }`}
                     >
                       <IconComponent className={`w-3.5 h-3.5 ${isOpen ? 'text-white' : cat.color}`} />
                       <span className="whitespace-nowrap">{cat.label}</span>
-                      <ChevronDown className={`w-3 h-3 ${isOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
+                      <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
                     </button>
 
                     {isOpen && (
                       <div className="absolute left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50">
-                        <div className="px-3.5 py-1 text-[11px] font-extrabold uppercase text-slate-400 border-b border-slate-100 mb-1">
-                          {cat.label}
+                        <div className="px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100 mb-1 flex items-center justify-between">
+                          <span>{cat.label}</span>
+                          <span className="text-[10px] text-blue-600 lowercase">{cat.items.length} options</span>
                         </div>
                         {cat.items.map((item, idx) => {
                           const SubIcon = item.icon || FileText;
@@ -411,12 +357,12 @@ export default function Dashboard() {
                               <button
                                 key={idx}
                                 onClick={() => { setActiveMenu(null); item.action(); }}
-                                className="w-full text-left px-3.5 py-2 hover:bg-blue-50 flex items-start gap-2.5 transition-colors"
+                                className="w-full text-left px-3.5 py-2 hover:bg-blue-50 flex items-start gap-2.5 group transition-colors"
                               >
-                                <SubIcon className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                                <SubIcon className="w-4 h-4 text-blue-600 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
                                 <div>
-                                  <div className="text-xs font-bold text-slate-800">{item.title}</div>
-                                  <div className="text-[11px] text-slate-500">{item.desc}</div>
+                                  <div className="text-xs font-bold text-slate-800 group-hover:text-blue-700">{item.title}</div>
+                                  <div className="text-[11px] text-slate-500 leading-tight">{item.desc}</div>
                                 </div>
                               </button>
                             );
@@ -426,12 +372,12 @@ export default function Dashboard() {
                               key={idx}
                               to={item.path}
                               onClick={() => setActiveMenu(null)}
-                              className="px-3.5 py-2 hover:bg-blue-50 flex items-start gap-2.5 transition-colors block"
+                              className="px-3.5 py-2 hover:bg-blue-50 flex items-start gap-2.5 group transition-colors block"
                             >
-                              <SubIcon className="w-4 h-4 text-slate-600 mt-0.5 shrink-0" />
+                              <SubIcon className="w-4 h-4 text-slate-600 group-hover:text-blue-600 mt-0.5 shrink-0 group-hover:scale-110 transition-transform" />
                               <div>
-                                <div className="text-xs font-bold text-slate-800">{item.title}</div>
-                                <div className="text-[11px] text-slate-500">{item.desc}</div>
+                                <div className="text-xs font-bold text-slate-800 group-hover:text-blue-700">{item.title}</div>
+                                <div className="text-[11px] text-slate-500 leading-tight">{item.desc}</div>
                               </div>
                             </Link>
                           );
@@ -448,62 +394,76 @@ export default function Dashboard() {
 
       <main className="max-w-[1600px] w-full mx-auto px-4 py-5 flex-1 flex flex-col gap-5">
         {trackResult && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between text-xs text-emerald-950">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between text-xs text-emerald-950 shadow-sm">
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
               <div>
                 <span className="font-bold text-sm">LR: {trackResult.lr_no}</span>
                 <span className="mx-2 text-slate-400">|</span>
-                <span>तारीख: {trackResult.lr_date}</span>
+                <span>Date: {trackResult.lr_date}</span>
                 <span className="mx-2 text-slate-400">|</span>
-                <span>रूट: {trackResult.from_name} ➔ {trackResult.to_name}</span>
+                <span>Route: {trackResult.from_name} ➔ {trackResult.to_name}</span>
                 <span className="mx-2 text-slate-400">|</span>
-                <span className="font-semibold text-emerald-700">स्थिति: {trackResult.status}</span>
+                <span className="font-semibold text-emerald-700">Status: {trackResult.status} ({trackResult.pod_status || 'Pending POD'})</span>
               </div>
             </div>
-            <button onClick={() => setTrackResult(null)} className="p-1 text-emerald-700">
+            <button onClick={() => setTrackResult(null)} className="p-1 hover:bg-emerald-100 rounded-lg text-emerald-700">
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
         {trackError && (
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex items-center justify-between text-xs text-rose-900">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex items-center justify-between text-xs text-rose-900 shadow-sm">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
               <span>{trackError}</span>
             </div>
-            <button onClick={() => setTrackError('')} className="p-1 text-rose-700">
+            <button onClick={() => setTrackError('')} className="p-1 hover:bg-rose-100 rounded-lg text-rose-700">
               <X className="w-4 h-4" />
             </button>
           </div>
         )}
 
+        {expiringVehicles.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center justify-between text-xs text-amber-900 shadow-sm">
+            <div className="flex items-center gap-3">
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold">{expiringVehicles.length} vehicles have documents (Fitness / Insurance / Permit) expiring within 30 days!</span>
+                <span className="ml-2 text-amber-800 underline cursor-pointer" onClick={() => navigate('/vehicles/expiring')}>
+                  View Here ➔
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs flex items-center justify-between flex-wrap gap-2">
-          <div className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 pl-1">
             <Plus className="w-4 h-4 text-blue-600" />
-            <span>त्वरित कार्य:</span>
+            <span>Quick Actions:</span>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Link to="/consignments/new" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ नई बिल्टी</span>
+            <Link to="/consignments/new" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
+              <FilePlus className="w-3.5 h-3.5" />
+              <span>+ New Bilty</span>
             </Link>
-            <Link to="/bills/new" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold">
+            <Link to="/bills/new" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
               <FileText className="w-3.5 h-3.5" />
-              <span>+ नया बिल</span>
+              <span>+ New Bill</span>
             </Link>
-            <Link to="/mr" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold">
+            <Link to="/mr" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
               <CreditCard className="w-3.5 h-3.5" />
-              <span>+ मनी रिसीट (MR)</span>
+              <span>+ Money Receipt</span>
             </Link>
-            <Link to="/gadi-challan" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">
+            <Link to="/gadi-challan" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors">
               <Truck className="w-3.5 h-3.5" />
-              <span>+ गाड़ी चालान</span>
+              <span>+ Vehicle Challan</span>
             </Link>
-            <button onClick={() => setShowCalculator(!showCalculator)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-800 rounded-lg text-xs font-bold border border-slate-300">
+            <button onClick={() => setShowCalculator(!showCalculator)} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition-colors border border-slate-300">
               <Calculator className="w-3.5 h-3.5 text-blue-600" />
-              <span>किराया कैलकुलेटर</span>
+              <span>Freight Calculator</span>
             </button>
           </div>
         </div>
@@ -511,36 +471,43 @@ export default function Dashboard() {
         {showCalculator && (
           <div className="bg-gradient-to-r from-blue-900 to-indigo-900 rounded-2xl p-4 text-white shadow-lg">
             <div className="flex items-center justify-between mb-3 border-b border-blue-800 pb-2">
-              <h3 className="font-bold text-sm">स्मार्ट किराया कैलकुलेटर</h3>
-              <button onClick={() => setShowCalculator(false)} className="text-blue-300 hover:text-white">
+              <div className="flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm">Smart Freight Rate Calculator</h3>
+              </div>
+              <button onClick={() => setShowCalculator(false)} className="text-blue-300 hover:text-white p-1">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <form onSubmit={handleCalculateRate} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
               <div>
-                <label className="text-[11px] block mb-1">कहाँ से (From):</label>
-                <input type="text" required placeholder="उदा. Delhi" value={calcForm.from_city} onChange={(e) => setCalcForm({ ...calcForm, from_city: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white" />
+                <label className="text-[11px] font-medium text-blue-200 block mb-1">From City:</label>
+                <input type="text" required placeholder="e.g., Delhi" value={calcForm.from_city} onChange={(e) => setCalcForm({ ...calcForm, from_city: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400" />
               </div>
               <div>
-                <label className="text-[11px] block mb-1">कहाँ तक (To):</label>
-                <input type="text" required placeholder="उदा. Mumbai" value={calcForm.to_city} onChange={(e) => setCalcForm({ ...calcForm, to_city: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white" />
+                <label className="text-[11px] font-medium text-blue-200 block mb-1">To City:</label>
+                <input type="text" required placeholder="e.g., Mumbai" value={calcForm.to_city} onChange={(e) => setCalcForm({ ...calcForm, to_city: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400" />
               </div>
               <div>
-                <label className="text-[11px] block mb-1">वजन (Kg):</label>
-                <input type="number" placeholder="उदा. 250" value={calcForm.weight_kg} onChange={(e) => setCalcForm({ ...calcForm, weight_kg: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white" />
+                <label className="text-[11px] font-medium text-blue-200 block mb-1">Weight (Kg):</label>
+                <input type="number" placeholder="e.g., 250" value={calcForm.weight_kg} onChange={(e) => setCalcForm({ ...calcForm, weight_kg: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400" />
               </div>
               <div>
-                <label className="text-[11px] block mb-1">पैकेजेस (Nag):</label>
-                <input type="number" placeholder="उदा. 5" value={calcForm.packages} onChange={(e) => setCalcForm({ ...calcForm, packages: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white" />
+                <label className="text-[11px] font-medium text-blue-200 block mb-1">Packages:</label>
+                <input type="number" placeholder="e.g., 5" value={calcForm.packages} onChange={(e) => setCalcForm({ ...calcForm, packages: e.target.value })} className="w-full text-xs bg-blue-950/60 border border-blue-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-amber-400" />
               </div>
-              <button type="submit" className="bg-amber-400 hover:bg-amber-300 text-blue-950 font-bold text-xs py-2 px-4 rounded-lg h-[35px]">भाड़ा निकालें</button>
+              <button type="submit" className="bg-amber-400 hover:bg-amber-300 text-blue-950 font-extrabold text-xs py-2 px-4 rounded-lg transition-colors h-[35px]">Calculate Freight</button>
             </form>
             {calcResult && (
-              <div className="mt-3 pt-3 border-t border-blue-800 text-xs">
+              <div className="mt-3 pt-3 border-t border-blue-800 flex items-center justify-between text-xs">
                 {calcResult.found ? (
-                  <span className="text-amber-300 font-bold">लागू दर: ₹{calcResult.calculation?.rate_applied} | कुल भाड़ा: ₹{calcResult.freight}</span>
+                  <div className="flex items-center gap-4">
+                    <span className="text-emerald-300 font-bold">Applied Rate: ₹{calcResult.calculation?.rate_applied}</span>
+                    <span className="text-amber-300 font-extrabold text-sm">Total Freight: ₹{calcResult.freight}</span>
+                    {calcResult.calculation?.min_charge && <span className="text-blue-300 text-[11px]">(Min Charge: ₹{calcResult.calculation?.min_charge})</span>}
+                  </div>
                 ) : (
-                  <span className="text-rose-300">रेट कॉन्ट्रैक्ट नहीं मिला।</span>
+                  <span className="text-rose-300">No rate contract found for this route.</span>
                 )}
               </div>
             )}
@@ -548,131 +515,243 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs relative overflow-hidden group hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase">आज की बुकिंग</span>
-              <FileText className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Today's Booking</span>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                <FileText className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-extrabold text-slate-900">{stats.today_lr} बिल्टियां</div>
-            <div className="mt-2 text-xs text-slate-600 flex justify-between border-t pt-2">
-              <span>आज का रेवेन्यू:</span>
+            <div className="text-2xl font-extrabold text-slate-900 leading-tight">
+              {stats.today_lr} <span className="text-xs font-medium text-slate-500">Bilties</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between pt-2 border-t border-slate-100">
+              <span>Today's Revenue:</span>
               <span className="font-bold text-emerald-600">₹{(stats.today_revenue || 0).toLocaleString('en-IN')}</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs relative overflow-hidden group hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase">इस माह की बुकिंग</span>
-              <Calendar className="w-4 h-4 text-indigo-600" />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">This Month's Booking</span>
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Calendar className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-extrabold text-slate-900">{stats.month_lr} बिल्टियां</div>
-            <div className="mt-2 text-xs text-slate-600 flex justify-between border-t pt-2">
-              <span>माह का रेवेन्यू:</span>
+            <div className="text-2xl font-extrabold text-slate-900 leading-tight">
+              {stats.month_lr} <span className="text-xs font-medium text-slate-500">Bilties</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between pt-2 border-t border-slate-100">
+              <span>Month's Revenue:</span>
               <span className="font-bold text-emerald-600">₹{(stats.month_revenue || 0).toLocaleString('en-IN')}</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs relative overflow-hidden group hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase">बकाया राशि</span>
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pending Amount</span>
+              <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
             </div>
-            <div className="text-2xl font-extrabold text-rose-600">₹{(stats.pending_amount || 0).toLocaleString('en-IN')}</div>
-            <div className="mt-2 text-xs text-slate-600 flex justify-between border-t pt-2">
-              <span>पेंडिंग बिल्टियां:</span>
-              <span className="font-bold text-slate-800">{stats.pending_lr} एलआर</span>
+            <div className="text-2xl font-extrabold text-rose-600 leading-tight">
+              ₹{(stats.pending_amount || 0).toLocaleString('en-IN')}
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between pt-2 border-t border-slate-100">
+              <span>Pending Bilties:</span>
+              <span className="font-bold text-slate-800">{stats.pending_lr} LR</span>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs relative overflow-hidden group hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase">नेटवर्क स्थिति</span>
-              <Truck className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div className="flex justify-between text-slate-900">
-              <div>
-                <span className="text-lg font-bold">{stats.active_vehicles || 0}</span>
-                <span className="text-[10px] text-slate-500 block">गाड़ियां</span>
-              </div>
-              <div>
-                <span className="text-lg font-bold">{stats.active_drivers || 0}</span>
-                <span className="text-[10px] text-slate-500 block">ड्राइवर</span>
-              </div>
-              <div>
-                <span className="text-lg font-bold">{stats.total_branches || 1}</span>
-                <span className="text-[10px] text-slate-500 block">शाखाएं</span>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Fleet & Network Status</span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <Truck className="w-4 h-4" />
               </div>
             </div>
-            <div className="mt-2 text-xs text-slate-600 flex justify-between border-t pt-2">
-              <span>पेंडिंग POD:</span>
-              <span className="font-bold text-amber-600">{stats.pending_pod || 0}</span>
+            <div className="flex items-center justify-between text-slate-900">
+              <div>
+                <span className="text-xl font-bold">{stats.active_vehicles || 0}</span>
+                <span className="text-[11px] text-slate-500 block">Active Vehicles</span>
+              </div>
+              <div className="h-8 w-px bg-slate-200"></div>
+              <div>
+                <span className="text-xl font-bold">{stats.active_drivers || 0}</span>
+                <span className="text-[11px] text-slate-500 block">Active Drivers</span>
+              </div>
+              <div className="h-8 w-px bg-slate-200"></div>
+              <div>
+                <span className="text-xl font-bold">{stats.total_branches || 1}</span>
+                <span className="text-[11px] text-slate-500 block">Branches</span>
+              </div>
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between pt-2 border-t border-slate-100">
+              <span>Pending POD:</span>
+              <span className="font-bold text-amber-600">{stats.pending_pod || 0} Deliveries</span>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs p-4">
-            <div className="flex justify-between items-center mb-3">
-              <h3 className="font-bold text-sm text-slate-900">हालिया बिल्टियां</h3>
-              <Link to="/consignments" className="text-xs text-blue-600 font-semibold hover:underline">सभी देखें ➔</Link>
+        {stockList.length > 0 && (
+          <div className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Boxes className="w-4 h-4 text-indigo-600" />
+                Stationery & Printed Books Stock (Remaining):
+              </span>
+              <Link to="/stock" className="text-[11px] font-semibold text-blue-600 hover:underline">
+                Stock Management ➔
+              </Link>
             </div>
-            <div className="overflow-x-auto">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              {stockList.map((stk, idx) => (
+                <div key={idx} className="bg-slate-50 rounded-lg p-2 border border-slate-200/80 text-center">
+                  <div className="text-[11px] text-slate-500 font-semibold uppercase">{stk.document_type}</div>
+                  <div className="text-base font-extrabold text-slate-900 mt-0.5">
+                    {stk.remaining_count} <span className="text-[10px] text-slate-400 font-normal">/ {stk.total_stock}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-1 rounded-full mt-1.5 overflow-hidden">
+                    <div
+                      className={`h-full ${stk.remaining_count < 50 ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.min(100, (stk.remaining_count / (stk.total_stock || 1)) * 100)}%` }}
+                    ></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-600" />
+                <h3 className="font-bold text-sm text-slate-900">Recent Booked Bilties</h3>
+              </div>
+              <Link to="/consignments" className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-0.5">
+                <span>View All</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <div className="overflow-x-auto flex-1">
               <table className="w-full text-left text-xs text-slate-600">
-                <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-500">
+                <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-500 border-b border-slate-100">
                   <tr>
-                    <th className="p-2">LR No.</th>
-                    <th className="p-2">दिनांक</th>
-                    <th className="p-2">कंसाइनर</th>
-                    <th className="p-2">कंसाइनी</th>
-                    <th className="p-2 text-right">रकम</th>
-                    <th className="p-2 text-center">स्थिति</th>
+                    <th className="py-2.5 px-3.5">LR No.</th>
+                    <th className="py-2.5 px-3">Date</th>
+                    <th className="py-2.5 px-3">Consignor</th>
+                    <th className="py-2.5 px-3">Consignee</th>
+                    <th className="py-2.5 px-3 text-right">Total Amount</th>
+                    <th className="py-2.5 px-3 text-center">Payment</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {recentData.bilties && recentData.bilties.length > 0 ? (
-                    recentData.bilties.map((b, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-2 font-bold text-blue-700">{b.lr_no}</td>
-                        <td className="p-2">{b.lr_date}</td>
-                        <td className="p-2 truncate max-w-[120px]">{b.consignor_name}</td>
-                        <td className="p-2 truncate max-w-[120px]">{b.consignee_name}</td>
-                        <td className="p-2 text-right font-bold">₹{Number(b.grand_total || 0).toLocaleString('en-IN')}</td>
-                        <td className="p-2 text-center">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100">{b.status}</span>
+                    recentData.bilties.map((bilty, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-2.5 px-3.5 font-bold text-blue-700">
+                          <Link to={`/consignments/${bilty.lr_no}`}>{bilty.lr_no}</Link>
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap text-slate-500">{bilty.lr_date}</td>
+                        <td className="py-2.5 px-3 font-medium text-slate-800 max-w-[140px] truncate" title={bilty.consignor_name}>
+                          {bilty.consignor_name || '-'}
+                        </td>
+                        <td className="py-2.5 px-3 font-medium text-slate-800 max-w-[140px] truncate" title={bilty.consignee_name}>
+                          {bilty.consignee_name || '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-extrabold text-slate-900">
+                          ₹{Number(bilty.grand_total || 0).toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            bilty.payment_status === 'Paid'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}>
+                            {bilty.payment_status || 'Unpaid'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
+                            {bilty.status || 'Booked'}
+                          </span>
                         </td>
                       </tr>
                     ))
                   ) : (
-                    <tr><td colSpan="6" className="p-4 text-center text-slate-400">कोई डेटा नहीं मिला</td></tr>
+                    <tr>
+                      <td colSpan="7" className="py-8 text-center text-slate-400">
+                        No recent bilties found. Click "+ New Bilty" to create one.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4">
-            <h3 className="font-bold text-sm text-slate-900 mb-3">शीर्ष पार्टियां (Top Consignors)</h3>
-            <div className="space-y-3">
-              {topParties.length > 0 ? (
-                topParties.map((p, idx) => (
-                  <div key={idx} className="text-xs border-b pb-2">
-                    <div className="flex justify-between font-bold text-slate-800">
-                      <span>{idx + 1}. {p.consignor_name}</span>
-                      <span>₹{Number(p.total_revenue).toLocaleString('en-IN')}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500">{p.total_bilties} बिल्टियां</div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center text-slate-400 py-4 text-xs">डेटा लोड हो रहा है...</div>
-              )}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-bold text-sm text-slate-900">Top Consignors</h3>
+              </div>
+              <Link to="/parties" className="text-xs font-semibold text-blue-600 hover:underline">Party Account ➔</Link>
+            </div>
+
+            <div className="p-4 flex-1 flex flex-col justify-between">
+              <div className="space-y-3.5">
+                {topParties.length > 0 ? (
+                  topParties.map((party, idx) => {
+                    const maxRevenue = topParties[0]?.total_revenue || 1;
+                    const percent = Math.min(100, Math.round((Number(party.total_revenue) / maxRevenue) * 100));
+
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800 truncate max-w-[180px]" title={party.consignor_name}>
+                            {idx + 1}. {party.consignor_name}
+                          </span>
+                          <span className="font-extrabold text-slate-900">₹{Number(party.total_revenue).toLocaleString('en-IN')}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500">
+                          <span>{party.total_bilties} bilties booked</span>
+                          <span>{percent}% share</span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full" style={{ width: `${percent}%` }}></div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center text-slate-400 text-xs">Gathering top party data...</div>
+                )}
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-slate-100 bg-slate-50/70 p-2.5 rounded-lg flex items-center gap-2 text-[11px] text-slate-600">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>All transactions are secured in PostgreSQL (Neon) encrypted cloud.</span>
+              </div>
             </div>
           </div>
         </div>
       </main>
 
       <footer className="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
-        © 2026 भारत ट्रांसपोर्ट कंपनी (Bharat Transport Company) - समस्त अधिकार सुरक्षित।
+        <div className="max-w-[1600px] mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <span>© 2026 Bharat Transport Company - All Rights Reserved.</span>
+          <div className="flex items-center gap-4 text-slate-600 font-medium">
+            <Link to="/branches" className="hover:text-blue-600">Branches</Link>
+            <Link to="/stock" className="hover:text-blue-600">Stock</Link>
+            <Link to="/audit" className="hover:text-blue-600">Audit</Link>
+            <Link to="/backup" className="hover:text-blue-600">Backup</Link>
+          </div>
+        </div>
       </footer>
     </div>
   );
