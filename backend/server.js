@@ -27,13 +27,6 @@ const allowedOrigins = [
   'null'
 ];
 
-const allowedOrigins = [
-  'https://bharat-transport-lite.vercel.app',
-  'https://bharat-transport-lite-iemb.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:5173'
-];
-
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
