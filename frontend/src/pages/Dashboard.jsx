@@ -19,7 +19,6 @@ import {
   CreditCard,
   ChevronRight,
   ChevronDown,
-  CheckCheck,
   Search,
   Layers,
   AlertCircle,
@@ -193,6 +192,7 @@ export default function Dashboard() {
     navigate('/login');
   };
 
+  // 10 MAIN CATEGORIES CONFIGURATION (COMPATIBLE ICONS ONLY)
   const navCategories = [
     {
       id: 'dashboard',
@@ -241,10 +241,10 @@ export default function Dashboard() {
     {
       id: 'pod',
       label: '5. डिलीवरी / POD',
-      icon: CheckCheck,
+      icon: CheckCircle2,
       color: 'text-teal-600',
       items: [
-        { title: 'POD रजिस्टर', desc: 'डिलीवरी रसीदें', path: '/pod', icon: CheckCheck },
+        { title: 'POD रजिस्टर', desc: 'डिलीवरी रसीदें', path: '/pod', icon: CheckCircle2 },
         { title: 'पब्लिक POD व्यू', desc: 'ग्राहक ट्रैकिंग पेज', path: '/public/pod-view', icon: CheckCircle2 }
       ]
     },
@@ -287,7 +287,7 @@ export default function Dashboard() {
       icon: DollarSign,
       color: 'text-rose-600',
       items: [
-        { title: 'वित्तीय सारांश', desc: 'कुल आमदनी व खर्च', path: '/accounts/summary', icon: DollarSign },
+        { title: 'वित्तीय सारांश (P&L)', desc: 'कुल आमदनी व खर्च', path: '/accounts/summary', icon: DollarSign },
         { title: 'दैनिक खर्चे', desc: 'खर्च रिकॉर्ड', path: '/expenses', icon: Receipt },
         { title: 'टीडीएस रजिस्टर', desc: 'टीडीएस कटौती', path: '/accounts/tds-register', icon: Percent },
         { title: 'कमीशन व क्लेम्स', desc: 'दलाल कमीशन', path: '/commissions', icon: ShieldCheck }
@@ -299,7 +299,7 @@ export default function Dashboard() {
       icon: Building,
       color: 'text-slate-700',
       items: [
-        { title: 'शाखाएं', desc: 'ब्रांच नेटवर्क', path: '/branches', icon: Building },
+        { title: 'शाखाएं (Branches)', desc: 'ब्रांच नेटवर्क', path: '/branches', icon: Building },
         { title: 'ब्रांच लेज़र', desc: 'ब्रांच लेन-देन', path: '/branch-payments', icon: DollarSign },
         { title: 'दस्तावेज़ स्टॉक', desc: 'बिल्टी, एमआर स्टॉक', path: '/stock', icon: Package },
         { title: 'यूज़र्स', desc: 'स्टाफ अधिकार', path: '/users', icon: UserCheck },
