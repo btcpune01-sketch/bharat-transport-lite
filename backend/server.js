@@ -2333,7 +2333,7 @@ async function startServer() {
   await runMigrations();
   await ensureAdminUser();
   if (require.main === module) {
-  app.listen(PORT, () => console.log('Server on '+PORT));
+  if (!process.env.VERCEL) app.listen(PORT, () => console.log('Server on '+PORT));
 }
 module.exports = app;
     console.log(`✅ Bharat Transport TMS v6.0 running on port ${PORT}`);
