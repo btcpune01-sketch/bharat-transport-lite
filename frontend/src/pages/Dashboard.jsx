@@ -66,7 +66,7 @@ import {
   Database as DatabaseIcon, Server, HardDrive,
   Globe as GlobeIcon, Globe2 as Globe2Icon,
   Percent as PercentIcon, PercentCircle, BadgePercent,
-  BookOpen as BookOpenIcon, BookMarked, BookText
+  BookOpen as BookOpenIcon, BookMarked, BookText, Percent
 } from 'lucide-react';
 export default function Dashboard() {
   const { currentUser, logout } = useAuth();
