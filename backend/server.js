@@ -27,16 +27,24 @@ const allowedOrigins = [
   'null'
 ];
 
-app.use(cors({ origin: true, credentials: true })) {
+const allowedOrigins = [
+  'https://bharat-transport-lite.vercel.app',
+  'https://bharat-transport-lite-iemb.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
-      console.log('Blocked by CORS:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug', 'X-Api-Version']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Handle OPTIONS preflight requests explicitly
