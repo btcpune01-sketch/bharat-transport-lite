@@ -1,13 +1,12 @@
-curl -sSL "https://raw.githubusercontent.com/nakshcargo-bot/bharat-transport-lite/main/backend/server.js" > /dev/null && git pull origin main --no-edit 2>/dev/null; cat << 'EOF' > frontend/src/pages/Dashboard.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  TrendingUp, TrendingDown, DollarSign, Percent, FileText, Truck, Users, Clock,
-  CheckCircle2, AlertTriangle, ShieldCheck, ArrowUpRight, Plus, RefreshCw, Building2,
-  Calendar, CreditCard, ChevronRight, ChevronDown, PackageCheck, ReceiptText, Search,
-  Layers, MapPin, AlertCircle, Calculator, HardDriveDownload, ShieldAlert, Compass,
-  FileSpreadsheet, FileCheck2, UserCheck, LogOut, Navigation, FilePlus, Coins,
-  Receipt, Boxes, History, X
+  TrendingUp, FileText, Truck, Users, Clock, CheckCircle2, AlertTriangle,
+  ShieldCheck, Plus, RefreshCw, Building2, Calendar, CreditCard, ChevronRight,
+  ChevronDown, PackageCheck, ReceiptText, Search, Layers, MapPin, AlertCircle,
+  Calculator, HardDriveDownload, ShieldAlert, Compass, FileSpreadsheet,
+  FileCheck2, UserCheck, LogOut, Navigation, FilePlus, Coins, Receipt, Boxes,
+  History, X, Globe, BookOpen, DollarSign, Percent
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -64,13 +63,14 @@ export default function Dashboard() {
       setRefreshing(true);
       const branchQuery = selectedBranch !== 'all' ? `?branch_id=${selectedBranch}` : '';
 
-      const [statsRes, recentRes, topPartiesRes, stockRes, expiringRes, branchesRes] = await Promise.allSettled([
+      const [statsRes, recentRes, topPartiesRes, stockRes, expiringRes, branchesRes, branchPaymentsRes] = await Promise.allSettled([
         fetch(`${API_BASE}/api/dashboard/stats${branchQuery}`, { headers: getHeaders() }),
         fetch(`${API_BASE}/api/dashboard/recent${branchQuery}`, { headers: getHeaders() }),
         fetch(`${API_BASE}/api/dashboard/top-parties${branchQuery}`, { headers: getHeaders() }),
         fetch(`${API_BASE}/api/stock`, { headers: getHeaders() }),
         fetch(`${API_BASE}/api/vehicles/expiring`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/branches`, { headers: getHeaders() })
+        fetch(`${API_BASE}/api/branches`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/api/branch-payments/summary`, { headers: getHeaders() })
       ]);
 
       if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
@@ -133,7 +133,9 @@ export default function Dashboard() {
       });
       const data = await res.json();
       setCalcResult(data);
-    } catch (err) {}
+    } catch (err) {
+      console.error('Rate calculation error:', err);
+    }
   };
 
   const handleLogout = () => {
@@ -228,6 +230,17 @@ export default function Dashboard() {
       ]
     }
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+          <p className="text-slate-600 font-medium">डैशबोर्ड लोड हो रहा है...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
@@ -745,5 +758,3 @@ export default function Dashboard() {
     </div>
   );
 }
-EOF
-git add frontend/src/pages/Dashboard.jsx && git commit -m "Upgrade dashboard: 10 categorized menu bars with complete TMS integration" && git push origin main && echo "🎉 SUCCESS: Complete 10-Category Dashboard pushed to GitHub!"
