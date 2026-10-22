@@ -87,7 +87,7 @@ export default function Dashboard() {
   const [calcForm, setCalcForm] = useState({ from_city: '', to_city: '', weight_kg: '', packages: '' });
   const [calcResult, setCalcResult] = useState(null);
 
-  const API_BASE = 'https://bharat-transport-lite-iemb.vercel.app';
+  const API_BASE = '';
 
   const getHeaders = () => {
     const token = localStorage.getItem('token') || '';

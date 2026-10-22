@@ -27,10 +27,7 @@ const allowedOrigins = [
   'null'
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+app.use(cors({ origin: true, credentials: true })) {
       callback(null, true);
     } else {
       console.log('Blocked by CORS:', origin);
@@ -2335,7 +2332,10 @@ async function ensureAdminUser() {
 async function startServer() {
   await runMigrations();
   await ensureAdminUser();
-  app.listen(PORT, HOST, () => {
+  if (require.main === module) {
+  app.listen(PORT, () => console.log('Server on '+PORT));
+}
+module.exports = app;
     console.log(`✅ Bharat Transport TMS v6.0 running on port ${PORT}`);
   });
 }
