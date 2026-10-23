@@ -10,8 +10,8 @@ export default function Customers() {
     const fetchCustomers = async () => {
       try {
         const token = localStorage.getItem('token')
-        const apiUrl = (import.meta.env.VITE_API_URL || '')
-        const res = await fetch(`${apiUrl}/api/customers`, { headers: { 'Authorization': `Bearer ${token}` } })
+        const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+        const res = await fetch(`${apiUrl}/customers`, { headers: { 'Authorization': `Bearer ${token}` } })
         const data = await res.json()
         setCustomers(Array.isArray(data) ? data : [])
       } catch (err) { console.error(err) } finally { setLoading(false) }

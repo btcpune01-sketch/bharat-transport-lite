@@ -49,10 +49,10 @@ export default function GadiChallan() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/api/gadi-challan`, { headers })
+      const res = await fetch(`${apiUrl}/gadi-challan`, { headers })
       if (res.ok) {
         const data = await res.json()
         setChallans(data.data || [])
@@ -67,10 +67,10 @@ export default function GadiChallan() {
   const fetchBilties = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/api/consignments`, { headers })
+      const res = await fetch(`${apiUrl}/consignments`, { headers })
       if (res.ok) {
         const data = await res.json()
         const activeBilties = (data.data || []).filter(b => 
@@ -134,9 +134,9 @@ export default function GadiChallan() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
 
-      const url = editId ? `${apiUrl}/api/gadi-challan/${editId}` : `${apiUrl}/api/gadi-challan`
+      const url = editId ? `${apiUrl}/gadi-challan/${editId}` : `${apiUrl}/gadi-challan`
       const method = editId ? 'PUT' : 'POST'
 
       const res = await fetch(url, {

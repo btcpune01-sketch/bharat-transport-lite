@@ -72,14 +72,14 @@ export default function PODUpload() {
 
     try {
       setLoading(true)
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
       const payload = {
         ...formData,
         photo_url: photoBase64
       }
 
-      const res = await fetch(`${apiUrl}/api/public/pod-upload`, {
+      const res = await fetch(`${apiUrl}/public/pod-upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

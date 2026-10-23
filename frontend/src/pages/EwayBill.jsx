@@ -23,10 +23,10 @@ export default function EwayBill() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/api/eway-bills`, { headers })
+      const res = await fetch(`${apiUrl}/eway-bills`, { headers })
       if (res.ok) {
         const data = await res.json()
         setBills(data.data || [])
@@ -56,9 +56,9 @@ export default function EwayBill() {
     e.preventDefault()
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
-      const res = await fetch(`${apiUrl}/api/eway-bills/${editId}`, {
+      const res = await fetch(`${apiUrl}/eway-bills/${editId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,

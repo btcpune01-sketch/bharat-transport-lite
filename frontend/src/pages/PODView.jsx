@@ -21,8 +21,8 @@ export default function PODView() {
       setError('')
       setResult(null)
       
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/public/pod-view?lr_no=${encodeURIComponent(lrNo)}`)
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/public/pod-view?lr_no=${encodeURIComponent(lrNo)}`)
       
       if (res.ok) {
         const data = await res.json()

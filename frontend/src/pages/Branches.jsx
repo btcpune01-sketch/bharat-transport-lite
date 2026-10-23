@@ -21,7 +21,7 @@ export default function Branches() {
   const loadBranches = async () => {
     try {
       setLoading(true)
-      const res = await api.get('/api/branches')
+      const res = await api.get('/branches')
       setBranches(res.data.data || [])
     } catch (err) {
       alert('Failed to load branches: ' + (err.response?.data?.error || err.message))
@@ -38,7 +38,7 @@ export default function Branches() {
       return
     }
     try {
-      const res = await api.post('/api/branches/create', form)
+      const res = await api.post('/branches/create', form)
       if (res.data.success) {
         setForm({ branch_name: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
         setShowForm(false)
@@ -61,7 +61,7 @@ export default function Branches() {
   const handleEditSubmit = async (e) => {
     e.preventDefault()
     try {
-      await api.put(`/api/branches/${showEdit.id}`, editForm)
+      await api.put(`/branches/${showEdit.id}`, editForm)
       alert('✅ Branch updated successfully!')
       setShowEdit(null)
       loadBranches()
@@ -73,7 +73,7 @@ export default function Branches() {
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Delete "${name}"? Ye action undo nahi hoga!`)) return
     try {
-      await api.delete(`/api/branches/${id}`)
+      await api.delete(`/branches/${id}`)
       alert('✅ Branch deleted!')
       loadBranches()
     } catch (err) {
@@ -85,7 +85,7 @@ export default function Branches() {
     const newStatus = !branch.is_active
     if (!window.confirm(`${newStatus ? 'Activate' : 'Deactivate'} "${branch.branch_name}"?`)) return
     try {
-      await api.put(`/api/branches/${branch.id}`, { is_active: newStatus })
+      await api.put(`/branches/${branch.id}`, { is_active: newStatus })
       alert(`✅ Branch ${newStatus ? 'activated' : 'deactivated'}!`)
       loadBranches()
     } catch (err) {
@@ -99,7 +99,7 @@ export default function Branches() {
     setBranchLoginSaving(true)
     try {
       const response = await api.post(
-        `/api/branches/${showBranchLoginSetup.id}/branch-login`,
+        `/branches/${showBranchLoginSetup.id}/branch-login`,
         branchLoginForm
       )
       setNewBranchCredentials({

@@ -14,8 +14,8 @@ export default function Outstanding() {
     try {
       setLoading(true); setError(null)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/outstanding`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/outstanding`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to fetch outstanding')
       const d = await res.json()
       setData(d.data || [])

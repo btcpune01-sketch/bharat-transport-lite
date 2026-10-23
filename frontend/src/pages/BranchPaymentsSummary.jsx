@@ -11,7 +11,7 @@ export default function BranchPaymentsSummary() {
   useEffect(() => {
     let cancelled = false
 
-    api.get('/api/branch-payments/summary')
+    api.get('/branch-payments/summary')
       .then(({ data }) => {
         if (cancelled) return
         setSummary(data.summary)

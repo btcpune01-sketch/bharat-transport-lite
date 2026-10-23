@@ -34,8 +34,8 @@ export default function Vehicles() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/vehicles`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/vehicles`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setVehicles(data.data || [])
     } catch (err) {
@@ -48,8 +48,8 @@ export default function Vehicles() {
   const fetchExpiryAlerts = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setExpiryAlerts(data.data || [])
     } catch (err) {
@@ -70,16 +70,16 @@ export default function Vehicles() {
     }
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       let res
       if (editingVehicle) {
-        res = await fetch(`${apiUrl}/api/vehicles/${editingVehicle.id}`, {
+        res = await fetch(`${apiUrl}/vehicles/${editingVehicle.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(formData)
         })
       } else {
-        res = await fetch(`${apiUrl}/api/vehicles`, {
+        res = await fetch(`${apiUrl}/vehicles`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(formData)
@@ -122,8 +122,8 @@ export default function Vehicles() {
     if (!confirm(`क्या आप ${vehicle.vehicle_no} का status बदलना चाहते हैं?`)) return
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      await fetch(`${apiUrl}/api/vehicles/${vehicle.id}`, {
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      await fetch(`${apiUrl}/vehicles/${vehicle.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ ...vehicle, status: vehicle.status === 'Active' ? 'Inactive' : 'Active' })

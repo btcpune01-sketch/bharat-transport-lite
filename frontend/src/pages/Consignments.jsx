@@ -40,7 +40,7 @@ const Consignments = () => {
         return;
       }
 
-      const response = await api.get('/api/consignments');
+      const response = await api.get('/consignments');
       const dataArray = response.data?.data || response.data || [];
       setConsignments(Array.isArray(dataArray) ? dataArray : []);
       setError('');
@@ -70,7 +70,7 @@ const Consignments = () => {
     if (!window.confirm(`Delete Bilty ${lr_no}?`)) return;
 
     try {
-      await api.delete(`/api/consignments/${id}`);
+      await api.delete(`/consignments/${id}`);
       toast.success('Deleted');
       await fetchConsignments();
     } catch (err) {

@@ -28,10 +28,10 @@ export default function Claims() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/api/claims`, { headers })
+      const res = await fetch(`${apiUrl}/claims`, { headers })
       if (res.ok) {
         const data = await res.json()
         setClaims(data.data || [])
@@ -53,9 +53,9 @@ export default function Claims() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
 
-      const url = editId ? `${apiUrl}/api/claims/${editId}` : `${apiUrl}/api/claims`
+      const url = editId ? `${apiUrl}/claims/${editId}` : `${apiUrl}/claims`
       const method = editId ? 'PUT' : 'POST'
 
       const res = await fetch(url, {

@@ -34,10 +34,10 @@ export default function Trips() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/api/trips`, { headers })
+      const res = await fetch(`${apiUrl}/trips`, { headers })
       if (res.ok) {
         const data = await res.json()
         setTrips(data.data || [])
@@ -59,9 +59,9 @@ export default function Trips() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
 
-      const url = editId ? `${apiUrl}/api/trips/${editId}` : `${apiUrl}/api/trips`
+      const url = editId ? `${apiUrl}/trips/${editId}` : `${apiUrl}/trips`
       const method = editId ? 'PUT' : 'POST'
 
       const res = await fetch(url, {
@@ -120,9 +120,9 @@ export default function Trips() {
   const handleStatusChange = async (tripId, newStatus) => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
-      const res = await fetch(`${apiUrl}/api/trips/${tripId}`, {
+      const res = await fetch(`${apiUrl}/trips/${tripId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,

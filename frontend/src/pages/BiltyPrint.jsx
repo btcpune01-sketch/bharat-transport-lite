@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import api from '../api';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const preferredMeasurement = (primary, legacy) => {
   const primaryNumber = Number(primary);
@@ -50,7 +50,7 @@ const BiltyPrint = () => {
     if (id) return;
     let active = true;
     setLoading(true);
-    api.get('/api/consignments')
+    api.get('/consignments')
       .then(response => {
         if (active) setBilties(response.data?.data || []);
       })
@@ -70,7 +70,7 @@ const BiltyPrint = () => {
     setData(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`${API_URL}/api/consignments/${id}`, {
+      const res = await axios.get(`${API_URL}/consignments/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const bilty = res.data;

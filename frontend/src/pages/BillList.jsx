@@ -15,7 +15,7 @@ export default function BillList() {
 
   const loadBills = async () => {
     try {
-      const res = await api.get('/api/bills')
+      const res = await api.get('/bills')
       const billsData = res.data?.data || res.data || []
       setBills(billsData)
     } catch (err) {
@@ -28,7 +28,7 @@ export default function BillList() {
   const deleteBill = async (bill) => {
     if (!window.confirm(`Delete bill ${bill.bill_no || ''}? This cannot be undone.`)) return
     try {
-      await api.delete(`/api/bills/${bill.id}`)
+      await api.delete(`/bills/${bill.id}`)
       setBills(current => current.filter(item => item.id !== bill.id))
     } catch (err) {
       window.alert(err.response?.data?.error || 'Unable to delete this bill.')

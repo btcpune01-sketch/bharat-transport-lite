@@ -65,7 +65,7 @@ const BillPrint = () => {
 
     const fetchBills = async () => {
       try {
-        const res = await api.get('/api/bills')
+        const res = await api.get('/bills')
         const data = res.data?.data || res.data?.bills || res.data || []
         const rows = Array.isArray(data) ? data.map(normalizeBill) : []
         if (!active) return
@@ -74,7 +74,7 @@ const BillPrint = () => {
         if (id) {
           const selected = rows.find(bill => String(bill.id) === String(id))
           if (selected) {
-            const detail = await api.get(`/api/bills/${encodeURIComponent(id)}`)
+            const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
             if (active) setSelectedBill(normalizeBill(detail.data))
           }
         }
@@ -91,7 +91,7 @@ const BillPrint = () => {
 
   const handlePrint = async (bill) => {
     try {
-      const detail = bill.id ? await api.get(`/api/bills/${encodeURIComponent(bill.id)}`) : null
+      const detail = bill.id ? await api.get(`/bills/${encodeURIComponent(bill.id)}`) : null
       setSelectedBill(normalizeBill(detail?.data || bill))
       setTimeout(() => window.print(), 500)
     } catch (err) {

@@ -18,7 +18,7 @@ export default function VehicleExpiring() {
   useEffect(() => {
     let cancelled = false
 
-    api.get('/api/vehicles/expiring')
+    api.get('/vehicles/expiring')
       .then(({ data }) => {
         if (!cancelled) setVehicles(data.data || [])
       })

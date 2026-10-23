@@ -33,8 +33,8 @@ export default function POD({ branchMode = false }) {
   const fetchBranches = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/branches`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/branches`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setBranches(data.data || [])
     } catch (err) { console.error(err) }
@@ -44,12 +44,12 @@ export default function POD({ branchMode = false }) {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
       const branchParam = branchFilter ? `?branch_id=${branchFilter}` : ''
       const [podRes, biltyRes] = await Promise.all([
-        fetch(`${apiUrl}/api/pod${branchParam}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${apiUrl}/api/consignments${branchParam}`, { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch(`${apiUrl}/pod${branchParam}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${apiUrl}/consignments${branchParam}`, { headers: { 'Authorization': `Bearer ${token}` } })
       ])
 
       const podData = await podRes.json()
@@ -75,8 +75,8 @@ export default function POD({ branchMode = false }) {
     }
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/pod`, {
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/pod`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ ...formData, branch_id: selectedBilty?.branch_id || user.branch_id })

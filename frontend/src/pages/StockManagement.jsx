@@ -93,7 +93,7 @@ export default function StockManagement() {
       }
 
       try {
-        const response = await api.get('/api/stock', getAuthConfig())
+        const response = await api.get('/stock', getAuthConfig())
         applyDocumentStock(response.data?.data)
       } catch (error) {
         console.error('Unable to load document stock:', error)
@@ -142,7 +142,7 @@ export default function StockManagement() {
     if (!qty || qty <= 0) { alert('⚠️ Valid quantity daalo!'); return }
     if (selectedItem.documentType) {
       try {
-        const response = await api.post('/api/stock/add', {
+        const response = await api.post('/stock/add', {
           document_type: selectedItem.documentType,
           quantity: qty
         }, getAuthConfig())

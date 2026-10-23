@@ -27,18 +27,18 @@ export default function Transit() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
       // Fetch Manifests
-      const resManifests = await fetch(`${apiUrl}/api/manifests`, { headers })
+      const resManifests = await fetch(`${apiUrl}/manifests`, { headers })
       if (resManifests.ok) {
         const data = await resManifests.json()
         setManifests(data.data || [])
       }
 
       // Fetch Booked LRs for selection (Limit 100 for performance)
-      const resLrs = await fetch(`${apiUrl}/api/consignments?status=Booked`, { headers })
+      const resLrs = await fetch(`${apiUrl}/consignments?status=Booked`, { headers })
       if (resLrs.ok) {
         const data = await resLrs.json()
         setAvailableLrs((data.data || []).slice(0, 100))
@@ -68,7 +68,7 @@ export default function Transit() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
       const payload = {
         ...formData,
@@ -76,7 +76,7 @@ export default function Transit() {
         status: 'Dispatched'
       }
 
-      const res = await fetch(`${apiUrl}/api/manifests`, {
+      const res = await fetch(`${apiUrl}/manifests`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

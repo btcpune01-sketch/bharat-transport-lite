@@ -41,9 +41,9 @@ export default function BranchPortal() {
     setLoading(true)
     setError('')
     Promise.all([
-      api.get('/api/dashboard/stats', { signal: controller.signal }),
-      api.get('/api/consignments', { signal: controller.signal }),
-      api.get('/api/bills', { signal: controller.signal })
+      api.get('/dashboard/stats', { signal: controller.signal }),
+      api.get('/consignments', { signal: controller.signal }),
+      api.get('/bills', { signal: controller.signal })
     ]).then(([statsResponse, consignmentResponse, billResponse]) => {
       setStats(statsResponse.data)
       setConsignments(consignmentResponse.data?.data || [])

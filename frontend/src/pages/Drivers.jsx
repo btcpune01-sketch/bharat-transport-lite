@@ -35,8 +35,8 @@ export default function Drivers() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/drivers`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/drivers`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setDrivers(data.data || [])
     } catch (err) {
@@ -49,8 +49,8 @@ export default function Drivers() {
   const fetchExpiryAlerts = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setExpiryAlerts(data.data || [])
     } catch (err) {
@@ -71,16 +71,16 @@ export default function Drivers() {
     }
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       let res
       if (editingDriver) {
-        res = await fetch(`${apiUrl}/api/drivers/${editingDriver.id}`, {
+        res = await fetch(`${apiUrl}/drivers/${editingDriver.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(formData)
         })
       } else {
-        res = await fetch(`${apiUrl}/api/drivers`, {
+        res = await fetch(`${apiUrl}/drivers`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(formData)
@@ -123,8 +123,8 @@ export default function Drivers() {
     if (!confirm(`क्या आप ${driver.driver_name} का status बदलना चाहते हैं?`)) return
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      await fetch(`${apiUrl}/api/drivers/${driver.id}`, {
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      await fetch(`${apiUrl}/drivers/${driver.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ ...driver, status: driver.status === 'Active' ? 'Inactive' : 'Active' })

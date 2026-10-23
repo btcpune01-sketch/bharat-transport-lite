@@ -1,9 +1,0 @@
-{
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "https://bharat-transport-lite-iemb.vercel.app/api/$1"
-    },
-    { "source": "/(.*)", "destination": "/" }
-  ]
-}

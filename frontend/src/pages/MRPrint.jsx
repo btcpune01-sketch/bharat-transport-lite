@@ -30,10 +30,10 @@ export default function MRPrint() {
     const loadReceipt = async () => {
       try {
         if (id) {
-          const res = await api.get(`/api/mr/${id}`)
+          const res = await api.get(`/mr/${id}`)
           if (active) setData(res.data)
         } else {
-          const res = await api.get('/api/mr')
+          const res = await api.get('/mr')
           const rows = Array.isArray(res.data) ? res.data : res.data?.data || []
           if (active) setReceipts(rows)
           if (mrNo) {

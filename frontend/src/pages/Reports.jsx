@@ -14,8 +14,8 @@ export default function Reports() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/consignments`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/consignments`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setBilties(data.data || [])
     } catch (err) { console.error(err) } finally { setLoading(false) }

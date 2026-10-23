@@ -21,16 +21,16 @@ export default function Accounts({ initialTab = 'dashboard' }) {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const resSummary = await fetch(`${apiUrl}/api/accounts/summary`, { headers })
+      const resSummary = await fetch(`${apiUrl}/accounts/summary`, { headers })
       if (resSummary.ok) {
         const data = await resSummary.json()
         setSummary(data.data)
       }
 
-      const resTds = await fetch(`${apiUrl}/api/accounts/tds-register`, { headers })
+      const resTds = await fetch(`${apiUrl}/accounts/tds-register`, { headers })
       if (resTds.ok) {
         const data = await resTds.json()
         setTdsData(data.data || [])

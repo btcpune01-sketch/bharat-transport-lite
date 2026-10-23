@@ -28,7 +28,7 @@ export default function BranchPayments() {
 
   const fetchBranches = async () => {
     try {
-      const res = await api.get('/api/branches');
+      const res = await api.get('/branches');
       setBranches(res.data?.data || []);
     } catch (err) {
       console.error('Branches fetch error:', err);
@@ -40,7 +40,7 @@ export default function BranchPayments() {
     try {
       const params = {};
       if (filterBranch) params.branch = filterBranch;
-      const res = await api.get('/api/branch-payments', { params });
+      const res = await api.get('/branch-payments', { params });
       if (res.data?.payments) {
         setPayments(res.data.payments);
         setTotal(res.data.total || 0);
@@ -59,7 +59,7 @@ export default function BranchPayments() {
       return;
     }
     try {
-      await api.post('/api/branch-payments', formData);
+      await api.post('/branch-payments', formData);
       alert('Payment सफलतापूर्वक Save हो गई!');
       setFormData({
         branch: '',
@@ -79,7 +79,7 @@ export default function BranchPayments() {
   const handleDelete = async (id) => {
     if (!window.confirm('क्या आप यह Payment Delete करना चाहते हैं?')) return;
     try {
-      await api.delete(`/api/branch-payments/${id}`);
+      await api.delete(`/branch-payments/${id}`);
       alert('Payment Delete हो गई!');
       fetchPayments();
     } catch (err) {

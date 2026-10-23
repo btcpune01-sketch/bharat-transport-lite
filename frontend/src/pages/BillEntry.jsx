@@ -122,7 +122,7 @@ export default function BillEntry({ branchMode = false }) {
   const loadBill = async (billId) => {
     setLoading(true)
     try {
-      const res = await api.get(`/api/bills/${billId}`)
+      const res = await api.get(`/bills/${billId}`)
       setBillData(prev => ({ ...prev, ...mapBillToForm(res.data) }))
     } catch (err) {
       alert(err.response?.data?.error || 'Unable to load bill for editing.')
@@ -134,7 +134,7 @@ export default function BillEntry({ branchMode = false }) {
 
   const fetchHistory = async () => {
     try {
-      const res = await api.get('/api/bills')
+      const res = await api.get('/bills')
       setHistoryList((res.data.data || []).map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
     } catch (e) {
       try { setHistoryList(JSON.parse(localStorage.getItem('btc_history') || '[]').map(mapBillToForm)) }
@@ -152,7 +152,7 @@ export default function BillEntry({ branchMode = false }) {
 
     setBiltyLoading(true)
     try {
-      const response = await api.get('/api/consignments', { params: { search: lrNo } })
+      const response = await api.get('/consignments', { params: { search: lrNo } })
       const matches = response.data?.data || []
       const bilty = matches.find(item => item.lr_no?.toLowerCase() === lrNo.toLowerCase())
         || (matches.length === 1 ? matches[0] : null)
@@ -339,8 +339,8 @@ export default function BillEntry({ branchMode = false }) {
         }))
       }
       const response = id
-        ? await api.put(`/api/bills/${id}`, payload)
-        : await api.post('/api/bills', payload)
+        ? await api.put(`/bills/${id}`, payload)
+        : await api.post('/bills', payload)
       const savedBill = response.data
       const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
       const nextHistory = [savedBill, ...localHistory.filter(bill => bill.id !== savedBill.id)]

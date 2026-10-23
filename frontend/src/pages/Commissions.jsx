@@ -12,13 +12,13 @@ export default function Commissions() {
 
   useEffect(() => { fetchData() }, [])
 
-  const apiUrl = (import.meta.env.VITE_API_URL || '')
+  const apiUrl = (import.meta.env.VITE_API_URL || '/api')
   const getHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' })
 
   const fetchData = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`${apiUrl}/api/commissions`, { headers: getHeaders() })
+      const res = await fetch(`${apiUrl}/commissions`, { headers: getHeaders() })
       if (res.ok) { const d = await res.json(); setData(d.data || []) }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
@@ -28,7 +28,7 @@ export default function Commissions() {
     e.preventDefault()
     setSaving(true)
     try {
-      const res = await fetch(`${apiUrl}/api/commissions`, {
+      const res = await fetch(`${apiUrl}/commissions`, {
         method: 'POST', headers: getHeaders(), body: JSON.stringify(form)
       })
       if (res.ok) {

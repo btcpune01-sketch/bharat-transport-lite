@@ -30,10 +30,10 @@ export default function GadiChallanPrint() {
     const loadChallan = async () => {
       try {
         if (id) {
-          const res = await api.get(`/api/gadi-challan/${id}`)
+          const res = await api.get(`/gadi-challan/${id}`)
           if (active) setData(res.data)
         } else {
-          const res = await api.get('/api/gadi-challan')
+          const res = await api.get('/gadi-challan')
           const rows = Array.isArray(res.data) ? res.data : res.data?.data || []
           if (active) setChallans(rows)
         }

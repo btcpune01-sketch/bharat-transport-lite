@@ -16,13 +16,13 @@ export default function Expenses() {
 
   useEffect(() => { fetchData() }, [])
 
-  const apiUrl = (import.meta.env.VITE_API_URL || '')
+  const apiUrl = (import.meta.env.VITE_API_URL || '/api')
   const getHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' })
 
   const fetchData = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`${apiUrl}/api/expenses`, { headers: getHeaders() })
+      const res = await fetch(`${apiUrl}/expenses`, { headers: getHeaders() })
       if (res.ok) { const d = await res.json(); setData(d.data || []) }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
@@ -32,7 +32,7 @@ export default function Expenses() {
     e.preventDefault()
     setSaving(true)
     try {
-      const res = await fetch(`${apiUrl}/api/expenses`, {
+      const res = await fetch(`${apiUrl}/expenses`, {
         method: 'POST', headers: getHeaders(), body: JSON.stringify(form)
       })
       if (res.ok) {

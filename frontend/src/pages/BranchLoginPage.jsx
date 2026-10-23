@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 
-const API_URL = (import.meta.env.VITE_API_URL || '')
+const API_URL = (import.meta.env.VITE_API_URL || '/api')
 
 export default function BranchLoginPage() {
   const { slug } = useParams()
@@ -22,7 +22,7 @@ export default function BranchLoginPage() {
       setError('')
       try {
         const response = await axios.get(
-          `${API_URL}/api/branches/slug/${encodeURIComponent(slug || '')}`,
+          `${API_URL}/branches/slug/${encodeURIComponent(slug || '')}`,
           { signal: controller.signal }
         )
         setBranch(response.data.branch)
@@ -45,7 +45,7 @@ export default function BranchLoginPage() {
     setSubmitting(true)
 
     try {
-      const response = await axios.post(`${API_URL}/api/branch-login/verify`, {
+      const response = await axios.post(`${API_URL}/branch-login/verify`, {
         branchSlug: slug,
         username,
         password

@@ -11,8 +11,8 @@ export default function Bills() {
     const fetchBills = async () => {
       try {
         const token = localStorage.getItem('token')
-        const apiUrl = (import.meta.env.VITE_API_URL || '')
-        const res = await fetch(`${apiUrl}/api/bills`, { headers: { 'Authorization': `Bearer ${token}` } })
+        const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+        const res = await fetch(`${apiUrl}/bills`, { headers: { 'Authorization': `Bearer ${token}` } })
         const data = await res.json()
         setBills(data.data || [])
       } catch (err) { console.error(err) } finally { setLoading(false) }

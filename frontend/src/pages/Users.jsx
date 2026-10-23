@@ -31,8 +31,8 @@ export default function Users() {
       setError('')
       try {
         const [usersResponse, branchesResponse] = await Promise.all([
-          api.get('/api/users'),
-          api.get('/api/branches')
+          api.get('/users'),
+          api.get('/branches')
         ])
         if (active) {
           setUsers(usersResponse.data?.data || [])
@@ -56,7 +56,7 @@ export default function Users() {
     setError('')
     setSaving(true)
     try {
-      const response = await api.post('/api/users', {
+      const response = await api.post('/users', {
         ...form,
         branch_id: form.branch_id || null
       })
@@ -73,7 +73,7 @@ export default function Users() {
   async function toggleUserStatus(targetUser) {
     setError('')
     try {
-      const response = await api.put(`/api/users/${targetUser.id}`, {
+      const response = await api.put(`/users/${targetUser.id}`, {
         full_name: targetUser.full_name,
         email: targetUser.email,
         role: targetUser.role,

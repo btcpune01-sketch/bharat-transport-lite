@@ -31,7 +31,7 @@ export default function MRCreate() {
 
   const fetchBills = async () => {
     try {
-      const response = await api.get('/api/bills')
+      const response = await api.get('/bills')
       setBillList((response.data?.data || []).filter(bill => bill.payment_status !== 'Paid'))
     } catch (err) {
       console.error('Error fetching bills:', err)
@@ -41,13 +41,13 @@ export default function MRCreate() {
   const fetchBilties = async () => {
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
-      const res = await fetch(`${apiUrl}/api/consignments`, {
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/consignments`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (res.ok) {
         const data = await res.json()
-        const receiptResponse = await api.get('/api/mr')
+        const receiptResponse = await api.get('/mr')
         const receipts = receiptResponse.data?.data || []
         // Sirf Unpaid bilties dikhayenge MR ke liye
         const unpaidBilties = (data.data || [])
@@ -139,7 +139,7 @@ export default function MRCreate() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
       const payload = {
         ...formData,
@@ -147,7 +147,7 @@ export default function MRCreate() {
         is_advance: formData.is_advance || false
       }
 
-      const res = await fetch(`${apiUrl}/api/mr`, {
+      const res = await fetch(`${apiUrl}/mr`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

@@ -36,10 +36,10 @@ export default function Rates() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/api/rates`, { headers })
+      const res = await fetch(`${apiUrl}/rates`, { headers })
       if (res.ok) {
         const data = await res.json()
         setRates(data.data || [])
@@ -61,9 +61,9 @@ export default function Rates() {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
 
-      const url = editId ? `${apiUrl}/api/rates/${editId}` : `${apiUrl}/api/rates`
+      const url = editId ? `${apiUrl}/rates/${editId}` : `${apiUrl}/rates`
       const method = editId ? 'PUT' : 'POST'
 
       const res = await fetch(url, {
@@ -123,9 +123,9 @@ export default function Rates() {
     
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
-      const res = await fetch(`${apiUrl}/api/rates/${id}`, {
+      const res = await fetch(`${apiUrl}/rates/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -146,9 +146,9 @@ export default function Rates() {
 
     try {
       const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
-      const res = await fetch(`${apiUrl}/api/rates/calculate`, {
+      const res = await fetch(`${apiUrl}/rates/calculate`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
