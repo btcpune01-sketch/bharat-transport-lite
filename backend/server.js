@@ -52,11 +52,13 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 const databaseUrl = getDatabaseUrl();
 const missingEnv = [
-  ...(!databaseUrl ? ['a PostgreSQL connection URL (DATABASE_URL, POSTGRES_URL, POSTGRES_PRISMA_URL, or POSTGRES_URL_NON_POOLING)'] : []),
   ...(!process.env.JWT_SECRET ? ['JWT_SECRET'] : [])
 ];
 if (missingEnv.length) {
   console.warn(`Server configuration warning: missing environment variable(s): ${missingEnv.join(', ')}`);
+}
+if (!databaseUrl) {
+  console.warn('Database configuration warning: no PostgreSQL connection URL is configured. Database-backed endpoints will be unavailable.');
 }
 const invalidDatabaseUrl = Boolean(
   databaseUrl && !/^postgres(?:ql)?:\/\//i.test(databaseUrl)
@@ -117,7 +119,7 @@ async function ensureMigrationsRun() {
   }
 }
 app.use(async (req, res, next) => {
-  if (process.env.VERCEL && missingEnv.length === 0 && !invalidDatabaseUrl) {
+  if (process.env.VERCEL && databaseUrl && missingEnv.length === 0 && !invalidDatabaseUrl) {
     await ensureMigrationsRun();
   }
   next();
@@ -785,6 +787,21 @@ app.post('/api/auth/login', async (req, res) => {
 // ==========================================
 app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
   try {
+    if (!databaseUrl) {
+      console.warn('Dashboard stats requested without a PostgreSQL connection URL; returning empty stats.');
+      const userRole = req.user?.role || 'operator';
+      return res.json({
+        success: true,
+        today_lr: 0, month_lr: 0, total_lr: 0, pending_lr: 0, paid_lr: 0, total_bills: 0,
+        pending_bills: 0, total_mr: 0, total_parties: 0, total_customers: 0, total_revenue: 0,
+        pending_amount: 0, pending_pod: 0, active_drivers: 0, active_vehicles: 0,
+        open_claims: 0, today_expenses: 0, total_branches: 0, today_revenue: 0,
+        month_revenue: 0, todaysBooking: 0, monthlyBooking: 0, pendingAmount: 0,
+        recentBilties: [], user_role: userRole, user_branch: req.user?.branch_code || null,
+        is_admin: userRole === 'admin'
+      });
+    }
+
     if (req.query.group_by === 'branch_code') {
       if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view branch comparisons.' });
       const result = await pool.query(`
@@ -932,6 +949,11 @@ function buildBranchCondition({ branchId, branchCode }, startIndex = 1) {
 
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
+    if (!databaseUrl) {
+      console.warn('Recent dashboard data requested without a PostgreSQL connection URL; returning empty lists.');
+      return res.json({ success: true, bilties: [], receipts: [], claims: [] });
+    }
+
     const scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);
@@ -963,6 +985,11 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
 
 app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
   try {
+    if (!databaseUrl) {
+      console.warn('Top parties requested without a PostgreSQL connection URL; returning an empty list.');
+      return res.json({ success: true, data: [] });
+    }
+
     const scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);
@@ -2490,7 +2517,7 @@ async function ensureAdminUser() {
 }
 
 async function startServer() {
-  if (missingEnv.length === 0 && !invalidDatabaseUrl) {
+  if (databaseUrl && missingEnv.length === 0 && !invalidDatabaseUrl) {
     try {
       await pool.query('SELECT 1');
       await runMigrations();
