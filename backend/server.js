@@ -2328,33 +2328,98 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/backup/import', authMiddleware, async (req, res) => {
+  let client;
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can restore data' });
     const backupData = req.body.data;
-    if (!backupData || !backupData.data) return res.status(400).json({ error: 'Invalid backup file format' });
-    console.log('🔄 Starting data restore...');
-    let totalRecords = 0;
-    for (const [table, rows] of Object.entries(backupData.data)) {
-      if (Array.isArray(rows) && rows.length > 0) {
-        try {
-          await pool.query(`DELETE FROM ${table}`);
-          const keys = Object.keys(rows[0]);
-          for (const row of rows) {
-            const values = keys.map(k => row[k]);
-            const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-            await pool.query(`INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`, values);
-          }
-          totalRecords += rows.length;
-          console.log(`  ✅ Restored ${table}: ${rows.length} records`);
-        } catch (err) {
-          console.error(`  ❌ Error restoring ${table}:`, err.message);
-        }
+    const backupTables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records'];
+    if (!backupData || !backupData.data || typeof backupData.data !== 'object' || Array.isArray(backupData.data)) {
+      return res.status(400).json({ error: 'Invalid backup file format' });
+    }
+
+    const entries = Object.entries(backupData.data);
+    for (const [table, rows] of entries) {
+      if (!backupTables.includes(table)) {
+        return res.status(400).json({ error: `Backup contains an unsupported table: ${table}` });
+      }
+      if (!Array.isArray(rows) || rows.some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+        return res.status(400).json({ error: `Backup rows for ${table} must be objects` });
       }
     }
-    res.json({ success: true, message: `Restore completed! Total ${totalRecords} records imported.` });
+
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const insertedByTable = {};
+    let totalInserted = 0;
+    let totalSkipped = 0;
+
+    for (const [table, rows] of entries) {
+      if (rows.length === 0) continue;
+      const columnResult = await client.query(
+        'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+        [table]
+      );
+      const availableColumns = new Set(columnResult.rows.map(row => row.column_name));
+      if (availableColumns.size === 0) {
+        throw new Error(`Cannot restore ${table}: table is unavailable in this database.`);
+      }
+
+      let insertedForTable = 0;
+      const quotedTable = `"${table.replace(/"/g, '""')}"`;
+      for (const row of rows) {
+        const columns = Object.keys(row);
+        if (columns.length === 0 || columns.some(column => !availableColumns.has(column))) {
+          throw new Error(`Backup contains invalid columns for ${table}.`);
+        }
+
+        const quotedColumns = columns.map(column => `"${column.replace(/"/g, '""')}"`).join(', ');
+        const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
+        const result = await client.query(
+          `INSERT INTO ${quotedTable} (${quotedColumns}) VALUES (${placeholders}) ON CONFLICT DO NOTHING RETURNING 1`,
+          columns.map(column => row[column])
+        );
+        insertedForTable += result.rowCount;
+      }
+
+      if (insertedForTable > 0 && availableColumns.has('id')) {
+        const sequenceResult = await client.query(
+          'SELECT pg_get_serial_sequence($1, $2) AS sequence_name',
+          [table, 'id']
+        );
+        if (sequenceResult.rows[0].sequence_name) {
+          await client.query(
+            `SELECT setval(pg_get_serial_sequence($1, 'id'), GREATEST(COALESCE(MAX(id), 1), COALESCE((SELECT last_value FROM pg_sequences WHERE schemaname = current_schema() AND sequencename = split_part(pg_get_serial_sequence($1, 'id'), '.', 2)), 1)), true) FROM ${quotedTable}`,
+            [table]
+          );
+        }
+      }
+
+      const skippedForTable = rows.length - insertedForTable;
+      insertedByTable[table] = { inserted: insertedForTable, skipped: skippedForTable };
+      totalInserted += insertedForTable;
+      totalSkipped += skippedForTable;
+    }
+
+    await client.query('COMMIT');
+    res.json({
+      success: true,
+      message: `Restore completed without deleting or changing existing records. Added ${totalInserted} records; skipped ${totalSkipped} existing records.`,
+      inserted: totalInserted,
+      skipped: totalSkipped,
+      tables: insertedByTable,
+    });
   } catch (err) {
+    if (client) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (rollbackErr) {
+        console.error('Backup restore rollback failed:', rollbackErr.message);
+      }
+    }
     console.error('Restore error:', err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    client?.release();
   }
 });
 

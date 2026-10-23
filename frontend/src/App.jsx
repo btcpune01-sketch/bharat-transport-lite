@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useAuth } from './AuthContext'
+import { autoBackup } from './utils/autoBackup'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Consignments = lazy(() => import('./pages/Consignments'))
@@ -146,6 +147,13 @@ function LoadingFallback() {
 }
 
 function App() {
+  const { currentUser } = useAuth()
+
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') return undefined
+    return autoBackup.initAutoSave()
+  }, [currentUser?.role])
+
   return (
     <HashRouter>
       <Suspense fallback={<LoadingFallback />}>

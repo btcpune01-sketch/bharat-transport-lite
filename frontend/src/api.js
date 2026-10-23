@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { autoBackup } from './utils/autoBackup'
 
 // Use the shared /api route for the backend service.
 const API_URL = import.meta.env.VITE_API_URL || '/api'
@@ -39,7 +40,13 @@ api.interceptors.request.use((config) => {
 })
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = response.config.method?.toLowerCase()
+    if (method && method !== 'get' && !response.config.url?.startsWith('/auth/')) {
+      autoBackup.debouncedSave()
+    }
+    return response
+  },
   (error) => {
     const isLoginRequest = error.config?.url?.split('?')[0] === '/auth/login'
     if (error.response?.status === 401 && !isLoginRequest) {
