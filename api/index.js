@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 module.exports = (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
@@ -12,7 +11,8 @@ module.exports = (req, res) => {
     if (app.default) app = app.default;
     if (req.url.includes('/api/api')) req.url = req.url.replace('/api/api','/api');
     return app(req, res);
-  } catch(e) {
-    return res.status(200).json({ok: true, fallback: true, error: e.message});
+  } catch (error) {
+    console.error('API backend handler failed:', error);
+    return res.status(500).json({ error: 'API service is temporarily unavailable.' });
   }
 };
