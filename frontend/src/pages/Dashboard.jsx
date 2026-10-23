@@ -144,63 +144,63 @@ export default function Dashboard() {
 
   const navCategories = [
     {
-      id: 'dashboard', label: '1. Dashboard', icon: TrendingUp, color: 'text-blue-600',
+      id: 'dashboard', label: 'Dashboard', icon: TrendingUp, color: 'text-blue-600',
       items: [
         { title: 'Dashboard Overview', desc: 'Live business status and key metrics', path: '/', icon: TrendingUp },
         { title: 'Refresh Branch Data', desc: 'Update data instantly', action: fetchDashboardData, icon: RefreshCw }
       ]
     },
     {
-      id: 'bilty', label: '2. Bilty / Booking', icon: FileText, color: 'text-indigo-600',
+      id: 'bilty', label: 'Bookings', icon: FileText, color: 'text-indigo-600',
       items: [
         { title: 'New Bilty Booking', desc: 'Generate new LR', path: '/consignments/new', icon: Plus },
         { title: 'All Bilty Register', desc: 'List of all booked bilties', path: '/consignments', icon: FileText },
-        { title: 'E-Way Bills', desc: 'E-way bill expiry and vehicle updates', path: '/eway-bills', icon: ShieldCheck },
+        { title: 'E-Way Bills', desc: 'E-way bill expiry and vehicle updates', path: '/eway', icon: ShieldCheck },
         { title: 'Quick LR Tracking', desc: 'Check LR status instantly', action: () => document.getElementById('lr-track-input')?.focus(), icon: Search }
       ]
     },
     {
-      id: 'fleet', label: '3. Fleet & Drivers', icon: Truck, color: 'text-emerald-600',
+      id: 'fleet', label: 'Fleet & Drivers', icon: Truck, color: 'text-emerald-600',
       items: [
         { title: 'Vehicle Management', desc: 'Vehicle details and RC records', path: '/vehicles', icon: Truck },
         { title: 'Driver List', desc: 'Driver profiles, licenses, and phones', path: '/drivers', icon: Users },
-        { title: 'Document Expiry Alerts', desc: 'Insurance, fitness, and permit renewals', path: '/vehicles/expiring', icon: ShieldAlert }
+        { title: 'Document Expiry Alerts', desc: 'Insurance, fitness, and permit renewals', path: '/vehicles', icon: ShieldAlert }
       ]
     },
     {
-      id: 'operations', label: '4. Operations', icon: Navigation, color: 'text-amber-600',
+      id: 'operations', label: 'Operations', icon: Navigation, color: 'text-amber-600',
       items: [
         { title: 'Vehicle Challan', desc: 'Lorry hire challan and advance payments', path: '/gadi-challan', icon: FileText },
         { title: 'Gate Pass', desc: 'Loading and unloading passes', path: '/gate-pass', icon: CheckCircle2 },
-        { title: 'Manifest / Transit', desc: 'Vehicle loading challan and bilty list', path: '/manifests', icon: Layers },
+        { title: 'Manifest / Transit', desc: 'Vehicle loading challan and bilty list', path: '/transit', icon: Layers },
         { title: 'Trip Management', desc: 'Route, hub, and distance planning', path: '/trips', icon: Compass }
       ]
     },
     {
-      id: 'pod', label: '5. Delivery / POD', icon: Package, color: 'text-teal-600',
+      id: 'pod', label: 'Delivery', icon: Package, color: 'text-teal-600',
       items: [
         { title: 'POD Register', desc: 'Received delivery receipts and signatures', path: '/pod', icon: Package },
-        { title: 'Public POD View', desc: 'Delivery status for customers', path: '/public/pod-view', icon: CheckCircle2 }
+        { title: 'Public POD View', desc: 'Delivery status for customers', path: '/pod-view', icon: CheckCircle2 }
       ]
     },
     {
-      id: 'parties', label: '6. Parties & Customers', icon: Users, color: 'text-cyan-600',
+      id: 'parties', label: 'Customers & Parties', icon: Users, color: 'text-cyan-600',
       items: [
         { title: 'Customer Directory', desc: 'Regular customers and credit limits', path: '/customers', icon: Users },
-        { title: 'Party Master', desc: 'Consignor and consignee GST accounts', path: '/parties', icon: Building2 },
+        { title: 'Party Master', desc: 'Consignor and consignee GST accounts', path: '/party', icon: Building2 },
         { title: 'Smart Rate Contracts', desc: 'Fixed rates per party', path: '/rates', icon: Coins },
         { title: 'Freight Calculator', desc: 'Instant freight calculation by weight/packages', action: () => setShowCalculator(true), icon: Calculator }
       ]
     },
     {
-      id: 'billing', label: '7. Billing / Invoice', icon: FileText, color: 'text-violet-600',
+      id: 'billing', label: 'Billing & Invoices', icon: FileText, color: 'text-violet-600',
       items: [
         { title: 'Bill Book', desc: 'Generated GST freight bills', path: '/bills', icon: FileText },
-        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bills/new', icon: Plus }
+        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bill/new', icon: Plus }
       ]
     },
     {
-      id: 'receipts', label: '8. Payments / MR', icon: CreditCard, color: 'text-purple-600',
+      id: 'receipts', label: 'Payments', icon: CreditCard, color: 'text-purple-600',
       items: [
         { title: 'Money Receipt (MR)', desc: 'Cash, UPI, and bank payment receipts', path: '/mr', icon: CreditCard },
         { title: 'Party Ledger', desc: 'Transaction account and running balance', path: '/ledger', icon: History },
@@ -208,16 +208,16 @@ export default function Dashboard() {
       ]
     },
     {
-      id: 'finance', label: '9. Accounts & Finance', icon: DollarSign, color: 'text-rose-600',
+      id: 'finance', label: 'Accounts & Finance', icon: DollarSign, color: 'text-rose-600',
       items: [
-        { title: 'Financial Summary (P&L)', desc: 'Total income, liabilities, and net profit', path: '/accounts/summary', icon: DollarSign },
+        { title: 'Financial Summary (P&L)', desc: 'Total income, liabilities, and net profit', path: '/accounts', icon: DollarSign },
         { title: 'Daily Expenses', desc: 'Office, diesel, and toll expense records', path: '/expenses', icon: Receipt },
-        { title: 'TDS Register', desc: 'TDS deducted from vehicle challans', path: '/accounts/tds-register', icon: Percent },
+        { title: 'TDS Register', desc: 'TDS deducted from vehicle challans', path: '/accounts', icon: Percent },
         { title: 'Commissions & Claims', desc: 'Broker commissions and claim settlements', path: '/commissions', icon: ShieldCheck }
       ]
     },
     {
-      id: 'admin', label: '10. Admin / System', icon: Building2, color: 'text-slate-700',
+      id: 'admin', label: 'Administration', icon: Building2, color: 'text-slate-700',
       items: [
         { title: 'Branches', desc: 'Branch network and login setup', path: '/branches', icon: Building2 },
         { title: 'Branch Ledger', desc: 'Transactions between head office and branches', path: '/branch-payments', icon: Coins },
