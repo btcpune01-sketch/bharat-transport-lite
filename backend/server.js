@@ -18,6 +18,8 @@ app.set('trust proxy', 1);
 
 // ✅ CORS - PERMANENT FIX - Allow all Vercel domains + localhost
 const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'https://bharat-transport-lite-lemon.vercel.app',
   'https://bharat-transport-lite.vercel.app',
   'https://bharat-transport-lite-iemb.vercel.app',
   'https://bharat-transport-company-72pc1cqft-nakshcargo-1758.vercel.app',
@@ -25,11 +27,11 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'null'
-];
+].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -49,8 +51,7 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 // ✅ FIX 1: env check - Vercel par crash ki jagah saaf error message
 const missingEnv = ['DATABASE_URL', 'JWT_SECRET'].filter((name) => !process.env[name]);
 if (missingEnv.length) {
-  console.error('❌ Missing environment variables:', missingEnv.join(', '));
-  if (!process.env.VERCEL) process.exit(1);
+  console.warn(`Server configuration warning: missing environment variable(s): ${missingEnv.join(', ')}`);
 }
 
 app.use((req, res, next) => {
@@ -2327,8 +2328,12 @@ async function ensureAdminUser() {
 }
 
 async function startServer() {
-  await runMigrations();
-  await ensureAdminUser();
+  if (missingEnv.length === 0) {
+    await runMigrations();
+    await ensureAdminUser();
+  } else {
+    console.warn('Database migrations and admin bootstrap skipped until required environment variables are configured.');
+  }
   app.listen(PORT, () => console.log(`Bharat Transport TMS v6.0 running on port ${PORT}`));
 }
 
