@@ -829,13 +829,12 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
         .replace('{AND_BRANCH}', cond.sql ? `AND ${cond.sql}` : '')
         .replace('{WHERE_BRANCH}', cond.sql ? `WHERE ${cond.sql}` : '')
         .replace('{WHERE_OR_AND}', cond.sql ? 'AND' : 'WHERE');
-      return pool.query(finalSql, [...baseParams, ...cond.params]).catch((err) => {
-        console.error('Dashboard stats query error:', err.message);
-        return { rows: [] };
-      });
+      return pool.query(finalSql, [...baseParams, ...cond.params]);
     };
 
-    const globalMasterCount = (table, condition) => isAdmin ? pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`).catch((err) => { console.error('Dashboard stats query error:', err.message); return { rows: [] }; }) : Promise.resolve({ rows: [{ count: 0 }] });
+    const globalMasterCount = (table, condition) => isAdmin
+      ? pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`)
+      : Promise.resolve({ rows: [{ count: 0 }] });
 
     const queries = [
       runStat(`SELECT COUNT(*) as count FROM consignments WHERE lr_date = $1 {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
@@ -877,7 +876,7 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
-    res.json({ success: false, today_lr: 0, month_lr: 0, total_lr: 0, pending_lr: 0, paid_lr: 0, total_bills: 0, pending_bills: 0, total_mr: 0, total_parties: 0, total_customers: 0, total_revenue: 0, pending_amount: 0, pending_pod: 0, active_drivers: 0, active_vehicles: 0, open_claims: 0, today_expenses: 0, total_branches: 0, today_revenue: 0, month_revenue: 0 });
+    res.status(503).json({ success: false, error: 'Dashboard statistics are temporarily unavailable because the database could not be queried.' });
   }
 });
 
@@ -929,25 +928,20 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
       const all = [branch.sql, ...conditions].filter(Boolean);
       return all.length ? `WHERE ${all.join(' AND ')}` : '';
     };
-    const [recentBilties, recentMR, recentClaims] = await Promise.allSettled([
+    const [recentBilties, recentMR, recentClaims] = await Promise.all([
       pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') AS payment_status, created_at FROM consignments ${where('COALESCE(is_deleted, FALSE) = FALSE')} ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 5`, branch.params),
       pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 5`, branch.params),
       pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') AS status, created_at FROM claims ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 3`, branch.params)
     ]);
-    const rowsOrEmpty = (result, label) => {
-      if (result.status === 'fulfilled') return result.value?.rows || [];
-      console.error(`Dashboard recent ${label} query error:`, result.reason?.message);
-      return [];
-    };
     res.json({
       success: true,
-      bilties: rowsOrEmpty(recentBilties, 'bilties'),
-      receipts: rowsOrEmpty(recentMR, 'receipts'),
-      claims: rowsOrEmpty(recentClaims, 'claims')
+      bilties: recentBilties.rows,
+      receipts: recentMR.rows,
+      claims: recentClaims.rows
     });
   } catch (err) {
     console.error('Dashboard recent error:', err.message);
-    res.json({ success: true, bilties: [], receipts: [], claims: [] });
+    res.status(503).json({ success: false, error: 'Recent dashboard data is temporarily unavailable because the database could not be queried.' });
   }
 });
 
@@ -970,7 +964,7 @@ app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
     res.json({ success: true, data: result?.rows || [] });
   } catch (err) {
     console.error('Dashboard top parties error:', err.message);
-    res.json({ success: true, data: [] });
+    res.status(503).json({ success: false, error: 'Top party statistics are temporarily unavailable because the database could not be queried.' });
   }
 });
 
@@ -1197,7 +1191,7 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
     res.json({ data: result.rows, total: result.rows.length });
   } catch (err) { 
     console.error('Consignments fetch error:', err.message);
-    res.json({ data: [], total: 0 });
+    res.status(503).json({ error: 'Consignments are temporarily unavailable because the database could not be queried.' });
   }
 });
 
@@ -1555,7 +1549,10 @@ app.get('/api/bills', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM bill_book ${branchCondition} ORDER BY id DESC`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/bills error:', err.message); res.json({ data: [] }); }
+  } catch (err) {
+    console.error('GET /api/bills error:', err.message);
+    res.status(503).json({ error: 'Bills are temporarily unavailable because the database could not be queried.' });
+  }
 });
 
 app.get('/api/bills/last-serial', authMiddleware, async (req, res) => {

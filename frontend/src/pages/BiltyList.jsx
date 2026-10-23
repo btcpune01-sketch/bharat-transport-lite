@@ -8,6 +8,7 @@ export default function BiltyList() {
   const navigate = useNavigate()
   const [biltyList, setBiltyList] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('All')
   const [filterBranch, setFilterBranch] = useState('All')
@@ -23,13 +24,15 @@ export default function BiltyList() {
       
       // Check if data is array or object
       const data = Array.isArray(res.data) ? res.data : (res.data?.data || res.data?.consignments || res.data?.bilty || [])
+      if (!Array.isArray(data)) throw new Error('The server returned an invalid bilty list.')
       console.log('Processed Data:', data)
       
       setBiltyList(data)
+      setLoadError('')
     } catch (err) {
       console.error('Error fetching bilties:', err)
       toast.error('Bilties load नहीं हो पाईं: ' + (err.message || 'Unknown error'))
-      setBiltyList([])
+      setLoadError(err.response?.data?.error || err.message || 'Unable to load bilties.')
     } finally {
       setLoading(false)
     }
@@ -79,6 +82,13 @@ export default function BiltyList() {
             <span>+</span> New Bilty
           </button>
         </div>
+
+        {loadError && (
+          <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-950/70 px-4 py-3 text-sm text-amber-100">
+            <span>Bilty data could not be loaded: {loadError}</span>
+            <button type="button" onClick={fetchBilties} className="shrink-0 font-semibold underline">Retry</button>
+          </div>
+        )}
 
         {/* Search & Filter */}
         <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 mb-6 flex flex-col md:flex-row gap-4">
@@ -138,7 +148,13 @@ export default function BiltyList() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filteredBilties.length === 0 ? (
+                {loadError ? (
+                  <tr>
+                    <td colSpan="8" className="px-6 py-8 text-center text-amber-200">
+                      Bilty data is unavailable. Retry after the database connection is restored.
+                    </td>
+                  </tr>
+                ) : filteredBilties.length === 0 ? (
                   <tr>
                     <td colSpan="8" className="px-6 py-8 text-center text-gray-400">
                       {biltyList.length === 0 ? 'No bilties found. Create your first bilty!' : 'No bilties found matching your criteria.'}

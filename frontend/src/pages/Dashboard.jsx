@@ -12,6 +12,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [statsError, setStatsError] = useState('');
   const [activeMenu, setActiveMenu] = useState(null);
   const menuTimeoutRef = useRef(null);
 
@@ -39,7 +40,7 @@ export default function Dashboard() {
   const [calcForm, setCalcForm] = useState({ from_city: '', to_city: '', weight_kg: '', packages: '' });
   const [calcResult, setCalcResult] = useState(null);
 
-  const API_BASE = 'https://bharat-transport-lite-iemb.vercel.app';
+  const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
   const getHeaders = () => {
     const token = localStorage.getItem('token') || '';
@@ -63,17 +64,27 @@ export default function Dashboard() {
       const branchQuery = selectedBranch !== 'all' ? `?branch_id=${selectedBranch}` : '';
 
       const [statsRes, recentRes, topPartiesRes, stockRes, expiringRes, branchesRes] = await Promise.allSettled([
-        fetch(`${API_BASE}/api/dashboard/stats${branchQuery}`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/dashboard/recent${branchQuery}`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/dashboard/top-parties${branchQuery}`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/stock`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/vehicles/expiring`, { headers: getHeaders() }),
-        fetch(`${API_BASE}/api/branches`, { headers: getHeaders() })
+        fetch(`${API_BASE}/dashboard/stats${branchQuery}`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/dashboard/recent${branchQuery}`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/dashboard/top-parties${branchQuery}`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/stock`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/vehicles/expiring`, { headers: getHeaders() }),
+        fetch(`${API_BASE}/branches`, { headers: getHeaders() })
       ]);
 
       if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
         const d = await statsRes.value.json();
-        if (d.success) setStats(prev => ({ ...prev, ...d }));
+        if (d.success) {
+          setStats(prev => ({ ...prev, ...d }));
+          setStatsError('');
+        } else {
+          setStatsError(d.error || 'Dashboard statistics are unavailable.');
+        }
+      } else if (statsRes.status === 'fulfilled') {
+        const d = await statsRes.value.json().catch(() => ({}));
+        setStatsError(d.error || 'Dashboard statistics are unavailable.');
+      } else {
+        setStatsError('Unable to connect to dashboard statistics.');
       }
       if (recentRes.status === 'fulfilled' && recentRes.value.ok) {
         const d = await recentRes.value.json();
@@ -110,7 +121,7 @@ export default function Dashboard() {
     setTrackError('');
     setTrackResult(null);
     try {
-      const res = await fetch(`${API_BASE}/api/consignments/track?lr_no=${encodeURIComponent(trackLr.trim())}`);
+      const res = await       fetch(`${API_BASE}/consignments/track?lr_no=${encodeURIComponent(trackLr.trim())}`);
       const data = await res.json();
       if (res.ok && !data.error) setTrackResult(data);
       else setTrackError(data.error || 'Bilty not found. Please check the LR number.');
@@ -124,7 +135,7 @@ export default function Dashboard() {
   const handleCalculateRate = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE}/api/rates/calculate`, {
+      const res = await fetch(`${API_BASE}/rates/calculate`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(calcForm)
@@ -315,8 +326,8 @@ export default function Dashboard() {
         </div>
 
         <div className="border-t border-slate-100 bg-slate-50/90 backdrop-blur-md">
-          <div className="max-w-[1600px] mx-auto px-4 flex items-center justify-between overflow-x-auto no-scrollbar py-1">
-            <div className="flex items-center gap-1 w-full justify-between min-w-[1100px]">
+          <div className="max-w-[1600px] mx-auto px-4 py-1">
+            <div className="flex flex-wrap items-center justify-start gap-1 w-full">
               {navCategories.map((cat) => {
                 const IconComponent = cat.icon;
                 const isOpen = activeMenu === cat.id;
@@ -335,13 +346,13 @@ export default function Dashboard() {
                   >
                     <button
                       onClick={() => setActiveMenu(isOpen ? null : cat.id)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      className={`flex shrink-0 items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
                         isOpen ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:bg-white hover:text-blue-700 hover:shadow-xs'
                       }`}
                     >
-                      <IconComponent className={`w-3.5 h-3.5 ${isOpen ? 'text-white' : cat.color}`} />
+                      <IconComponent className={`w-3 h-3 ${isOpen ? 'text-white' : cat.color}`} />
                       <span className="whitespace-nowrap">{cat.label}</span>
-                      <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
+                      <ChevronDown className={`w-2.5 h-2.5 transition-transform ${isOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
                     </button>
 
                     {isOpen && (
@@ -393,6 +404,11 @@ export default function Dashboard() {
       </header>
 
       <main className="max-w-[1600px] w-full mx-auto px-4 py-5 flex-1 flex flex-col gap-5">
+        {statsError && (
+          <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Dashboard statistics could not be loaded: {statsError}
+          </div>
+        )}
         {trackResult && (
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between text-xs text-emerald-950 shadow-sm">
             <div className="flex items-center gap-3">

@@ -6,6 +6,7 @@ import { formatDate } from '../utils/dateFormatter'
 export default function BillList() {
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const navigate = useNavigate()
 
@@ -15,11 +16,15 @@ export default function BillList() {
 
   const loadBills = async () => {
     try {
+      setLoading(true)
       const res = await api.get('/bills')
       const billsData = res.data?.data || res.data || []
+      if (!Array.isArray(billsData)) throw new Error('The server returned an invalid bill list.')
       setBills(billsData)
+      setLoadError('')
     } catch (err) {
-      console.error(err)
+      console.error('Bill list load failed:', err)
+      setLoadError(err.response?.data?.error || err.message || 'Unable to load bills.')
     } finally {
       setLoading(false)
     }
@@ -53,6 +58,12 @@ export default function BillList() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {loadError && (
+          <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span>Bills could not be loaded: {loadError}</span>
+            <button type="button" onClick={loadBills} className="shrink-0 font-semibold underline">Retry</button>
+          </div>
+        )}
         <input
           type="text"
           placeholder="Search by Bill No or Party Name..."
@@ -76,6 +87,8 @@ export default function BillList() {
             <tbody>
               {loading ? (
                 <tr><td colSpan="6" className="text-center py-8">Loading...</td></tr>
+              ) : loadError ? (
+                <tr><td colSpan="6" className="text-center py-8 text-amber-700">Bill data is unavailable. Retry after the database connection is restored.</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan="6" className="text-center py-8 text-gray-500">No bills found</td></tr>
               ) : filtered.map(bill => (
