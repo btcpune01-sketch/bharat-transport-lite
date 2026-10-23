@@ -37,8 +37,10 @@ const Claims = lazy(() => import('./pages/Claims'))
 const Users = lazy(() => import('./pages/Users'))
 const Backup = lazy(() => import('./pages/Backup'))
 const BranchPayments = lazy(() => import('./pages/BranchPayments'))
+const BranchPaymentsSummary = lazy(() => import('./pages/BranchPaymentsSummary'))
 const Settings = lazy(() => import('./pages/Settings'))
 const StockManagement = lazy(() => import('./pages/StockManagement'))
+const VehicleExpiring = lazy(() => import('./pages/VehicleExpiring'))
 const BranchPortal = lazy(() => import('./pages/BranchPortal'))
 const BranchLoginPage = lazy(() => import('./pages/BranchLoginPage'))
 const BranchDashboard = lazy(() => import('./pages/BranchDashboard'))
@@ -150,12 +152,14 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/track" element={<TrackBilty />} />
+          <Route path="/consignments/track" element={<TrackBilty />} />
           <Route path="/bilty-print/:id?" element={<BiltyPrint />} />
           <Route path="/mr/print" element={<MRPrint />} />
           <Route path="/mr-print/:id?" element={<MRPrint />} />
           <Route path="/gadi-challan-print/:id?" element={<GadiChallanPrint />} />
           <Route path="/pod-upload" element={<PODUpload />} />
           <Route path="/pod-view" element={<PODView />} />
+          <Route path="/public/pod-view" element={<PODView />} />
           <Route path="/branch-login" element={<Navigate to="/login" replace />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
           <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
@@ -172,6 +176,7 @@ function App() {
           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/consignments" element={<PrivateRoute><Consignments /></PrivateRoute>} />
           <Route path="/consignments/new" element={<PrivateRoute><BiltyEntry /></PrivateRoute>} />
+          <Route path="/eway-bills" element={<PrivateRoute><EwayBill /></PrivateRoute>} />
           <Route path="/consignments/:id/edit" element={<PrivateRoute><BiltyEntry /></PrivateRoute>} />
           <Route path="/consignment/:id/edit" element={<PrivateRoute><BiltyEntry /></PrivateRoute>} />
           <Route path="/bills" element={<PrivateRoute><BillList /></PrivateRoute>} />
@@ -181,9 +186,11 @@ function App() {
           <Route path="/bill-print" element={<PrivateRoute><BillPrint /></PrivateRoute>} />
           <Route path="/bill-print/:id" element={<PrivateRoute><BillPrint /></PrivateRoute>} />
           <Route path="/bill/new" element={<PrivateRoute><BillEntry /></PrivateRoute>} />
+          <Route path="/bills/new" element={<PrivateRoute><BillEntry /></PrivateRoute>} />
           <Route path="/bill/edit/:id" element={<PrivateRoute><BillEntry /></PrivateRoute>} />
           <Route path="/bill/list" element={<PrivateRoute><BillList /></PrivateRoute>} />
           <Route path="/customers" element={<PrivateRoute><Customers /></PrivateRoute>} />
+          <Route path="/parties" element={<PrivateRoute><PartyList /></PrivateRoute>} />
           <Route path="/party" element={<PrivateRoute><PartyList /></PrivateRoute>} />
           <Route path="/party/new" element={<PrivateRoute><PartyEntry /></PrivateRoute>} />
           <Route path="/party/edit/:id" element={<PrivateRoute><PartyEntry /></PrivateRoute>} />
@@ -193,11 +200,15 @@ function App() {
           <Route path="/mr" element={<PrivateRoute><MR /></PrivateRoute>} />
           <Route path="/mr/create" element={<PrivateRoute><MRCreate /></PrivateRoute>} />
           <Route path="/audit" element={<PrivateRoute><Audit /></PrivateRoute>} />
+          <Route path="/accounts/summary" element={<PrivateRoute><Accounts /></PrivateRoute>} />
+          <Route path="/accounts/tds-register" element={<PrivateRoute><Accounts initialTab="tds" /></PrivateRoute>} />
           <Route path="/branches" element={<PrivateRoute><Branches /></PrivateRoute>} />
           <Route path="/pod" element={<PrivateRoute><POD /></PrivateRoute>} />
           <Route path="/transit" element={<PrivateRoute><Transit /></PrivateRoute>} />
+          <Route path="/manifests" element={<PrivateRoute><Transit /></PrivateRoute>} />
           <Route path="/drivers" element={<PrivateRoute><Drivers /></PrivateRoute>} />
           <Route path="/vehicles" element={<PrivateRoute><Vehicles /></PrivateRoute>} />
+          <Route path="/vehicles/expiring" element={<PrivateRoute><VehicleExpiring /></PrivateRoute>} />
           <Route path="/trips" element={<PrivateRoute><Trips /></PrivateRoute>} />
           <Route path="/rates" element={<PrivateRoute><Rates /></PrivateRoute>} />
           <Route path="/accounts" element={<PrivateRoute><Accounts /></PrivateRoute>} />
@@ -207,6 +218,7 @@ function App() {
           <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
           <Route path="/backup" element={<PrivateRoute><Backup /></PrivateRoute>} />
           <Route path="/branch-payments" element={<PrivateRoute><BranchPayments /></PrivateRoute>} />
+          <Route path="/branch-payments/summary" element={<PrivateRoute><BranchPaymentsSummary /></PrivateRoute>} />
           <Route path="/stock" element={<PrivateRoute><StockManagement /></PrivateRoute>} />
           <Route path="/ledger" element={<PrivateRoute><Ledger /></PrivateRoute>} />
           <Route path="/outstanding" element={<PrivateRoute><Outstanding /></PrivateRoute>} />

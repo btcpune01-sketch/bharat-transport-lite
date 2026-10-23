@@ -155,7 +155,7 @@ export default function Dashboard() {
       items: [
         { title: 'New Bilty Booking', desc: 'Generate new LR', path: '/consignments/new', icon: Plus },
         { title: 'All Bilty Register', desc: 'List of all booked bilties', path: '/consignments', icon: FileText },
-        { title: 'E-Way Bills', desc: 'E-way bill expiry and vehicle updates', path: '/eway', icon: ShieldCheck },
+        { title: 'E-Way Bills', desc: 'E-way bill expiry and vehicle updates', path: '/eway-bills', icon: ShieldCheck },
         { title: 'Quick LR Tracking', desc: 'Check LR status instantly', action: () => document.getElementById('lr-track-input')?.focus(), icon: Search }
       ]
     },
@@ -164,7 +164,7 @@ export default function Dashboard() {
       items: [
         { title: 'Vehicle Management', desc: 'Vehicle details and RC records', path: '/vehicles', icon: Truck },
         { title: 'Driver List', desc: 'Driver profiles, licenses, and phones', path: '/drivers', icon: Users },
-        { title: 'Document Expiry Alerts', desc: 'Insurance, fitness, and permit renewals', path: '/vehicles', icon: ShieldAlert }
+        { title: 'Document Expiry Alerts', desc: 'Insurance, fitness, and permit renewals', path: '/vehicles/expiring', icon: ShieldAlert }
       ]
     },
     {
@@ -172,7 +172,7 @@ export default function Dashboard() {
       items: [
         { title: 'Vehicle Challan', desc: 'Lorry hire challan and advance payments', path: '/gadi-challan', icon: FileText },
         { title: 'Gate Pass', desc: 'Loading and unloading passes', path: '/gate-pass', icon: CheckCircle2 },
-        { title: 'Manifest / Transit', desc: 'Vehicle loading challan and bilty list', path: '/transit', icon: Layers },
+        { title: 'Manifest / Transit', desc: 'Vehicle loading challan and bilty list', path: '/manifests', icon: Layers },
         { title: 'Trip Management', desc: 'Route, hub, and distance planning', path: '/trips', icon: Compass }
       ]
     },
@@ -180,14 +180,14 @@ export default function Dashboard() {
       id: 'pod', label: 'Delivery', icon: Package, color: 'text-teal-600',
       items: [
         { title: 'POD Register', desc: 'Received delivery receipts and signatures', path: '/pod', icon: Package },
-        { title: 'Public POD View', desc: 'Delivery status for customers', path: '/pod-view', icon: CheckCircle2 }
+        { title: 'Public POD View', desc: 'Delivery status for customers', path: '/public/pod-view', icon: CheckCircle2 }
       ]
     },
     {
       id: 'parties', label: 'Customers & Parties', icon: Users, color: 'text-cyan-600',
       items: [
         { title: 'Customer Directory', desc: 'Regular customers and credit limits', path: '/customers', icon: Users },
-        { title: 'Party Master', desc: 'Consignor and consignee GST accounts', path: '/party', icon: Building2 },
+        { title: 'Party Master', desc: 'Consignor and consignee GST accounts', path: '/parties', icon: Building2 },
         { title: 'Smart Rate Contracts', desc: 'Fixed rates per party', path: '/rates', icon: Coins },
         { title: 'Freight Calculator', desc: 'Instant freight calculation by weight/packages', action: () => setShowCalculator(true), icon: Calculator }
       ]
@@ -196,7 +196,7 @@ export default function Dashboard() {
       id: 'billing', label: 'Billing & Invoices', icon: FileText, color: 'text-violet-600',
       items: [
         { title: 'Bill Book', desc: 'Generated GST freight bills', path: '/bills', icon: FileText },
-        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bill/new', icon: Plus }
+        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bills/new', icon: Plus }
       ]
     },
     {
@@ -210,9 +210,9 @@ export default function Dashboard() {
     {
       id: 'finance', label: 'Accounts & Finance', icon: DollarSign, color: 'text-rose-600',
       items: [
-        { title: 'Financial Summary (P&L)', desc: 'Total income, liabilities, and net profit', path: '/accounts', icon: DollarSign },
+        { title: 'Financial Summary (P&L)', desc: 'Total income, liabilities, and net profit', path: '/accounts/summary', icon: DollarSign },
         { title: 'Daily Expenses', desc: 'Office, diesel, and toll expense records', path: '/expenses', icon: Receipt },
-        { title: 'TDS Register', desc: 'TDS deducted from vehicle challans', path: '/accounts', icon: Percent },
+        { title: 'TDS Register', desc: 'TDS deducted from vehicle challans', path: '/accounts/tds-register', icon: Percent },
         { title: 'Commissions & Claims', desc: 'Broker commissions and claim settlements', path: '/commissions', icon: ShieldCheck }
       ]
     },
@@ -220,7 +220,7 @@ export default function Dashboard() {
       id: 'admin', label: 'Administration', icon: Building2, color: 'text-slate-700',
       items: [
         { title: 'Branches', desc: 'Branch network and login setup', path: '/branches', icon: Building2 },
-        { title: 'Branch Ledger', desc: 'Transactions between head office and branches', path: '/branch-payments', icon: Coins },
+        { title: 'Branch Ledger', desc: 'Transactions between head office and branches', path: '/branch-payments/summary', icon: Coins },
         { title: 'Document Stock', desc: 'Remaining bilty, MR, and challan copies', path: '/stock', icon: Boxes },
         { title: 'Users & Operators', desc: 'Staff accounts and permissions', path: '/users', icon: User },
         { title: 'Audit Logs', desc: 'History of system changes', path: '/audit', icon: History },

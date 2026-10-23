@@ -2,16 +2,20 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
 
-export default function Accounts() {
+export default function Accounts({ initialTab = 'dashboard' }) {
   const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
   const [tdsData, setTdsData] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const [activeTab, setActiveTab] = useState(initialTab)
 
   useEffect(() => {
     fetchData()
   }, [])
+
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
 
   const fetchData = async () => {
     try {
