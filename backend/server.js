@@ -538,11 +538,66 @@ async function runMigrations() {
 // ==========================================
 // AUTH MIDDLEWARE
 // ==========================================
+function sendLocalStorageModeResponse(req, res) {
+  console.warn('DB missing - returning empty for:', req.path);
+
+  if (req.path === '/api/dashboard/stats') {
+    const userRole = req.user?.role || 'operator';
+    return res.json({
+      success: true,
+      today_lr: 0, month_lr: 0, total_lr: 0, pending_lr: 0, paid_lr: 0, total_bills: 0,
+      pending_bills: 0, total_mr: 0, total_parties: 0, total_customers: 0, total_revenue: 0,
+      pending_amount: 0, pending_pod: 0, active_drivers: 0, active_vehicles: 0,
+      open_claims: 0, today_expenses: 0, total_branches: 0, today_revenue: 0,
+      month_revenue: 0, todaysBooking: 0, monthlyBooking: 0, pendingAmount: 0,
+      recentBilties: [], user_role: userRole, user_branch: req.user?.branch_code || null,
+      is_admin: userRole === 'admin', message: 'Running in LocalStorage Mode'
+    });
+  }
+
+  if (req.path === '/api/dashboard/recent') {
+    return res.json({
+      success: true, bilties: [], receipts: [], claims: [],
+      data: [], message: 'Running in LocalStorage Mode'
+    });
+  }
+
+  if (req.path === '/api/branch-payments/summary') {
+    return res.json({
+      success: true,
+      data: [],
+      balances: [],
+      payments: [],
+      summary: { total: 0, pending: 0, total_given: 0, total_received: 0, current_balance: 0 },
+      branches: [],
+      message: 'Running in LocalStorage Mode'
+    });
+  }
+
+  return res.json({
+    success: true,
+    data: [],
+    balances: [],
+    payments: [],
+    summary: { total: 0, pending: 0 },
+    message: 'Running in LocalStorage Mode'
+  });
+}
+
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'No token' });
   try {
     req.user = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET);
+    if (!databaseUrl) {
+      if (req.method === 'GET') return sendLocalStorageModeResponse(req, res);
+      console.warn('Database-backed write rejected because DATABASE_URL is not configured:', req.path);
+      return res.status(503).json({
+        success: false,
+        error: 'This change was not saved because the database is unavailable.',
+        message: 'Running in LocalStorage Mode does not persist server-side changes.'
+      });
+    }
     if (req.user.role === 'branch' || req.user.role === 'branch_user') return branchAccessMiddleware(req, res, next);
     next();
   } catch (err) {
@@ -787,21 +842,6 @@ app.post('/api/auth/login', async (req, res) => {
 // ==========================================
 app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
   try {
-    if (!databaseUrl) {
-      console.warn('Dashboard stats requested without a PostgreSQL connection URL; returning empty stats.');
-      const userRole = req.user?.role || 'operator';
-      return res.json({
-        success: true,
-        today_lr: 0, month_lr: 0, total_lr: 0, pending_lr: 0, paid_lr: 0, total_bills: 0,
-        pending_bills: 0, total_mr: 0, total_parties: 0, total_customers: 0, total_revenue: 0,
-        pending_amount: 0, pending_pod: 0, active_drivers: 0, active_vehicles: 0,
-        open_claims: 0, today_expenses: 0, total_branches: 0, today_revenue: 0,
-        month_revenue: 0, todaysBooking: 0, monthlyBooking: 0, pendingAmount: 0,
-        recentBilties: [], user_role: userRole, user_branch: req.user?.branch_code || null,
-        is_admin: userRole === 'admin'
-      });
-    }
-
     if (req.query.group_by === 'branch_code') {
       if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view branch comparisons.' });
       const result = await pool.query(`
@@ -949,11 +989,6 @@ function buildBranchCondition({ branchId, branchCode }, startIndex = 1) {
 
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
-    if (!databaseUrl) {
-      console.warn('Recent dashboard data requested without a PostgreSQL connection URL; returning empty lists.');
-      return res.json({ success: true, bilties: [], receipts: [], claims: [] });
-    }
-
     const scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);
@@ -985,11 +1020,6 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
 
 app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
   try {
-    if (!databaseUrl) {
-      console.warn('Top parties requested without a PostgreSQL connection URL; returning an empty list.');
-      return res.json({ success: true, data: [] });
-    }
-
     const scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);

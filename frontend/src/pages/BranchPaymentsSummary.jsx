@@ -7,6 +7,7 @@ export default function BranchPaymentsSummary() {
   const [branches, setBranches] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [localStorageMode, setLocalStorageMode] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -14,8 +15,9 @@ export default function BranchPaymentsSummary() {
     api.get('/branch-payments/summary')
       .then(({ data }) => {
         if (cancelled) return
-        setSummary(data.summary)
+        setSummary(data.summary || { total_given: 0, total_received: 0, current_balance: 0 })
         setBranches(data.branches || [])
+        setLocalStorageMode(data.message === 'Running in LocalStorage Mode')
       })
       .catch((requestError) => {
         if (cancelled) return
@@ -49,6 +51,11 @@ export default function BranchPaymentsSummary() {
 
         {!loading && !error && summary && (
           <>
+            {localStorageMode && (
+              <p className="mb-4 rounded-lg bg-amber-50 p-4 text-amber-800" role="status">
+                No Data - 0. Running in LocalStorage Mode; branch payment records are not available without a database.
+              </p>
+            )}
             <section className="mb-6 grid gap-4 md:grid-cols-3">
               {[
                 ['Total Given', summary.total_given],
