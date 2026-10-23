@@ -181,6 +181,8 @@ export default function Dashboard() {
     {
       id: 'operations', label: 'Operations', icon: Navigation, color: 'text-amber-600',
       items: [
+        { title: 'Bilty List (LR Register)', desc: 'Search, review, edit, and print consignments', path: '/consignments', icon: FileText },
+        { title: 'Track a Bilty', desc: 'Look up consignment delivery status', path: '/track', icon: Search },
         { title: 'Vehicle Challan', desc: 'Lorry hire challan and advance payments', path: '/gadi-challan', icon: FileText },
         { title: 'Gate Pass', desc: 'Loading and unloading passes', path: '/gate-pass', icon: CheckCircle2 },
         { title: 'Manifest / Transit', desc: 'Vehicle loading challan and bilty list', path: '/manifests', icon: Layers },
@@ -191,6 +193,8 @@ export default function Dashboard() {
       id: 'pod', label: 'Delivery', icon: Package, color: 'text-teal-600',
       items: [
         { title: 'POD Register', desc: 'Received delivery receipts and signatures', path: '/pod', icon: Package },
+        { title: 'Upload POD', desc: 'Submit proof of delivery documents', path: '/pod-upload', icon: FilePlus },
+        { title: 'POD Viewer', desc: 'View proof of delivery records', path: '/pod-view', icon: Search },
         { title: 'Public POD View', desc: 'Delivery status for customers', path: '/public/pod-view', icon: CheckCircle2 }
       ]
     },
@@ -199,6 +203,7 @@ export default function Dashboard() {
       items: [
         { title: 'Customer Directory', desc: 'Regular customers and credit limits', path: '/customers', icon: Users },
         { title: 'Party Master', desc: 'Consignor and consignee GST accounts', path: '/parties', icon: Building2 },
+        { title: 'Create Party', desc: 'Add a consignor or consignee account', path: '/party/new', icon: Plus },
         { title: 'Smart Rate Contracts', desc: 'Fixed rates per party', path: '/rates', icon: Coins },
         { title: 'Freight Calculator', desc: 'Instant freight calculation by weight/packages', action: () => setShowCalculator(true), icon: Calculator }
       ]
@@ -207,13 +212,17 @@ export default function Dashboard() {
       id: 'billing', label: 'Billing & Invoices', icon: FileText, color: 'text-violet-600',
       items: [
         { title: 'Bill Book', desc: 'Generated GST freight bills', path: '/bills', icon: FileText },
-        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bills/new', icon: Plus }
+        { title: 'Create New Bill', desc: 'Generate invoice by linking bilties', path: '/bills/new', icon: Plus },
+        { title: 'Bill Print', desc: 'Open the bill print view', path: '/bill-print', icon: FileText },
+        { title: 'Reports', desc: 'Review operational and financial reports', path: '/reports', icon: BarChart3 }
       ]
     },
     {
       id: 'receipts', label: 'Payments', icon: CreditCard, color: 'text-purple-600',
       items: [
         { title: 'Money Receipt (MR)', desc: 'Cash, UPI, and bank payment receipts', path: '/mr', icon: CreditCard },
+        { title: 'Create Money Receipt', desc: 'Record a payment receipt', path: '/mr/create', icon: Plus },
+        { title: 'Branch Payment Entry', desc: 'Record branch-to-head-office payments', path: '/branch-payments', icon: Coins },
         { title: 'Party Ledger', desc: 'Transaction account and running balance', path: '/ledger', icon: History },
         { title: 'Outstanding Amounts', desc: 'Recoverable amounts from parties', path: '/outstanding', icon: AlertTriangle }
       ]
@@ -224,16 +233,19 @@ export default function Dashboard() {
         { title: 'Financial Summary (P&L)', desc: 'Total income, liabilities, and net profit', path: '/accounts/summary', icon: DollarSign },
         { title: 'Daily Expenses', desc: 'Office, diesel, and toll expense records', path: '/expenses', icon: Receipt },
         { title: 'TDS Register', desc: 'TDS deducted from vehicle challans', path: '/accounts/tds-register', icon: Percent },
-        { title: 'Commissions & Claims', desc: 'Broker commissions and claim settlements', path: '/commissions', icon: ShieldCheck }
+        { title: 'Commissions', desc: 'Broker commission records', path: '/commissions', icon: ShieldCheck },
+        { title: 'Claims', desc: 'Claim and settlement records', path: '/claims', icon: ShieldAlert }
       ]
     },
     {
       id: 'admin', label: 'Administration', icon: Building2, color: 'text-slate-700',
       items: [
         { title: 'Branches', desc: 'Branch network and login setup', path: '/branches', icon: Building2 },
+        { title: 'Branch Portal Management', desc: 'Open branch portal administration', path: '/branch-portal', icon: Building2 },
         { title: 'Branch Ledger', desc: 'Transactions between head office and branches', path: '/branch-payments/summary', icon: Coins },
         { title: 'Document Stock', desc: 'Remaining bilty, MR, and challan copies', path: '/stock', icon: Boxes },
         { title: 'Users & Operators', desc: 'Staff accounts and permissions', path: '/users', icon: User },
+        { title: 'System Settings', desc: 'Configure application settings', path: '/settings', icon: Calculator },
         { title: 'Audit Logs', desc: 'History of system changes', path: '/audit', icon: History },
         { title: 'Backup & Restore', desc: 'Database backup download and import', path: '/backup', icon: Download }
       ]
@@ -356,7 +368,7 @@ export default function Dashboard() {
                     </button>
 
                     {isOpen && (
-                      <div className="absolute left-0 mt-1 w-72 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50">
+                      <div className="absolute left-0 mt-1 w-72 max-h-[70vh] overflow-y-auto bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50">
                         <div className="px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100 mb-1 flex items-center justify-between">
                           <span>{cat.label}</span>
                           <span className="text-[10px] text-blue-600 lowercase">{cat.items.length} options</span>

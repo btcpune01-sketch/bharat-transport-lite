@@ -155,7 +155,8 @@ const Consignments = () => {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Consignee</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">From → To</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Weight</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Freight</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Total Amount</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Payment</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Actions</th>
               </tr>
@@ -163,8 +164,8 @@ const Consignments = () => {
             <tbody className="divide-y divide-gray-200">
               {filteredConsignments.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="px-4 py-8 text-center text-gray-500">
-                    No consignments found
+                  <td colSpan="10" className="px-4 py-8 text-center text-gray-500">
+                    {error ? 'Consignment data is unavailable. Retry to load the list.' : 'No consignments found'}
                   </td>
                 </tr>
               ) : (
@@ -176,7 +177,8 @@ const Consignments = () => {
                     <td className="px-4 py-3 text-sm text-gray-700">{c.consignee_name}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{c.from_name} → {c.to_name}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{Number(c.actual_weight) > 0 ? c.actual_weight : Number(c.act_wt ?? c.actWt) > 0 ? c.act_wt ?? c.actWt : Number(c.charged_weight) > 0 ? c.charged_weight : Number(c.chg_wt ?? c.chgWt) > 0 ? c.chg_wt ?? c.chgWt : c.weight || '-'} kg</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">₹{c.freight}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">₹{Number(c.grand_total ?? c.freight ?? 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700">{c.payment_status || 'Unpaid'}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(c.status)}`}>
                         {c.status}
@@ -218,7 +220,7 @@ const Consignments = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+      {!error && <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
         <div className="bg-white shadow-md rounded-lg p-4">
           <h3 className="text-sm text-gray-600">Total Consignments</h3>
           <p className="text-2xl font-bold text-gray-800">{consignments.length}</p>
@@ -241,7 +243,7 @@ const Consignments = () => {
             {consignments.filter(c => c.status === 'Delivered').length}
           </p>
         </div>
-      </div>
+      </div>}
     </div>
   );
 };

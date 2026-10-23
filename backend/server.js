@@ -76,8 +76,10 @@ app.use((req, res, next) => {
     return next();
   }
   if (missingEnv.length) {
-    return res.status(500).json({
-      error: `Server configuration error: missing environment variable(s): ${missingEnv.join(', ')}`
+    return res.status(503).json({
+      error: 'Service is temporarily unavailable because server configuration is incomplete.',
+      details: `Configure ${missingEnv.join(' and ')} in the Vercel backend service environment, then redeploy.`,
+      missing: missingEnv
     });
   }
   if (invalidDatabaseUrl) {
@@ -1147,7 +1149,14 @@ app.get('/api/consignments/track', async (req, res) => {
 app.get('/api/consignments/next-number', authMiddleware, async (req, res) => {
   try {
     res.json({ lr_no: await generateBiltyNo() });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('Consignment number generation error:', err.message);
+    res.status(503).json({
+      error: 'Unable to generate an LR number because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
+  }
 });
 
 app.get('/api/consignments', authMiddleware, async (req, res) => {
@@ -1586,7 +1595,14 @@ app.get('/api/bills/last-serial', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`SELECT COALESCE(MAX(SUBSTRING(bill_no FROM '/([0-9]+)$')::INTEGER), 0) AS last_serial FROM bill_book WHERE bill_no ~ '^BTC/26-27/[0-9]+$'`);
     res.json({ lastSerial: Number(result.rows[0]?.last_serial) || 0 });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('Bill serial lookup error:', err.message);
+    res.status(503).json({
+      error: 'Unable to generate a bill number because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
+  }
 });
 
 app.get('/api/bills/:identifier', authMiddleware, async (req, res) => {
