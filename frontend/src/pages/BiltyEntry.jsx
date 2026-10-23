@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 import { formatDateForInput } from '../utils/dateFormatter'
 import CreatableBranchSelect from '../components/CreatableBranchSelect'
 
-function CustomSelect({ label, value, onChange, options, name, required }) {
+function CustomSelect({ label, value, onChange, options = [], name, required }) {
   const [isOpen, setIsOpen] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
@@ -16,7 +16,8 @@ function CustomSelect({ label, value, onChange, options, name, required }) {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
-  const selectedLabel = options.find(o => o.value === value)?.label || (label.includes('Select') ? label : `Select ${label}`)
+  const safeOptions = Array.isArray(options) ? options : []
+  const selectedLabel = safeOptions.find(o => o.value === value)?.label || (label.includes('Select') ? label : `Select ${label}`)
   return (
     <div className="relative" ref={ref}>
       <label className="block text-gray-300 text-sm font-medium mb-1">{label}{required && ' *'}</label>
@@ -26,7 +27,7 @@ function CustomSelect({ label, value, onChange, options, name, required }) {
       </div>
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-60 overflow-auto">
-          {options.map((option) => (
+          {safeOptions.map((option) => (
             <div key={option.value} onClick={() => { onChange({ target: { name, value: option.value } }); setIsOpen(false) }} className={`px-4 py-2 cursor-pointer text-black hover:bg-blue-100 ${value === option.value ? 'bg-blue-500 text-white' : 'bg-white'}`}>{option.label}</div>
           ))}
         </div>
@@ -161,7 +162,15 @@ export default function BiltyEntry({ branchMode = false }) {
   }, [id])
 
   const fetchCustomers = async () => {
-    try { const res = await customerAPI.getAll(); setCustomers(res.data) } catch (err) { console.error('Failed to load customers') }
+    try {
+      const res = await customerAPI.getAll()
+      const data = Array.isArray(res.data) ? res.data : res.data?.data
+      if (!Array.isArray(data)) throw new Error('Customer API returned an invalid response')
+      setCustomers(data)
+    } catch (err) {
+      console.error('Failed to load customers:', err)
+      setCustomers([])
+    }
   }
 
   const generateLRNo = async () => {

@@ -78,11 +78,11 @@ export default function Dashboard() {
           setStats(prev => ({ ...prev, ...d }));
           setStatsError('');
         } else {
-          setStatsError(d.error || 'Dashboard statistics are unavailable.');
+          setStatsError(d.details ? `${d.error || 'Dashboard statistics are unavailable.'} (${d.details})` : d.error || 'Dashboard statistics are unavailable.');
         }
       } else if (statsRes.status === 'fulfilled') {
         const d = await statsRes.value.json().catch(() => ({}));
-        setStatsError(d.error || 'Dashboard statistics are unavailable.');
+        setStatsError(d.details ? `${d.error || 'Dashboard statistics are unavailable.'} (${d.details})` : d.error || 'Dashboard statistics are unavailable.');
       } else {
         setStatsError('Unable to connect to dashboard statistics.');
       }

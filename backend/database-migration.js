@@ -1,8 +1,13 @@
 const { Pool } = require('pg');
+const getDatabaseUrl = require('./database-url');
 
 async function runMigrations() {
+  const connectionString = getDatabaseUrl();
+  if (!connectionString) {
+    throw new Error('Set DATABASE_URL or a supported Vercel PostgreSQL URL before running migrations.');
+  }
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     ssl: { rejectUnauthorized: false },
   });
 

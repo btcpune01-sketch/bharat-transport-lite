@@ -7,18 +7,33 @@ export default function Reports() {
   const [bilties, setBilties] = useState([])
   const [activeReport, setActiveReport] = useState('monthly')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => { fetchReports() }, [])
 
   const fetchReports = async () => {
     try {
       setLoading(true)
+      setLoadError('')
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const res = await fetch(`${apiUrl}/consignments`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
-      setBilties(data.data || [])
-    } catch (err) { console.error(err) } finally { setLoading(false) }
+      if (!res.ok) throw new Error(data.details || data.error || 'Unable to load report data.')
+      const rows = Array.isArray(data)
+        ? data
+        : Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data.consignments)
+            ? data.consignments
+            : null
+      if (!rows) throw new Error('The server returned an invalid report response.')
+      setBilties(rows)
+    } catch (err) {
+      console.error('Failed to load reports:', err)
+      setLoadError(err.message || 'Unable to load report data.')
+      setBilties([])
+    } finally { setLoading(false) }
   }
 
   const today = formatDateForInput(new Date())
@@ -79,7 +94,12 @@ export default function Reports() {
           ))}
         </div>
 
-        {loading ? <div className="text-center py-20">Loading...</div> : (
+        {loading ? <div className="text-center py-20">Loading...</div> : loadError ? (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-5 text-red-800">
+            <p>Reports are temporarily unavailable: {loadError}</p>
+            <button onClick={fetchReports} className="mt-3 rounded bg-red-700 px-4 py-2 font-bold text-white">Retry</button>
+          </div>
+        ) : (
           <>
             {activeReport === 'monthly' && (
               <div className="space-y-6">

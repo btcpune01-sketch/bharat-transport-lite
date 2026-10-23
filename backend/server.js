@@ -9,6 +9,7 @@ const { body, validationResult } = require('express-validator');
 const createBranchAuthRouter = require('./routes/branchAuth');
 const branchPaymentsRouter = require('./routes/branchPayments');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
+const getDatabaseUrl = require('./database-url');
 
 require('dotenv').config();
 
@@ -49,16 +50,19 @@ app.options('*', cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
-// ✅ FIX 1: env check - Vercel par crash ki jagah saaf error message
-const missingEnv = ['DATABASE_URL', 'JWT_SECRET'].filter((name) => !process.env[name]);
+const databaseUrl = getDatabaseUrl();
+const missingEnv = [
+  ...(!databaseUrl ? ['a PostgreSQL connection URL (DATABASE_URL, POSTGRES_URL, POSTGRES_PRISMA_URL, or POSTGRES_URL_NON_POOLING)'] : []),
+  ...(!process.env.JWT_SECRET ? ['JWT_SECRET'] : [])
+];
 if (missingEnv.length) {
   console.warn(`Server configuration warning: missing environment variable(s): ${missingEnv.join(', ')}`);
 }
 const invalidDatabaseUrl = Boolean(
-  process.env.DATABASE_URL && !/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)
+  databaseUrl && !/^postgres(?:ql)?:\/\//i.test(databaseUrl)
 );
 if (invalidDatabaseUrl) {
-  console.warn('Server configuration warning: DATABASE_URL must be a PostgreSQL connection string (postgres:// or postgresql://).');
+  console.warn('Server configuration warning: PostgreSQL connection URL must use postgres:// or postgresql://.');
 }
 
 app.use((req, res, next) => {
@@ -78,7 +82,7 @@ app.use((req, res, next) => {
   }
   if (invalidDatabaseUrl) {
     return res.status(503).json({
-      error: 'Database configuration error: DATABASE_URL must be a PostgreSQL connection string.'
+      error: 'Database configuration error: connection URL must use postgres:// or postgresql://.'
     });
   }
   next();
@@ -86,7 +90,7 @@ app.use((req, res, next) => {
 
 // ✅ FIX 2: serverless-friendly database pool
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl,
   ssl: { rejectUnauthorized: false },
   max: process.env.VERCEL ? 3 : 20,
   connectionTimeoutMillis: 10000,
@@ -123,7 +127,7 @@ app.get('/api/health', async (req, res) => {
     const r = await pool.query('SELECT NOW() AS now');
     res.json({ ok: true, db: 'connected', time: r.rows[0].now });
   } catch (err) {
-    res.status(500).json({ ok: false, db: 'failed', error: err.message });
+    res.status(503).json({ ok: false, db: 'failed', error: err.message, code: err.code || null });
   }
 });
 
@@ -876,7 +880,12 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
-    res.status(503).json({ success: false, error: 'Dashboard statistics are temporarily unavailable because the database could not be queried.' });
+    res.status(503).json({
+      success: false,
+      error: 'Dashboard statistics are temporarily unavailable because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
   }
 });
 
@@ -941,7 +950,12 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard recent error:', err.message);
-    res.status(503).json({ success: false, error: 'Recent dashboard data is temporarily unavailable because the database could not be queried.' });
+    res.status(503).json({
+      success: false,
+      error: 'Recent dashboard data is temporarily unavailable because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
   }
 });
 
@@ -964,7 +978,12 @@ app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
     res.json({ success: true, data: result?.rows || [] });
   } catch (err) {
     console.error('Dashboard top parties error:', err.message);
-    res.status(503).json({ success: false, error: 'Top party statistics are temporarily unavailable because the database could not be queried.' });
+    res.status(503).json({
+      success: false,
+      error: 'Top party statistics are temporarily unavailable because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
   }
 });
 
@@ -978,7 +997,7 @@ app.get('/api/branches', authMiddleware, async (req, res) => {
       `SELECT id, branch_code, branch_name, address, city, state, pincode, phone, email, gst_no, pan_no, manager_name, manager_phone, incharge_name, incharge_username, url_slug, branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active, created_at FROM branches WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY branch_name`
     );
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/branches error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/branches error:', err.message); res.status(503).json({ error: 'Branches are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/branches/slug/:slug', async (req, res) => {
@@ -1191,7 +1210,11 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
     res.json({ data: result.rows, total: result.rows.length });
   } catch (err) { 
     console.error('Consignments fetch error:', err.message);
-    res.status(503).json({ error: 'Consignments are temporarily unavailable because the database could not be queried.' });
+    res.status(503).json({
+      error: 'Consignments are temporarily unavailable because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
   }
 });
 
@@ -1327,7 +1350,7 @@ app.get('/api/pod', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM pod_records ${branchCondition} ORDER BY id DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/pod error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/pod error:', err.message); res.status(503).json({ error: 'POD records are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/pod', authMiddleware, async (req, res) => {
@@ -1344,7 +1367,7 @@ app.post('/api/pod', authMiddleware, async (req, res) => {
 // ==========================================
 app.get('/api/drivers', authMiddleware, async (req, res) => {
   try { const result = await pool.query("SELECT * FROM drivers WHERE COALESCE(status, 'Active') = 'Active' ORDER BY driver_name"); res.json({ data: result.rows }); }
-  catch (err) { console.error('GET /api/drivers error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/drivers error:', err.message); res.status(503).json({ error: 'Drivers are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/drivers', authMiddleware, async (req, res) => {
@@ -1368,7 +1391,7 @@ app.put('/api/drivers/:id', authMiddleware, async (req, res) => {
 
 app.get('/api/vehicles', authMiddleware, async (req, res) => {
   try { const result = await pool.query("SELECT * FROM vehicles WHERE COALESCE(status, 'Active') = 'Active' ORDER BY vehicle_no"); res.json({ data: result.rows }); }
-  catch (err) { console.error('GET /api/vehicles error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/vehicles error:', err.message); res.status(503).json({ error: 'Vehicles are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/vehicles', authMiddleware, async (req, res) => {
@@ -1385,7 +1408,7 @@ app.get('/api/vehicles/expiring', authMiddleware, async (req, res) => {
     const thirtyDays = new Date(); thirtyDays.setDate(thirtyDays.getDate() + 30);
     const result = await pool.query(`SELECT * FROM vehicles WHERE insurance_expiry <= $1 OR fitness_expiry <= $1 OR permit_expiry <= $1 OR rc_expiry <= $1 ORDER BY insurance_expiry ASC`, [thirtyDays.toISOString().split('T')[0]]);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/vehicles/expiring error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/vehicles/expiring error:', err.message); res.status(503).json({ error: 'Expiring vehicle records are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 // ==========================================
@@ -1393,7 +1416,7 @@ app.get('/api/vehicles/expiring', authMiddleware, async (req, res) => {
 // ==========================================
 app.get('/api/freight-rates', authMiddleware, async (req, res) => {
   try { const result = await pool.query("SELECT * FROM freight_rates WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY from_city, to_city"); res.json({ data: result.rows }); }
-  catch (err) { console.error('GET /api/freight-rates error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/freight-rates error:', err.message); res.status(503).json({ error: 'Freight rates are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/freight-rates', authMiddleware, async (req, res) => {
@@ -1406,7 +1429,7 @@ app.post('/api/freight-rates', authMiddleware, async (req, res) => {
 
 app.get('/api/materials', authMiddleware, async (req, res) => {
   try { const result = await pool.query("SELECT * FROM materials WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY material_name"); res.json({ data: result.rows }); }
-  catch (err) { console.error('GET /api/materials error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/materials error:', err.message); res.status(503).json({ error: 'Materials are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/materials', authMiddleware, async (req, res) => {
@@ -1419,7 +1442,7 @@ app.post('/api/materials', authMiddleware, async (req, res) => {
 
 app.get('/api/routes', authMiddleware, async (req, res) => {
   try { const result = await pool.query("SELECT * FROM routes WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY from_city, to_city"); res.json({ data: result.rows }); }
-  catch (err) { console.error('GET /api/routes error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/routes error:', err.message); res.status(503).json({ error: 'Routes are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/routes', authMiddleware, async (req, res) => {
@@ -1457,7 +1480,7 @@ app.get('/api/outstanding', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT consignor_name as party_name, consignor_code as party_code, branch_code, COUNT(*) as total_bilties, SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(grand_total AS NUMERIC) ELSE 0 END) as pending_amount, SUM(CAST(grand_total AS NUMERIC)) as total_amount FROM consignments ${branchCondition} GROUP BY consignor_name, consignor_code, branch_code HAVING SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(grand_total AS NUMERIC) ELSE 0 END) > 0 ORDER BY pending_amount DESC`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/outstanding error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/outstanding error:', err.message); res.status(503).json({ error: 'Outstanding balances are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 // ==========================================
@@ -1469,7 +1492,7 @@ app.get('/api/expenses', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM expenses ${branchCondition} ORDER BY expense_date DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/expenses error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/expenses error:', err.message); res.status(503).json({ error: 'Expenses are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/expenses', authMiddleware, async (req, res) => {
@@ -1487,7 +1510,7 @@ app.get('/api/claims', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM claims ${branchCondition} ORDER BY id DESC`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/claims error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/claims error:', err.message); res.status(503).json({ error: 'Claims are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/claims', authMiddleware, async (req, res) => {
@@ -1515,7 +1538,7 @@ app.get('/api/commissions', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM commissions ${branchCondition} ORDER BY id DESC`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/commissions error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/commissions error:', err.message); res.status(503).json({ error: 'Commissions are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/commissions', authMiddleware, async (req, res) => {
@@ -1532,7 +1555,7 @@ app.post('/api/commissions', authMiddleware, async (req, res) => {
 // ==========================================
 app.get('/api/parties', authMiddleware, async (req, res) => {
   try { const result = await pool.query('SELECT * FROM parties WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY party_name'); res.json({ data: result.rows }); }
-  catch (err) { console.error('GET /api/parties error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/parties error:', err.message); res.status(503).json({ error: 'Parties are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/parties', authMiddleware, async (req, res) => {
@@ -1551,7 +1574,11 @@ app.get('/api/bills', authMiddleware, async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     console.error('GET /api/bills error:', err.message);
-    res.status(503).json({ error: 'Bills are temporarily unavailable because the database could not be queried.' });
+    res.status(503).json({
+      error: 'Bills are temporarily unavailable because the database could not be queried.',
+      details: err.message,
+      code: err.code || null
+    });
   }
 });
 
@@ -1676,7 +1703,7 @@ app.get('/api/mr', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM money_receipts ${branchCondition} ORDER BY id DESC LIMIT 500`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/mr error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/mr error:', err.message); res.status(503).json({ error: 'Money receipts are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/mr/:id', authMiddleware, async (req, res) => {
@@ -1814,12 +1841,12 @@ app.get('/api/audit', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM audit_logs ${branchCondition} ORDER BY id DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/audit error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/audit error:', err.message); res.status(503).json({ error: 'Audit records are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/customers', authMiddleware, async (req, res) => {
   try { const result = await pool.query('SELECT * FROM customers WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY customer_name'); res.json(result.rows); }
-  catch (err) { console.error('GET /api/customers error:', err.message); res.json({ data: [] }); }
+  catch (err) { console.error('GET /api/customers error:', err.message); res.status(503).json({ error: 'Customers are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/customers/:id', authMiddleware, async (req, res) => {
@@ -1895,7 +1922,7 @@ app.get('/api/gate-pass', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM gate_passes ${branchCondition} ORDER BY id DESC LIMIT 100`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/gate-pass error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/gate-pass error:', err.message); res.status(503).json({ error: 'Gate passes are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/gate-pass', authMiddleware, async (req, res) => {
@@ -1920,7 +1947,7 @@ app.get('/api/gadi-challan', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM gadi_challans ${branchCondition} ORDER BY id DESC LIMIT 100`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/gadi-challan error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/gadi-challan error:', err.message); res.status(503).json({ error: 'Gadi challans are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
@@ -1974,7 +2001,7 @@ app.get('/api/stock', authMiddleware, async (req, res) => {
     res.json({ data: result.rows });
   } catch (err) {
     console.error('Stock lookup error:', err.message);
-    res.json({ data: [] });
+    res.status(503).json({ error: 'Stock data is temporarily unavailable.', details: err.message, code: err.code || null });
   }
 });
 
@@ -2003,7 +2030,7 @@ app.get('/api/manifests', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE m.branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT m.*, COUNT(mi.id) as total_lrs, STRING_AGG(mi.lr_no, ', ') as lr_nos FROM manifests m LEFT JOIN manifest_items mi ON m.id = mi.manifest_id ${branchCondition} GROUP BY m.id ORDER BY m.created_at DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/manifests error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/manifests error:', err.message); res.status(503).json({ error: 'Manifests are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/manifests', authMiddleware, async (req, res) => {
@@ -2069,7 +2096,7 @@ app.get('/api/trips', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM trips ${branchCondition} ORDER BY trip_date DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/trips error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/trips error:', err.message); res.status(503).json({ error: 'Trips are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/trips', authMiddleware, async (req, res) => {
@@ -2107,7 +2134,7 @@ app.get('/api/rates', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT * FROM rate_contracts ${branchCondition} ORDER BY from_city, to_city, effective_from DESC`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/rates error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/rates error:', err.message); res.status(503).json({ error: 'Rates are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/rates', authMiddleware, async (req, res) => {
@@ -2187,7 +2214,7 @@ app.get('/api/accounts/tds-register', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? `WHERE tds_deduction > 0` : `WHERE branch_id = ${safeUserBranchId(req)} AND tds_deduction > 0`;
     const result = await pool.query(`SELECT challan_no, issue_date, broker_name, freight_amount, tds_deduction, net_payable FROM gadi_challans ${branchCondition} ORDER BY issue_date DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/accounts/tds-register error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/accounts/tds-register error:', err.message); res.status(503).json({ error: 'TDS records are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 // ==========================================
@@ -2199,7 +2226,7 @@ app.get('/api/eway-bills', authMiddleware, async (req, res) => {
     const branchCondition = isAdmin ? '' : `AND c.branch_id = ${safeUserBranchId(req)}`;
     const result = await pool.query(`SELECT c.id, c.lr_no, c.lr_date, c.consignor_name, c.consignee_name, c.from_name, c.to_name, c.declared_value, c.eway_bill_no, c.eway_valid_upto, c.transporter_id, c.transporter_name, c.status, c.from_state, c.to_state FROM consignments c WHERE CAST(c.declared_value AS NUMERIC) > CASE WHEN c.from_state IS NOT NULL AND c.to_state IS NOT NULL AND UPPER(TRIM(c.from_state)) = UPPER(TRIM(c.to_state)) THEN 100000 ELSE 50000 END ${branchCondition} ORDER BY c.lr_date DESC LIMIT 200`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/eway-bills error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/eway-bills error:', err.message); res.status(503).json({ error: 'E-way bills are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.put('/api/eway-bills/:id', authMiddleware, async (req, res) => {
@@ -2218,7 +2245,7 @@ app.get('/api/users', authMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view all users' });
     const result = await pool.query(`SELECT u.id, u.username, u.email, u.full_name, u.role, u.branch_id, COALESCE(u.is_active, TRUE) as is_active, u.created_at, b.branch_code, b.branch_name, b.city FROM users u LEFT JOIN branches b ON u.branch_id = b.id ORDER BY u.created_at DESC`);
     res.json({ data: result.rows });
-  } catch (err) { console.error('GET /api/users error:', err.message); res.json({ data: [] }); }
+  } catch (err) { console.error('GET /api/users error:', err.message); res.status(503).json({ error: 'Users are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/users', authMiddleware, async (req, res) => {
@@ -2391,7 +2418,7 @@ async function startServer() {
       console.warn(`Database unavailable during startup; starting API without database access: ${error.message}`);
     }
   } else {
-    console.warn('Database migrations and admin bootstrap skipped until DATABASE_URL and JWT_SECRET are configured correctly.');
+    console.warn('Database migrations and admin bootstrap skipped until a PostgreSQL connection URL and JWT_SECRET are configured correctly.');
   }
   app.listen(PORT, () => console.log(`Bharat Transport TMS v6.0 running on port ${PORT}`));
 }
