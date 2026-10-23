@@ -1195,10 +1195,6 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
       transactionStarted = false;
       return res.status(409).json({ error: 'This Bilty No already exists' });
     }
-    const keys = Object.keys(c); 
-    const values = Object.values(c);
-    // Wrapped keys in double quotes to prevent SQL syntax errors with reserved words
-    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
     const colRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'consignments'");
     const validCols = new Set(colRes.rows.map(r => r.column_name));
     const finalKeys = [];
@@ -2333,18 +2329,11 @@ async function ensureAdminUser() {
 async function startServer() {
   await runMigrations();
   await ensureAdminUser();
-  if (require.main === module) {
-  if (!process.env.VERCEL) app.listen(PORT, () => console.log('Server on '+PORT));
-}
-module.exports = app;
-    console.log(`✅ Bharat Transport TMS v6.0 running on port ${PORT}`);
-  });
+  app.listen(PORT, () => console.log(`Bharat Transport TMS v6.0 running on port ${PORT}`));
 }
 
-// Vercel Serverless के लिए
-if (process.env.VERCEL) {
-  module.exports = app;
-} else {
+if (!process.env.VERCEL && require.main === module) {
   startServer();
-  module.exports = app;
 }
+
+module.exports = app;
