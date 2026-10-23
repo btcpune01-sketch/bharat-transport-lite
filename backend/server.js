@@ -53,11 +53,22 @@ const missingEnv = ['DATABASE_URL', 'JWT_SECRET'].filter((name) => !process.env[
 if (missingEnv.length) {
   console.warn(`Server configuration warning: missing environment variable(s): ${missingEnv.join(', ')}`);
 }
+const invalidDatabaseUrl = Boolean(
+  process.env.DATABASE_URL && !/^postgres(?:ql)?:\/\//i.test(process.env.DATABASE_URL)
+);
+if (invalidDatabaseUrl) {
+  console.warn('Server configuration warning: DATABASE_URL must be a PostgreSQL connection string (postgres:// or postgresql://).');
+}
 
 app.use((req, res, next) => {
   if (missingEnv.length) {
     return res.status(500).json({
       error: `Server configuration error: missing environment variable(s): ${missingEnv.join(', ')}`
+    });
+  }
+  if (invalidDatabaseUrl) {
+    return res.status(503).json({
+      error: 'Database configuration error: DATABASE_URL must be a PostgreSQL connection string.'
     });
   }
   next();
@@ -79,11 +90,20 @@ let migrationStarted = false;
 async function ensureMigrationsRun() {
   if (!migrationStarted) {
     migrationStarted = true;
-    try { await runMigrations(); await ensureAdminUser(); } catch(e) { migrationStarted = false; }
+    try {
+      await pool.query('SELECT 1');
+      await runMigrations();
+      await ensureAdminUser();
+    } catch (error) {
+      migrationStarted = false;
+      console.warn(`Database unavailable; skipping serverless migrations: ${error.message}`);
+    }
   }
 }
 app.use(async (req, res, next) => {
-  if (process.env.VERCEL) { await ensureMigrationsRun(); }
+  if (process.env.VERCEL && missingEnv.length === 0 && !invalidDatabaseUrl) {
+    await ensureMigrationsRun();
+  }
   next();
 });
 
@@ -714,7 +734,10 @@ app.post('/api/auth/login', async (req, res) => {
       { expiresIn: '24h' }
     );
     res.json({ success: true, token, user: { id: user.id, username: user.username, role: user.role || 'operator', branch_id: user.branch_id, branch_code: user.branch_code, branch_name: user.branch_name } });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    console.error('POST /api/auth/login database request failed:', err.message);
+    res.status(503).json({ error: 'Login is temporarily unavailable because the database cannot be reached.' });
+  }
 });
 
 // ==========================================
@@ -2328,11 +2351,16 @@ async function ensureAdminUser() {
 }
 
 async function startServer() {
-  if (missingEnv.length === 0) {
-    await runMigrations();
-    await ensureAdminUser();
+  if (missingEnv.length === 0 && !invalidDatabaseUrl) {
+    try {
+      await pool.query('SELECT 1');
+      await runMigrations();
+      await ensureAdminUser();
+    } catch (error) {
+      console.warn(`Database unavailable during startup; starting API without database access: ${error.message}`);
+    }
   } else {
-    console.warn('Database migrations and admin bootstrap skipped until required environment variables are configured.');
+    console.warn('Database migrations and admin bootstrap skipped until DATABASE_URL and JWT_SECRET are configured correctly.');
   }
   app.listen(PORT, () => console.log(`Bharat Transport TMS v6.0 running on port ${PORT}`));
 }
