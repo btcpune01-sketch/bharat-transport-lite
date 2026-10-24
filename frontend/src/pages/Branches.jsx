@@ -15,7 +15,7 @@ export default function Branches() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('name')
   const [filterStatus, setFilterStatus] = useState('all')
-  const [form, setForm] = useState({ branch_name: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
+  const [form, setForm] = useState({ branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
   const [editForm, setEditForm] = useState({ branch_name: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
 
   const loadBranches = async () => {
@@ -40,7 +40,7 @@ export default function Branches() {
     try {
       const res = await api.post('/branches/create', form)
       if (res.data.success) {
-        setForm({ branch_name: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
+        setForm({ branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
         setShowForm(false)
         await loadBranches()
         alert('Branch created. Use Setup Login in the branch row to configure staff credentials.')
@@ -165,7 +165,7 @@ export default function Branches() {
           <div className="flex gap-3 flex-wrap">
             <button onClick={() => navigate('/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">← Dashboard</button>
             <button onClick={exportToCSV} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">📥 Export CSV</button>
-            <button onClick={() => { setShowForm(!showForm); setForm({ branch_name: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' }) }} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-lg">
+            <button onClick={() => { setShowForm(!showForm); setForm({ branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' }) }} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-lg">
               {showForm ? '✖ Close' : '➕ Add New Branch'}
             </button>
           </div>
@@ -177,6 +177,7 @@ export default function Branches() {
             <p className="text-sm text-gray-600 mb-4">Create the branch, then use Setup Login in its row to choose staff credentials.</p>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Name *</label><input type="text" required value={form.branch_name} onChange={(e) => setForm({...form, branch_name: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="e.g., Mumbai Branch" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Code</label><input type="text" value={form.branch_code} onChange={(e) => setForm({...form, branch_code: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="Auto-generated from city if blank" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">City *</label><input type="text" required value={form.city} onChange={(e) => setForm({...form, city: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="e.g., Mumbai" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">State</label><input type="text" value={form.state} onChange={(e) => setForm({...form, state: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="e.g., Maharashtra" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Incharge Name *</label><input type="text" required value={form.incharge_name} onChange={(e) => setForm({...form, incharge_name: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="Full Name" /></div>

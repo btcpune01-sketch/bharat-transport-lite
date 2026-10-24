@@ -1154,13 +1154,16 @@ app.post('/api/branches/:id/branch-login', authMiddleware, async (req, res) => {
 app.post('/api/branches/create', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can create branches' });
-    const { branch_name, city, state, address, phone, email, incharge_name } = req.body;
+    const { branch_name, branch_code: requestedBranchCode, city, state, address, phone, email, incharge_name } = req.body;
     if (typeof branch_name !== 'string' || !branch_name.trim() || typeof city !== 'string' || !city.trim() || typeof incharge_name !== 'string' || !incharge_name.trim()) {
       return res.status(400).json({ error: 'Branch name, city, and incharge name are required' });
     }
+    if (requestedBranchCode && (typeof requestedBranchCode !== 'string' || !/^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(requestedBranchCode.trim().toUpperCase()))) {
+      return res.status(400).json({ error: 'Branch code may contain only letters, numbers, and single hyphens.' });
+    }
     const slug = generateSlug(city);
     if (!slug) return res.status(400).json({ error: 'Branch city must include letters or numbers.' });
-    const branch_code = slug.toUpperCase().slice(0, 6);
+    const branch_code = requestedBranchCode ? requestedBranchCode.trim().toUpperCase() : slug.toUpperCase().slice(0, 6);
     const existing = await pool.query('SELECT id FROM branches WHERE url_slug = $1 OR branch_code = $2', [slug, branch_code]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'A branch with this city URL already exists. Use a unique city or code.' });
     const result = await pool.query(`INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, incharge_name, url_slug, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE) RETURNING id, branch_code, branch_name, city, state, incharge_name, url_slug, branch_login_enabled`, [branch_code, branch_name, city, state, address || '', phone || '', email || '', incharge_name, slug]);
