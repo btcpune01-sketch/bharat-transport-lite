@@ -527,11 +527,29 @@ CREATE TABLE IF NOT EXISTS stock_items (
     item_code VARCHAR(30) UNIQUE,
     item_name VARCHAR(100) NOT NULL,
     item_type VARCHAR(30),
+    name TEXT,
+    type TEXT,
+    total_quantity INTEGER,
+    used_quantity INTEGER,
+    remaining_quantity INTEGER,
+    low_stock_limit INTEGER DEFAULT 10,
+    branch_id INTEGER,
     unit VARCHAR(20) DEFAULT 'sheets',
     min_level INTEGER DEFAULT 50,
     critical_level INTEGER DEFAULT 20,
     urgent_level INTEGER DEFAULT 10,
     is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stock_history (
+    id SERIAL PRIMARY KEY,
+    stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    document_number TEXT,
+    used_by TEXT,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    branch_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -720,6 +738,48 @@ INSERT INTO stock_items (item_code, item_name, item_type, unit, min_level, criti
 ('STK004', 'Delivery Challan', 'challan', 'sheets', 50, 20, 10),
 ('STK005', 'Letterhead', 'other', 'sheets', 100, 50, 20),
 ('STK006', 'Envelope', 'other', 'pieces', 200, 100, 50)
+ON CONFLICT (item_code) DO NOTHING;
+
+UPDATE stock_items
+SET item_type = CASE item_type
+        WHEN 'bilty' THEN 'bilty_book'
+        WHEN 'bill' THEN 'bill_book'
+        WHEN 'mr' THEN 'mr_book'
+        WHEN 'challan' THEN 'challan_book'
+        ELSE item_type
+    END
+WHERE item_type IN ('bilty', 'bill', 'mr', 'challan');
+
+UPDATE stock_items
+SET name = item_name,
+    type = item_type,
+    total_quantity = CASE item_type
+        WHEN 'bilty_book' THEN COALESCE(total_quantity, 100)
+        WHEN 'bill_book' THEN COALESCE(total_quantity, 100)
+        WHEN 'mr_book' THEN COALESCE(total_quantity, 50)
+        WHEN 'challan_book' THEN COALESCE(total_quantity, 50)
+        ELSE total_quantity
+    END,
+    used_quantity = COALESCE(used_quantity, 0),
+    remaining_quantity = GREATEST(COALESCE(total_quantity, CASE item_type
+        WHEN 'bilty_book' THEN 100
+        WHEN 'bill_book' THEN 100
+        WHEN 'mr_book' THEN 50
+        WHEN 'challan_book' THEN 50
+        ELSE 0
+    END) - COALESCE(used_quantity, 0), 0),
+    low_stock_limit = COALESCE(low_stock_limit, 10)
+WHERE item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book');
+
+INSERT INTO stock_items (item_code, item_name, item_type, name, type, unit, total_quantity, used_quantity, remaining_quantity, low_stock_limit)
+SELECT seed.item_code, seed.item_name, seed.item_type, seed.item_name, seed.item_type, 'Pages', seed.quantity, 0, seed.quantity, 10
+FROM (VALUES
+    ('DOC-BILTY', 'Bilty Book (BTC)', 'bilty_book', 100),
+    ('DOC-BILL', 'Bill Book', 'bill_book', 100),
+    ('DOC-MR', 'MR Book (Money Receipt)', 'mr_book', 50),
+    ('DOC-CHALLAN', 'Gadi Challan Book', 'challan_book', 50)
+) AS seed(item_code, item_name, item_type, quantity)
+WHERE NOT EXISTS (SELECT 1 FROM stock_items existing WHERE existing.item_type = seed.item_type)
 ON CONFLICT (item_code) DO NOTHING;
 
 -- Settings (Default WhatsApp Template + Company Info)

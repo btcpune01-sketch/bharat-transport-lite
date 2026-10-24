@@ -31,12 +31,10 @@ export default function StockManagement() {
   const [documentStockLoading, setDocumentStockLoading] = useState(true)
 
   const defaultStock = [
-    { id: 'bilty', documentType: 'bilty', name: 'Bilty / LR Books', category: 'document', currentStock: 0, totalStock: 0, threshold: 50, unit: 'Books', used: 0, running: 0, pending: 0 },
-    { id: 'mr', documentType: 'mr', name: 'Money Receipt (MR) Books', category: 'document', currentStock: 0, totalStock: 0, threshold: 50, unit: 'Books', used: 0, running: 0, pending: 0 },
-    { id: 'gadi_challan', documentType: 'gadi_challan', name: 'Gadi Challan Books', category: 'document', currentStock: 0, totalStock: 0, threshold: 50, unit: 'Books', used: 0, running: 0, pending: 0 },
-    { id: 'billing', documentType: 'billing', name: 'Billing / Invoice Books', category: 'document', currentStock: 0, totalStock: 0, threshold: 50, unit: 'Books', used: 0, running: 0, pending: 0 },
-    { id: 'gate_pass', documentType: 'gate_pass', name: 'Gate Pass Books', category: 'document', currentStock: 0, totalStock: 0, threshold: 50, unit: 'Books', used: 0, running: 0, pending: 0 },
-    { id: 'pod', documentType: 'pod', name: 'POD Books', category: 'document', currentStock: 0, totalStock: 0, threshold: 50, unit: 'Books', used: 0, running: 0, pending: 0 },
+    { id: 'bilty', documentType: 'bilty', name: 'Bilty Book (BTC)', category: 'document', currentStock: 100, totalStock: 100, threshold: 10, unit: 'Pages', used: 0, running: 0, pending: 0 },
+    { id: 'billing', documentType: 'billing', name: 'Bill Book', category: 'document', currentStock: 100, totalStock: 100, threshold: 10, unit: 'Pages', used: 0, running: 0, pending: 0 },
+    { id: 'mr', documentType: 'mr', name: 'MR Book (Money Receipt)', category: 'document', currentStock: 50, totalStock: 50, threshold: 10, unit: 'Pages', used: 0, running: 0, pending: 0 },
+    { id: 'gadi_challan', documentType: 'gadi_challan', name: 'Gadi Challan Book', category: 'document', currentStock: 50, totalStock: 50, threshold: 10, unit: 'Pages', used: 0, running: 0, pending: 0 },
     { id: 7, name: 'A4 Paper Reams', category: 'stationery', currentStock: 100, threshold: 20, unit: 'Reams', pricePerUnit: 250, used: 0 },
     { id: 8, name: 'Printer Ink (Black)', category: 'stationery', currentStock: 50, threshold: 10, unit: 'Cartridges', pricePerUnit: 500, used: 0 },
     { id: 9, name: 'Dot Matrix Ribbon', category: 'stationery', currentStock: 40, threshold: 10, unit: 'Ribbons', pricePerUnit: 200, used: 0 },
@@ -52,17 +50,32 @@ export default function StockManagement() {
     if (!Array.isArray(rows)) throw new Error('The server returned an invalid document stock response.')
     const documentItems = rows.map(item => {
       const defaults = defaultStock.find(stockItem => stockItem.documentType === item.document_type)
-      if (!defaults) throw new Error(`The server returned unknown document type "${item.document_type}".`)
+      if (!defaults) {
+        if (item.document_type !== 'lr_copy') throw new Error(`The server returned unknown document type "${item.document_type}".`)
+        return {
+          id: 'lr_copy',
+          documentType: 'lr_copy',
+          name: item.name || 'LR Copy Book',
+          category: 'document',
+          unit: 'Pages',
+          threshold: Number(item.low_stock_limit) || 10,
+          totalStock: Number(item.total_stock) || 0,
+          used: Number(item.used_count) || 0,
+          currentStock: Number(item.remaining_count) || 0
+        }
+      }
       return {
         ...defaults,
+        name: item.name || defaults.name,
         totalStock: Number(item.total_stock) || 0,
         used: Number(item.used_count) || 0,
         running: Number(item.running_count) || 0,
         pending: Number(item.pending_count) || 0,
-        currentStock: Number(item.remaining_count) || 0
+        currentStock: item.remaining_count == null ? defaults.currentStock : Number(item.remaining_count),
+        threshold: Number(item.low_stock_limit) || defaults.threshold
       }
     })
-    setStock(current => [...documentItems, ...current.filter(item => item.category !== 'document')])
+    setStock(current => [...(documentItems.length ? documentItems : defaultStock.filter(item => item.category === 'document')), ...current.filter(item => item.category !== 'document')])
   }
 
   useEffect(() => {
@@ -93,8 +106,28 @@ export default function StockManagement() {
       }
 
       try {
-        const response = await api.get('/stock', getAuthConfig())
-        applyDocumentStock(response.data?.data)
+        const [stockResult, historyResult] = await Promise.allSettled([
+          api.get('/stock', getAuthConfig()),
+          api.get('/stock/history', getAuthConfig())
+        ])
+        if (stockResult.status === 'rejected') throw stockResult.reason
+        applyDocumentStock(stockResult.value.data?.data)
+        if (historyResult.status === 'rejected') {
+          console.error('Unable to load document stock history:', historyResult.reason)
+        } else {
+          const documentHistory = Array.isArray(historyResult.value.data?.data)
+            ? historyResult.value.data.data.map(entry => ({
+              id: `document-${entry.id}`,
+              date: entry.date,
+              itemName: entry.name,
+              type: entry.action === 'added' ? 'IN' : 'OUT',
+              documentNumber: entry.document_number || '-',
+              performedBy: entry.used_by || '-',
+              branch: entry.branch || 'Head Office'
+            }))
+            : []
+          setHistory(current => [...documentHistory, ...current])
+        }
       } catch (error) {
         console.error('Unable to load document stock:', error)
         setDocumentStockError(error.response?.data?.error || error.message || 'Unable to load document stock.')
@@ -116,9 +149,9 @@ export default function StockManagement() {
     localStorage.setItem('btc_stock_history_final', JSON.stringify(newHistory))
   }
 
-  const getStockStatus = (current) => {
-    if (current < 10) return { color: 'bg-red-100 text-red-700 border-red-300', text: 'CRITICAL', level: 'critical' }
-    if (current < 50) return { color: 'bg-yellow-100 text-yellow-700 border-yellow-300', text: 'LOW', level: 'low' }
+  const getStockStatus = (current, threshold = 50) => {
+    if (current <= Math.max(1, Math.floor(threshold / 2))) return { color: 'bg-red-100 text-red-700 border-red-300', text: 'CRITICAL', level: 'critical' }
+    if (current <= threshold) return { color: 'bg-yellow-100 text-yellow-700 border-yellow-300', text: 'LOW', level: 'low' }
     return { color: 'bg-green-100 text-green-700 border-green-300', text: 'GOOD', level: 'good' }
   }
 
@@ -213,12 +246,12 @@ export default function StockManagement() {
   const totalItems = stock.length
   const totalUsed = stock.reduce((sum, s) => sum + (s.used || 0), 0)
   const totalRemaining = stock.reduce((sum, s) => sum + (s.currentStock || 0), 0)
-  const lowStockItems = stock.filter(s => s.currentStock < 50)
+  const lowStockItems = stock.filter(s => s.currentStock <= (s.threshold || 50))
   const documentItems = filteredStock.filter(s => s.category === 'document')
   const stationeryItems = filteredStock.filter(s => s.category === 'stationery')
 
   const renderStockCard = (item) => {
-    const status = getStockStatus(item.currentStock)
+    const status = getStockStatus(item.currentStock, item.threshold)
     const isDocument = Boolean(item.documentType)
     return (
       <div key={item.id} className={`bg-white rounded-2xl shadow-lg p-5 border-l-4 ${status.level === 'critical' ? 'border-red-500' : status.level === 'low' ? 'border-yellow-500' : 'border-green-500'}`}>
@@ -249,6 +282,41 @@ export default function StockManagement() {
       </div>
     )
   }
+
+  const renderDocumentTable = () => (
+    <div className="overflow-x-auto rounded-xl bg-white shadow-lg">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="px-4 py-3 text-left text-xs font-bold uppercase text-gray-600">Book Type</th>
+            <th className="px-4 py-3 text-left text-xs font-bold uppercase text-gray-600">Book Name</th>
+            <th className="px-4 py-3 text-right text-xs font-bold uppercase text-gray-600">Total Pages</th>
+            <th className="px-4 py-3 text-right text-xs font-bold uppercase text-gray-600">Used</th>
+            <th className="px-4 py-3 text-right text-xs font-bold uppercase text-gray-600">Remaining</th>
+            <th className="px-4 py-3 text-center text-xs font-bold uppercase text-gray-600">Status</th>
+            <th className="px-4 py-3 text-right text-xs font-bold uppercase text-gray-600">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {documentItems.map(item => {
+            const status = getStockStatus(item.currentStock, item.threshold)
+            return (
+              <tr key={item.id} className="hover:bg-blue-50">
+                <td className="px-4 py-3 text-sm font-semibold capitalize text-gray-700">{item.documentType.replaceAll('_', ' ')}</td>
+                <td className="px-4 py-3 text-sm font-bold text-gray-900">{item.name}</td>
+                <td className="px-4 py-3 text-right text-sm">{item.totalStock}</td>
+                <td className="px-4 py-3 text-right text-sm text-blue-700">{item.used}</td>
+                <td className="px-4 py-3 text-right text-sm font-bold">{item.currentStock}</td>
+                <td className="px-4 py-3 text-center"><span className={`rounded-full border px-2 py-1 text-xs font-bold ${status.color}`}>{status.text}</span></td>
+                <td className="px-4 py-3 text-right"><button onClick={() => openAddModal(item)} className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-green-700">Record Purchase</button></td>
+              </tr>
+            )
+          })}
+          {!documentItems.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No document books configured.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-6">
@@ -348,11 +416,7 @@ export default function StockManagement() {
           <div>
             <div className="mb-8">
               <h2 className="text-xl font-bold text-gray-800 mb-4"> Document Books ({documentItems.length})</h2>
-              {documentStockLoading ? <p className="py-8 text-center text-gray-500">Loading document stock...</p> : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {documentItems.map(renderStockCard)}
-                </div>
-              )}
+              {documentStockLoading ? <p className="py-8 text-center text-gray-500">Loading document stock...</p> : renderDocumentTable()}
             </div>
             <div>
               <h2 className="text-xl font-bold text-gray-800 mb-4">📦 Stationery & Consumables ({stationeryItems.length})</h2>
@@ -365,11 +429,7 @@ export default function StockManagement() {
 
         {/* DOCUMENT TAB */}
         {activeTab === 'document' && (
-          documentStockLoading ? <p className="py-8 text-center text-gray-500">Loading document stock...</p> : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {documentItems.map(renderStockCard)}
-            </div>
-          )
+          documentStockLoading ? <p className="py-8 text-center text-gray-500">Loading document stock...</p> : renderDocumentTable()
         )}
 
         {/* STATIONERY TAB */}
@@ -399,12 +459,10 @@ export default function StockManagement() {
                   <thead className="bg-gray-100">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Item</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Type</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Qty</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Balance</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Remarks</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">By</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Book Type</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Document No.</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Used By</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Branch</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -412,19 +470,9 @@ export default function StockManagement() {
                       <tr key={entry.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatDate(entry.date)}</td>
                         <td className="px-4 py-3 text-sm font-medium text-gray-800">{entry.itemName}</td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${entry.type === 'IN' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                            {entry.type === 'IN' ? '➕ IN' : '➖ OUT'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm font-bold">
-                          <span className={entry.type === 'IN' ? 'text-green-700' : 'text-orange-700'}>
-                            {entry.type === 'IN' ? '+' : '-'}{entry.quantity} {entry.unit}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm font-bold text-gray-800">{entry.balanceAfter}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{entry.remarks || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{entry.performedBy}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-700">{entry.documentNumber || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{entry.performedBy || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-500">{entry.branch || '-'}</td>
                       </tr>
                     ))}
                   </tbody>

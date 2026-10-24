@@ -10,6 +10,7 @@ const branchPaymentsRouter = require('./routes/branchPayments');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 const getDatabaseUrl = require('./database-url');
 const getDb = require('./db');
+const { BOOK_TYPES, useStock } = require('./services/stockService');
 
 require('dotenv').config();
 
@@ -280,6 +281,8 @@ async function runMigrations() {
     `CREATE TABLE IF NOT EXISTS gate_passes (id SERIAL PRIMARY KEY, pass_no TEXT UNIQUE NOT NULL, branch_id INTEGER, lr_no TEXT, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, material_desc TEXT, quantity TEXT, weight TEXT, valid_until DATE, issued_by TEXT, qr_code TEXT, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS gadi_challans (id SERIAL PRIMARY KEY, challan_no TEXT UNIQUE NOT NULL, branch_id INTEGER, lr_no TEXT, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, driver_license TEXT, owner_name TEXT, owner_mobile TEXT, broker_name TEXT, broker_mobile TEXT, broker_commission TEXT, from_place TEXT, to_place TEXT, material_desc TEXT, weight TEXT, packages TEXT, bilty_date DATE, consignor_name TEXT, consignee_name TEXT, freight_amount NUMERIC, advance_paid NUMERIC, balance_due NUMERIC, toll_expense NUMERIC, diesel_expense NUMERIC, other_expense NUMERIC, tds_deduction NUMERIC, net_payable NUMERIC, issue_date DATE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS document_stock (id SERIAL PRIMARY KEY, document_type TEXT UNIQUE NOT NULL, total_stock INTEGER DEFAULT 0, used_count INTEGER DEFAULT 0, last_updated TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS stock_items (id SERIAL PRIMARY KEY, item_code VARCHAR(30) UNIQUE, item_name VARCHAR(100) NOT NULL, item_type VARCHAR(30), unit VARCHAR(20) DEFAULT 'sheets', min_level INTEGER DEFAULT 50, critical_level INTEGER DEFAULT 20, urgent_level INTEGER DEFAULT 10, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS stock_history (id SERIAL PRIMARY KEY, stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE, action TEXT NOT NULL, document_number TEXT, used_by TEXT, date DATE NOT NULL DEFAULT CURRENT_DATE, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS trips (id SERIAL PRIMARY KEY, trip_no TEXT UNIQUE NOT NULL, trip_date DATE, branch_id INTEGER, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, from_branch TEXT, to_branch TEXT, via_hub TEXT, expected_departure DATE, expected_arrival DATE, distance_km NUMERIC, estimated_days INTEGER, status TEXT DEFAULT 'Planning', remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS rate_contracts (id SERIAL PRIMARY KEY, branch_id INTEGER, party_code TEXT, from_city TEXT NOT NULL, to_city TEXT NOT NULL, rate_type TEXT DEFAULT 'per_kg', rate_per_kg NUMERIC, rate_per_pkg NUMERIC, fixed_rate NUMERIC, min_charge NUMERIC, weight_from NUMERIC, weight_to NUMERIC, effective_from DATE NOT NULL, effective_to DATE, is_active BOOLEAN DEFAULT TRUE, remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`
   ];
@@ -295,6 +298,90 @@ async function runMigrations() {
       ('bilty', 500), ('mr', 500), ('gadi_challan', 500),
       ('billing', 1500), ('gate_pass', 300), ('pod', 300)
     ON CONFLICT (document_type) DO NOTHING
+  `);
+  await addColumnIfNotExists('stock_items', 'name', 'TEXT');
+  await addColumnIfNotExists('stock_items', 'type', 'TEXT');
+  await addColumnIfNotExists('stock_items', 'total_quantity', 'INTEGER');
+  await addColumnIfNotExists('stock_items', 'used_quantity', 'INTEGER');
+  await addColumnIfNotExists('stock_items', 'remaining_quantity', 'INTEGER');
+  await addColumnIfNotExists('stock_items', 'low_stock_limit', 'INTEGER DEFAULT 10');
+  await addColumnIfNotExists('stock_items', 'branch_id', 'INTEGER');
+  await pool.query(`
+    UPDATE stock_items SET
+      item_type = CASE item_type
+        WHEN 'bilty' THEN 'bilty_book'
+        WHEN 'bill' THEN 'bill_book'
+        WHEN 'mr' THEN 'mr_book'
+        WHEN 'challan' THEN 'challan_book'
+        ELSE item_type
+      END
+    WHERE item_type IN ('bilty', 'bill', 'mr', 'challan')
+  `);
+  await pool.query(`
+    WITH ranked_books AS (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY item_type ORDER BY id) AS row_number
+      FROM stock_items
+      WHERE item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book', 'lr_copy_book')
+    )
+    UPDATE stock_items AS item
+    SET is_active = FALSE
+    FROM ranked_books
+    WHERE item.id = ranked_books.id AND ranked_books.row_number > 1
+  `);
+  await pool.query(`
+    UPDATE stock_items SET
+      name = COALESCE(name, item_name),
+      type = item_type,
+      total_quantity = CASE item_type
+        WHEN 'bilty_book' THEN COALESCE(total_quantity, 100)
+        WHEN 'bill_book' THEN COALESCE(total_quantity, 100)
+        WHEN 'mr_book' THEN COALESCE(total_quantity, 50)
+        WHEN 'challan_book' THEN COALESCE(total_quantity, 50)
+        ELSE COALESCE(total_quantity, 0)
+      END,
+      used_quantity = COALESCE(used_quantity, 0),
+      remaining_quantity = GREATEST(
+        CASE item_type
+          WHEN 'bilty_book' THEN COALESCE(total_quantity, 100)
+          WHEN 'bill_book' THEN COALESCE(total_quantity, 100)
+          WHEN 'mr_book' THEN COALESCE(total_quantity, 50)
+          WHEN 'challan_book' THEN COALESCE(total_quantity, 50)
+          ELSE COALESCE(total_quantity, 0)
+        END - COALESCE(used_quantity, 0), 0
+      ),
+      low_stock_limit = COALESCE(low_stock_limit, 10)
+    WHERE item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book')
+      AND is_active = TRUE
+  `);
+  await pool.query(`
+    INSERT INTO stock_items (item_code, item_name, item_type, name, type, unit, total_quantity, used_quantity, remaining_quantity, low_stock_limit)
+    SELECT seed.item_code, seed.item_name, seed.item_type, seed.item_name, seed.item_type, 'Pages', seed.quantity, 0, seed.quantity, 10
+    FROM (VALUES
+      ('DOC-BILTY', 'Bilty Book (BTC)', 'bilty_book', 100),
+      ('DOC-BILL', 'Bill Book', 'bill_book', 100),
+      ('DOC-MR', 'MR Book (Money Receipt)', 'mr_book', 50),
+      ('DOC-CHALLAN', 'Gadi Challan Book', 'challan_book', 50)
+    ) AS seed(item_code, item_name, item_type, quantity)
+    WHERE NOT EXISTS (SELECT 1 FROM stock_items existing WHERE existing.item_type = seed.item_type)
+    ON CONFLICT (item_code) DO NOTHING
+  `);
+  await pool.query(`
+    UPDATE stock_items SET
+      used_quantity = CASE item_type
+        WHEN 'bilty_book' THEN (SELECT COUNT(*) FROM consignments)
+        WHEN 'bill_book' THEN (SELECT COUNT(*) FROM bill_book)
+        WHEN 'mr_book' THEN (SELECT COUNT(*) FROM money_receipts)
+        WHEN 'challan_book' THEN (SELECT COUNT(*) FROM gadi_challans)
+        ELSE COALESCE(used_quantity, 0)
+      END
+    WHERE item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book')
+      AND is_active = TRUE
+  `);
+  await pool.query(`
+    UPDATE stock_items
+    SET remaining_quantity = GREATEST(COALESCE(total_quantity, 0) - COALESCE(used_quantity, 0), 0)
+    WHERE item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book')
+      AND is_active = TRUE
   `);
   
   console.log('🔧 Adding missing columns...');
@@ -570,6 +657,17 @@ function sendLocalStorageModeResponse(req, res) {
   if (req.path === '/api/next-memo') {
     return res.json({ mr_no: 'BTC/MEMO/00001', fallback: true });
   }
+  if (req.path === '/api/stock') {
+    return res.json({
+      data: [
+        { document_type: 'bilty', name: BOOK_TYPES.bilty_book.name, total_stock: 100, used_count: 0, remaining_count: 100, low_stock_limit: 10 },
+        { document_type: 'billing', name: BOOK_TYPES.bill_book.name, total_stock: 100, used_count: 0, remaining_count: 100, low_stock_limit: 10 },
+        { document_type: 'mr', name: BOOK_TYPES.mr_book.name, total_stock: 50, used_count: 0, remaining_count: 50, low_stock_limit: 10 },
+        { document_type: 'gadi_challan', name: BOOK_TYPES.challan_book.name, total_stock: 50, used_count: 0, remaining_count: 50, low_stock_limit: 10 }
+      ]
+    });
+  }
+  if (req.path === '/api/stock/history') return res.json({ data: [] });
 
   if (req.path === '/api/dashboard/stats') {
     const userRole = req.user?.role || 'operator';
@@ -1392,6 +1490,7 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     }
     const placeholders = finalKeys.map((_, i) => "$" + (i + 1)).join(", ");
     const result = await client.query("INSERT INTO consignments (" + finalKeys.join(", ") + ") VALUES (" + placeholders + ") RETURNING *", finalVals);
+    await useStock(client, 'bilty_book', result.rows[0].lr_no, req.user.username, c.branch_id);
     await client.query('COMMIT');
     transactionStarted = false;
     res.json(result.rows[0]);
@@ -1769,6 +1868,7 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
     const values = Object.values(bill);
     const result = await client.query(`INSERT INTO bill_book (${fields.join(', ')}) VALUES (${fields.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     await insertBillItems(client, result.rows[0].id, items);
+    await useStock(client, 'bill_book', result.rows[0].bill_no, req.user.username, bill.branch_id);
     await client.query('COMMIT');
     res.status(201).json({ ...result.rows[0], items });
   } catch (err) {
@@ -1898,6 +1998,7 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
       [finalMRNo, mr_date || new Date().toISOString().split('T')[0], branchId, party_type, party_name, bilty_id || null, bilty_lr_no || null, bill_id || null, bill_no || null, paymentAmount, payment_mode || 'Cash', is_advance || false, remarks || '', req.user.username]
     );
+    await useStock(client, 'mr_book', finalMRNo, req.user.username, branchId);
 
     if (bilty_id) {
       const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1', [bilty_id]);
@@ -2112,9 +2213,12 @@ app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
 
 app.post('/api/gadi-challan', authMiddleware, async (req, res) => {
   if (!pool) return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
+  const client = await pool.connect();
   try {
     const c = { ...req.body }; if (!c.branch_id) c.branch_id = req.user.branch_id;
-    const result = await pool.query(`SELECT challan_no FROM gadi_challans WHERE challan_no LIKE $1 ORDER BY id DESC LIMIT 1`, ['BTC/CH/%']);
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock($1)', [260627003]);
+    const result = await client.query(`SELECT challan_no FROM gadi_challans WHERE challan_no LIKE $1 ORDER BY id DESC LIMIT 1`, ['BTC/CH/%']);
     let nextSerial = 1;
     if (result.rows.length > 0 && result.rows[0].challan_no) {
       const parts = result.rows[0].challan_no.split('/'); if (parts.length === 3) nextSerial = parseInt(parts[2]) + 1;
@@ -2123,32 +2227,33 @@ app.post('/api/gadi-challan', authMiddleware, async (req, res) => {
     const numericFields = ['freight_amount', 'advance_paid', 'balance_due', 'toll_expense', 'diesel_expense', 'other_expense', 'tds_deduction', 'net_payable', 'broker_commission'];
     numericFields.forEach(field => { if (c[field] === '' || c[field] === null || c[field] === undefined) c[field] = null; else c[field] = parseFloat(c[field]); });
     const keys = Object.keys(c); const values = Object.values(c);
-    const row = await pool.query(`INSERT INTO gadi_challans (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
+    const row = await client.query(`INSERT INTO gadi_challans (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
+    await useStock(client, 'challan_book', row.rows[0].challan_no, req.user.username, c.branch_id);
+    await client.query('COMMIT');
     res.json(row.rows[0]);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Challan transaction rollback failed:', rollbackError.message); }
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
 });
 
-const documentStockTypes = ['bilty', 'mr', 'gadi_challan', 'billing', 'gate_pass', 'pod'];
+const documentStockTypes = ['bilty', 'mr', 'gadi_challan', 'billing', 'gate_pass', 'pod', 'lr_copy'];
 
 app.get('/api/stock', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(`
-      WITH usage_counts AS (
-        SELECT 'bilty' AS document_type, COUNT(*) AS used_count,
-          COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) IN ('booked', 'in-transit', 'in transit')) AS running_count,
-          COUNT(*) FILTER (WHERE LOWER(COALESCE(payment_status, 'unpaid')) = 'unpaid') AS pending_count FROM consignments
-        UNION ALL SELECT 'mr', COUNT(*), 0, 0 FROM money_receipts
-        UNION ALL SELECT 'gadi_challan', COUNT(*), 0, COUNT(*) FILTER (WHERE COALESCE(balance_due, 0) > 0) FROM gadi_challans
-        UNION ALL SELECT 'billing', COUNT(*), 0, COUNT(*) FILTER (WHERE LOWER(COALESCE(payment_status, 'unpaid')) = 'unpaid') FROM bill_book
-        UNION ALL SELECT 'gate_pass', COUNT(*), COUNT(*) FILTER (WHERE valid_until IS NULL OR valid_until >= CURRENT_DATE), 0 FROM gate_passes
-        UNION ALL SELECT 'pod', COUNT(*), 0, 0 FROM pod_records
-      ),
-      updated_stock AS (
-        UPDATE document_stock AS stock SET used_count = usage_counts.used_count FROM usage_counts WHERE stock.document_type = usage_counts.document_type RETURNING stock.document_type, stock.total_stock, stock.used_count
-      )
-      SELECT stock.document_type, stock.total_stock, usage_counts.used_count, usage_counts.running_count, usage_counts.pending_count, GREATEST(stock.total_stock - usage_counts.used_count, 0) AS remaining_count
-      FROM updated_stock AS stock JOIN usage_counts USING (document_type)
-      ORDER BY CASE stock.document_type WHEN 'bilty' THEN 1 WHEN 'mr' THEN 2 WHEN 'gadi_challan' THEN 3 WHEN 'billing' THEN 4 WHEN 'gate_pass' THEN 5 WHEN 'pod' THEN 6 END
+      SELECT
+        CASE item_type WHEN 'bilty_book' THEN 'bilty' WHEN 'bill_book' THEN 'billing'
+          WHEN 'mr_book' THEN 'mr' WHEN 'challan_book' THEN 'gadi_challan'
+          WHEN 'lr_copy_book' THEN 'lr_copy' END AS document_type,
+        name, item_type AS type, total_quantity AS total_stock, used_quantity AS used_count,
+        GREATEST(total_quantity - used_quantity, 0) AS remaining_count,
+        low_stock_limit, branch_id
+      FROM stock_items
+      WHERE is_active = TRUE
+        AND item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book', 'lr_copy_book')
+      ORDER BY CASE item_type WHEN 'bilty_book' THEN 1 WHEN 'bill_book' THEN 2
+        WHEN 'mr_book' THEN 3 WHEN 'challan_book' THEN 4 ELSE 5 END
     `);
     res.json({ data: result.rows });
   } catch (err) {
@@ -2157,19 +2262,92 @@ app.get('/api/stock', authMiddleware, async (req, res) => {
   }
 });
 
-app.post('/api/stock/add', authMiddleware, async (req, res) => {
+app.get('/api/stock/history', authMiddleware, async (req, res) => {
   try {
+    const result = await pool.query(`
+      SELECT history.id, history.action, history.document_number, history.used_by,
+        history.date, history.branch_id, COALESCE(branches.branch_name, branches.branch_code, 'Head Office') AS branch,
+        item.name, item.item_type AS type
+      FROM stock_history AS history
+      JOIN stock_items AS item ON item.id = history.stock_item_id
+      LEFT JOIN branches ON branches.id = history.branch_id
+      ORDER BY history.date DESC, history.id DESC
+      LIMIT 1000
+    `);
+    res.json({ data: result.rows });
+  } catch (error) {
+    console.error('Stock history lookup error:', error.message);
+    res.status(503).json({ error: 'Stock history is temporarily unavailable.', details: error.message });
+  }
+});
+
+app.post('/api/stock/use', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Stock usage cannot be recorded while the database is unavailable.' });
+  let client;
+  try {
+    client = await pool.connect();
+    const { type, document_type: documentType, document_number: documentNumber } = req.body || {};
+    const stockType = type || documentType;
+    if (!BOOK_TYPES[stockType] || typeof documentNumber !== 'string' || !documentNumber.trim()) {
+      return res.status(400).json({ error: 'A valid book type and document number are required.' });
+    }
+    await client.query('BEGIN');
+    await useStock(client, stockType, documentNumber.trim(), req.user.username, req.user.branch_id);
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Stock usage rollback failed:', rollbackError.message); }
+    }
+    console.error('Stock use failed:', error.message);
+    res.status(500).json({ error: error.message });
+  } finally {
+    client?.release();
+  }
+});
+
+app.post('/api/stock/add', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Stock purchases cannot be recorded while the database is unavailable.' });
+  let client;
+  try {
+    client = await pool.connect();
     if (String(req.user.role || '').toLowerCase() !== 'admin') return res.status(403).json({ error: 'Only admin can add stock' });
     const { document_type: documentType } = req.body;
     const quantity = Number(req.body.quantity);
     if (!documentStockTypes.includes(documentType)) return res.status(404).json({ error: 'Unknown document type' });
     if (!Number.isSafeInteger(quantity) || quantity <= 0) return res.status(400).json({ error: 'Purchase quantity must be a positive whole number' });
-    const result = await pool.query(`UPDATE document_stock SET total_stock = total_stock + $1, last_updated = NOW() WHERE document_type = $2 RETURNING document_type, total_stock, used_count, last_updated`, [quantity, documentType]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Stock record not found' });
+    const bookType = Object.values(BOOK_TYPES).find((book) => book.documentType === documentType);
+    if (!bookType) return res.status(404).json({ error: 'Unknown document book type' });
+    const stockType = Object.keys(BOOK_TYPES).find((type) => BOOK_TYPES[type] === bookType);
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE stock_items SET total_quantity = COALESCE(total_quantity, 0) + $1,
+        remaining_quantity = GREATEST(COALESCE(total_quantity, 0) + $1 - COALESCE(used_quantity, 0), 0)
+       WHERE item_type = $2 AND is_active = TRUE
+       RETURNING item_type AS type, total_quantity AS total_stock, used_quantity AS used_count,
+         remaining_quantity AS remaining_count`,
+      [quantity, stockType]
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Stock record not found' });
+    }
+    const stockItem = await client.query('SELECT id FROM stock_items WHERE item_type = $1 AND is_active = TRUE', [stockType]);
+    await client.query(
+      `INSERT INTO stock_history (stock_item_id, action, used_by, date, branch_id)
+       VALUES ($1, 'added', $2, CURRENT_DATE, $3)`,
+      [stockItem.rows[0].id, req.user.username, req.user.branch_id || null]
+    );
+    await client.query('COMMIT');
     res.json({ data: result.rows[0] });
   } catch (err) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Stock add rollback failed:', rollbackError.message); }
+    }
     console.error('Stock add error:', err.message);
     res.status(500).json({ error: err.message });
+  } finally {
+    client?.release();
   }
 });
 
