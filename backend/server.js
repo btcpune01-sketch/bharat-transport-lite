@@ -625,6 +625,10 @@ function authMiddleware(req, res, next) {
         console.warn('Database unavailable; returning local-draft response for:', req.path);
         return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
       }
+      if (req.method === 'POST' && req.path === '/api/branches/create' && req.user.role === 'admin') {
+        console.warn('Database unavailable; returning local-draft response for:', req.path);
+        return res.json({ success: true, local: true, message: 'Save this branch locally.' });
+      }
       console.warn('Database-backed write rejected because DATABASE_URL is not configured:', req.path);
       return res.status(503).json({
         success: false,

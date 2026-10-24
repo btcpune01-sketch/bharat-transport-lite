@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
+import toast from 'react-hot-toast'
+import { getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
 export default function Branches() {
   const navigate = useNavigate()
@@ -18,13 +20,39 @@ export default function Branches() {
   const [form, setForm] = useState({ branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
   const [editForm, setEditForm] = useState({ branch_name: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
 
+  const addLocalBranch = () => {
+    const slug = form.city.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const branch = saveLocalDraft('branch', {
+      ...form,
+      branch_code: form.branch_code || slug.toUpperCase().slice(0, 6),
+      url_slug: slug,
+      is_active: true,
+      branch_login_enabled: false,
+      local: true
+    })
+    setBranches(current => [branch, ...current])
+    setForm({ branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
+    setShowForm(false)
+    toast.success('Branch created locally')
+  }
+
   const loadBranches = async () => {
     try {
       setLoading(true)
       const res = await api.get('/branches')
-      setBranches(res.data.data || [])
+      setBranches([...getLocalDrafts('branch'), ...(res.data.data || [])])
     } catch (err) {
-      alert('Failed to load branches: ' + (err.response?.data?.error || err.message))
+      console.error('Unable to load branches:', err)
+      if (isDatabaseUnavailable(err)) {
+        try {
+          setBranches(getLocalDrafts('branch'))
+        } catch (storageError) {
+          console.error('Unable to load locally saved branches:', storageError)
+          toast.error(`Unable to load branches: ${storageError.message}`)
+        }
+      } else {
+        toast.error('Failed to load branches: ' + (err.response?.data?.error || err.message))
+      }
     }
     setLoading(false)
   }
@@ -40,13 +68,26 @@ export default function Branches() {
     try {
       const res = await api.post('/branches/create', form)
       if (res.data.success) {
+        if (res.data.local) {
+          addLocalBranch()
+          return
+        }
         setForm({ branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '', incharge_name: '' })
         setShowForm(false)
         await loadBranches()
         alert('Branch created. Use Setup Login in the branch row to configure staff credentials.')
       }
     } catch (err) {
-      alert('❌ Error: ' + (err.response?.data?.error || err.message))
+      if (isDatabaseUnavailable(err)) {
+        try {
+          addLocalBranch()
+        } catch (storageError) {
+          console.error('Unable to save the branch locally:', storageError)
+          toast.error(`Branch could not be saved: ${storageError.message}`)
+        }
+      } else {
+        toast.error('❌ Error: ' + (err.response?.data?.error || err.message))
+      }
     }
   }
 
@@ -241,11 +282,12 @@ export default function Branches() {
                     <tr><td colSpan="5" className="px-6 py-8 text-center text-gray-500">{branches.length === 0 ? 'No branches yet.' : 'No branches match your search.'}</td></tr>
                   ) : (
                     filteredBranches.map((branch) => (
-                      <tr key={branch.id} className="hover:bg-blue-50">
+                      <tr key={branch.localDraftId || branch.id} className="hover:bg-blue-50">
                         <td className="px-4 py-4">
                           <div className="font-bold text-gray-900">{branch.branch_name}</div>
                           <div className="text-sm text-gray-500">{branch.city}{branch.state ? ', ' + branch.state : ''}</div>
                           <div className="text-xs text-gray-400 font-mono">Code: {branch.branch_code}</div>
+                          {branch.local && <div className="mt-1 text-xs font-semibold text-amber-700">Local draft — login setup is available after sync</div>}
                           <div className={`mt-1 text-xs font-semibold ${branch.branch_login_enabled ? 'text-green-700' : 'text-gray-400'}`}>
                             Branch login {branch.branch_login_enabled ? 'enabled' : 'not configured'}
                           </div>
@@ -272,13 +314,14 @@ export default function Branches() {
                                 setShowBranchLoginSetup(branch)
                                 setBranchLoginForm({ username: '', password: '' })
                               }}
-                              className="px-2 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs hover:bg-purple-200"
+                              disabled={branch.local}
+                              className="px-2 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs hover:bg-purple-200 disabled:opacity-50"
                               title={branch.branch_login_enabled ? 'Reset branch login' : 'Setup branch login'}
                             >
                               {branch.branch_login_enabled ? '🔄 Reset Login' : '🔐 Setup Login'}
                             </button>
-                            <button onClick={() => handleEdit(branch)} className="px-2 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs hover:bg-blue-200" title="Edit branch">✏️ Edit</button>
-                            <button onClick={() => handleDelete(branch.id, branch.branch_name)} className="px-2 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs hover:bg-red-200" title="Delete branch">🗑️</button>
+                            <button onClick={() => handleEdit(branch)} disabled={branch.local} className="px-2 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs hover:bg-blue-200 disabled:opacity-50" title="Edit branch">✏️ Edit</button>
+                            <button onClick={() => handleDelete(branch.id, branch.branch_name)} disabled={branch.local} className="px-2 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs hover:bg-red-200 disabled:opacity-50" title="Delete branch">🗑️</button>
                           </div>
                         </td>
                       </tr>
