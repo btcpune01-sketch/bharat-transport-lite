@@ -381,10 +381,10 @@ export default function BiltyEntry({ branchMode = false }) {
   const consigneeOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: c.customer_name || c.name }))]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-white p-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-white">{id ? 'Edit Bilty (LR)' : 'Create New Bilty (LR)'}</h1>
+          <h1 className="text-3xl font-bold text-black">{id ? 'Edit Bilty (LR)' : 'Create New Bilty (LR)'}</h1>
           <button onClick={() => navigate('/dashboard')} className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition">← Back</button>
         </div>
 

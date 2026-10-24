@@ -49,9 +49,9 @@ export default function BranchDashboard() {
   const recentMR = recent.mr || recent.money_receipts || recent.recent_mr || []
   const recentClaims = recent.claims || recent.recent_claims || []
 
-  if (loading) return <div className="min-h-screen bg-slate-50 p-8 text-center font-semibold">Loading dashboard data…</div>
+  if (loading) return <div className="min-h-screen bg-white p-8 text-center font-semibold">Loading dashboard data…</div>
 
-  return <div className="min-h-screen bg-slate-50 p-4 text-slate-900 sm:p-6">
+  return <div className="min-h-screen bg-white p-4 text-slate-900 sm:p-6">
     <header className="mb-6 flex flex-col gap-4 rounded-2xl bg-slate-950 p-5 text-white shadow-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Bharat Transport</p><h1 className="mt-1 text-2xl font-extrabold">Dashboard Overview</h1><p className="mt-1 text-sm text-slate-300">Branch: {branchCode || 'Company'} · 46 functions connected</p></div><button type="button" onClick={() => navigate('/dashboard')} className="rounded-lg bg-white px-4 py-2 text-sm font-bold text-slate-900 hover:bg-blue-50">Back to Dashboard</button></header>
     {error && <div role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{error} Existing bills and bilties were not changed.</div>}
     <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">{['getTodayLR', 'getMonthLR', 'getTotalLR', 'getPendingLR', 'getPaidLR', 'getTotalRevenue', 'getPendingAmount'].map((name) => <div key={name} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-semibold text-slate-500">{name.replace('get', '')}</p><p className="mt-2 text-xl font-extrabold">{statValue(stats, name) ?? '—'}</p></div>)}</section>

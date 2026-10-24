@@ -43,7 +43,7 @@ export default function PODView() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
+    <div className="min-h-screen bg-white">
       <nav className="bg-gradient-to-r from-blue-700 to-blue-900 text-white shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">

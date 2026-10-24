@@ -245,11 +245,11 @@ export default function BranchPortal() {
   }
 
   if (loading) {
-    return <main className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-600">Loading branch dashboard...</main>
+    return <main className="flex min-h-screen items-center justify-center bg-white text-slate-600">Loading branch dashboard...</main>
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 font-sans text-slate-800">
+    <div className="flex min-h-screen flex-col bg-white font-sans text-slate-800">
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white shadow-sm">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3">

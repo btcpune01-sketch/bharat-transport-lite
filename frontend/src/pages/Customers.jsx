@@ -20,7 +20,7 @@ export default function Customers() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-white">
       <nav className="bg-red-700 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="font-bold text-lg">👥 Customers ({customers.length})</h1>

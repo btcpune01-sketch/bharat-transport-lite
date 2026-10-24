@@ -60,12 +60,8 @@ export default function Login() {
           overflow: hidden;
           padding: 26px clamp(20px, 4.1vw, 68px) 20px;
           color: #e5f7ff;
-          background-color: #020b14;
-          background-image:
-            radial-gradient(ellipse at 26% 48%, rgba(0, 132, 255, .14), transparent 38%),
-            radial-gradient(ellipse at 85% 20%, rgba(34, 211, 238, .08), transparent 32%),
-            linear-gradient(rgba(38, 133, 177, .07) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(38, 133, 177, .07) 1px, transparent 1px);
+          background-color: #ffffff;
+          background-image: none;
           background-size: auto, auto, 48px 48px, 48px 48px;
           font-family: Inter, 'Segoe UI', sans-serif;
         }
@@ -73,7 +69,7 @@ export default function Login() {
           position: absolute;
           z-index: 0;
           inset: 0;
-          background: linear-gradient(90deg, transparent 49.9%, rgba(34, 211, 238, .08) 50%, transparent 50.1%);
+          background: none;
           content: '';
           pointer-events: none;
         }
@@ -102,7 +98,7 @@ export default function Login() {
           clip-path: polygon(0 0, 78% 0, 100% 22%, 100% 100%, 22% 100%, 0 78%);
         }
         .btc-brand-name {
-          color: #e7faff;
+          color: #0f172a;
           font-size: 12px;
           font-weight: 800;
           letter-spacing: .18em;
@@ -314,7 +310,7 @@ export default function Login() {
         }
         .btc-truck-copy h1 {
           margin: 13px 0 8px;
-          color: #eafaff;
+          color: #0f172a;
           font-size: clamp(28px, 3.1vw, 46px);
           font-weight: 700;
           letter-spacing: -.045em;

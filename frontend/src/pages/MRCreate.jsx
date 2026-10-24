@@ -200,7 +200,7 @@ export default function MRCreate() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-white">
       {/* Header */}
       <nav className="bg-gradient-to-r from-purple-700 to-purple-900 text-white shadow-lg">
         <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">

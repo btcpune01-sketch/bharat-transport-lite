@@ -124,7 +124,7 @@ function PrivateRoute({ children }) {
   }
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}>
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-red-700 border-t-transparent mb-4"></div>
           <h2 className="text-xl font-bold text-gray-700">Loading...</h2>
@@ -137,7 +137,7 @@ function PrivateRoute({ children }) {
 
 function LoadingFallback() {
   return (
-    <div style={{ padding: '50px', textAlign: 'center', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f3f4f6' }}>
+    <div style={{ padding: '50px', textAlign: 'center', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}>
       <div className="text-center">
         <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-red-700 border-t-transparent mb-4"></div>
         <h2 className="text-xl font-bold text-gray-700">Loading Bharat Transport...</h2>

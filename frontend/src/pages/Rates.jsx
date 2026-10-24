@@ -172,7 +172,7 @@ export default function Rates() {
 
   if (loading && rates.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-teal-700"></div>
           <p className="mt-4 text-gray-500">Loading Rates...</p>
@@ -182,7 +182,7 @@ export default function Rates() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-white">
       <nav className="bg-gradient-to-r from-teal-700 to-teal-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">

@@ -47,7 +47,7 @@ export default function Ledger() {
   const fmtDate = (d) => d ? formatDate(d) : '-'
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
+    <div className="min-h-screen bg-white">
       <div className="bg-gradient-to-r from-blue-800 to-blue-900 text-white p-6 shadow-lg">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div>

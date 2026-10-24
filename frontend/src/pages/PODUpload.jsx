@@ -121,7 +121,7 @@ export default function PODUpload() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50">
+    <div className="min-h-screen bg-white">
       {/* Header */}
       <nav className="bg-gradient-to-r from-green-700 to-green-900 text-white shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">

@@ -74,10 +74,10 @@ export default function BiltyList() {
   if (loading) return <div className="p-8 text-center text-gray-500">Loading bilties...</div>
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-white p-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-white">Bilty List (LR)</h1>
+          <h1 className="text-3xl font-bold text-black">Bilty List (LR)</h1>
           <button onClick={() => navigate('/bilty/new')} className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition flex items-center gap-2 font-medium">
             <span>+</span> New Bilty
           </button>

@@ -12,7 +12,7 @@
 
 body {
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #f8fafc;
+  background: #ffffff;
   color: #1e293b;
   scroll-behavior: smooth;
 }
@@ -59,7 +59,7 @@ textarea,
   --tms-text: #1e293b;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #f8fafc;
+  background: #ffffff;
   color: var(--tms-text);
   font-family: 'Inter', 'Segoe UI', sans-serif;
 }
@@ -124,7 +124,7 @@ textarea,
 .tms-dashboard .dashboard-main {
   position: relative;
   isolation: isolate;
-  background: #f8fafc;
+  background: #ffffff;
 }
 
 .tms-dashboard .dashboard-main::before {

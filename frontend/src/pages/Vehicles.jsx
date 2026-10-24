@@ -180,7 +180,7 @@ export default function Vehicles() {
   const inactiveVehicles = vehicles.filter(v => v.status !== 'Active').length
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-white">
       <nav className="bg-gradient-to-r from-blue-700 to-blue-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div>

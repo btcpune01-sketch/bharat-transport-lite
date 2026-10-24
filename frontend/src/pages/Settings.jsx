@@ -49,7 +49,7 @@ export default function Settings() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 sm:px-6 lg:px-10">
+    <main className="min-h-screen bg-white px-4 py-8 text-slate-900 sm:px-6 lg:px-10">
       <div className="mx-auto max-w-5xl">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Company operations</p>
         <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Settings</h1>

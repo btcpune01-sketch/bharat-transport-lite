@@ -90,14 +90,14 @@ export default function BranchLoginPage() {
 
   if (loadingBranch) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100">
+      <main className="min-h-screen flex items-center justify-center bg-white">
         <p className="text-gray-600">Loading branch...</p>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-700 to-indigo-900 p-4">
+    <main className="min-h-screen flex items-center justify-center bg-white p-4">
       <section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
         <header className="mb-7 text-center">
           {branch?.logo_url || branch?.logo ? (

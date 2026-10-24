@@ -44,7 +44,7 @@ export default function TrackBilty() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col">
       <div className="bg-red-700 text-white p-4 shadow-md">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <h1 className="text-xl md:text-2xl font-bold">BHARAT TRANSPORT COMPANY</h1>
