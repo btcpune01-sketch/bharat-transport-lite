@@ -207,6 +207,7 @@ function App() {
           <Route path="/reports" element={<PrivateRoute><Reports /></PrivateRoute>} />
           <Route path="/mr" element={<PrivateRoute><MR /></PrivateRoute>} />
           <Route path="/mr/create" element={<PrivateRoute><MRCreate /></PrivateRoute>} />
+          <Route path="/memo/new" element={<PrivateRoute><MRCreate /></PrivateRoute>} />
           <Route path="/audit" element={<PrivateRoute><Audit /></PrivateRoute>} />
           <Route path="/accounts/summary" element={<PrivateRoute><Accounts /></PrivateRoute>} />
           <Route path="/accounts/tds-register" element={<PrivateRoute><Accounts initialTab="tds" /></PrivateRoute>} />

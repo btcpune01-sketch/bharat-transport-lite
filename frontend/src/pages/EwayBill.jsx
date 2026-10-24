@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import toast from 'react-hot-toast'
+import { getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
 export default function EwayBill() {
   const navigate = useNavigate()
@@ -20,8 +22,10 @@ export default function EwayBill() {
   }, [])
 
   const fetchBills = async () => {
+    let localDrafts = []
     try {
       setLoading(true)
+      localDrafts = getLocalDrafts('ewaybill')
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
@@ -29,10 +33,15 @@ export default function EwayBill() {
       const res = await fetch(`${apiUrl}/eway-bills`, { headers })
       if (res.ok) {
         const data = await res.json()
-        setBills(data.data || [])
-      }
+        setBills([...localDrafts, ...(data.data || [])])
+      } else setBills(localDrafts)
     } catch (err) {
       console.error('Eway fetch error:', err)
+      try {
+        setBills(localDrafts.length ? localDrafts : getLocalDrafts('ewaybill'))
+      } catch (storageError) {
+        console.error('Unable to load locally saved E-Way Bills:', storageError)
+      }
     } finally {
       setLoading(false)
     }
@@ -67,18 +76,37 @@ export default function EwayBill() {
         body: JSON.stringify(formData)
       })
 
-      if (res.ok) {
-        alert('E-Way Bill details updated successfully!')
+      const result = await res.json()
+      if (result.local) {
+        saveLocalDraft('ewaybill', { ...formData, id: editId })
+        toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        setBills(current => current.map(bill => bill.id === editId ? { ...bill, ...formData } : bill))
+        setEditId(null)
+        setFormData({ eway_bill_no: '', eway_valid_upto: '', transporter_id: '', transporter_name: '' })
+      } else if (res.ok) {
+        toast.success('E-Way Bill details updated successfully!')
         setEditId(null)
         setFormData({ eway_bill_no: '', eway_valid_upto: '', transporter_id: '', transporter_name: '' })
         fetchBills()
       } else {
-        const err = await res.json()
-        alert('Error: ' + err.error)
+        throw Object.assign(new Error(result.error || 'Failed to update E-Way Bill'), { response: { status: res.status, data: result } })
       }
     } catch (err) {
       console.error('Update error:', err)
-      alert('Failed to update')
+      if (isDatabaseUnavailable(err)) {
+        try {
+          saveLocalDraft('ewaybill', { ...formData, id: editId })
+          setBills(current => current.map(bill => bill.id === editId ? { ...bill, ...formData } : bill))
+          setEditId(null)
+          setFormData({ eway_bill_no: '', eway_valid_upto: '', transporter_id: '', transporter_name: '' })
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        } catch (storageError) {
+          console.error('Unable to store the E-Way Bill as a local draft:', storageError)
+          toast.error(`Unable to save E-Way Bill: ${storageError.message}`)
+        }
+      } else {
+        toast.error(err.response?.data?.error || err.message || 'Failed to update E-Way Bill')
+      }
     }
   }
 

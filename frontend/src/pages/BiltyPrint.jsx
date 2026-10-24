@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import api from '../api';
+import { getLocalDrafts } from '../utils/offlineDrafts';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -52,7 +53,7 @@ const BiltyPrint = () => {
     setLoading(true);
     api.get('/consignments')
       .then(response => {
-        if (active) setBilties(response.data?.data || []);
+        if (active) setBilties([...getLocalDrafts('bilty'), ...(response.data?.data || [])]);
       })
       .catch(err => {
         console.error('Error fetching bilties:', err);
@@ -69,6 +70,22 @@ const BiltyPrint = () => {
     setError('');
     setData(null);
     try {
+      const localDraft = getLocalDrafts('bilty').find((draft) => draft.localDraftId === id);
+      if (localDraft) {
+        setData({
+          ...localDraft,
+          actual_weight: preferredMeasurement(localDraft.actual_weight, localDraft.act_wt ?? localDraft.actWt),
+          charged_weight: preferredMeasurement(localDraft.charged_weight, localDraft.chg_wt ?? localDraft.chgWt),
+          no_of_packages: preferredMeasurement(localDraft.no_of_packages, localDraft.package_count),
+          length: preferredMeasurement(localDraft.length, localDraft.l),
+          width: preferredMeasurement(localDraft.width, localDraft.w),
+          height: preferredMeasurement(localDraft.height, localDraft.h),
+          method_of_packing: localDraft.method_of_packing || localDraft.package_type || '',
+          total_cft: preferredMeasurement(localDraft.total_cft, localDraft.total_cft_cmt ?? localDraft.cft_cmt)
+        });
+        setLoading(false);
+        return;
+      }
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/consignments/${id}`, {
         headers: { Authorization: `Bearer ${token}` }

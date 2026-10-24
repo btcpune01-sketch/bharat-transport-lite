@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDateForInput } from '../utils/dateFormatter'
+import toast from 'react-hot-toast'
+import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
 export default function MRCreate() {
   const navigate = useNavigate()
@@ -156,17 +158,38 @@ export default function MRCreate() {
         body: JSON.stringify(payload)
       })
 
-      if (res.ok) {
-        const result = await res.json()
-        alert(`MR Created Successfully! MR No: ${result.mr_no}`)
+      const result = await res.json()
+      if (result.local) {
+        const draft = saveLocalDraft('memo', {
+          ...payload,
+          mr_no: getLocalDocumentNumber('memo', 'BTC/MEMO/')
+        })
+        toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        navigate(`/mr/print?mr_no=${encodeURIComponent(draft.mr_no)}`)
+      } else if (res.ok) {
+        toast.success(`MR created successfully! MR No: ${result.mr_no}`)
         navigate('/mr')
       } else {
-        const err = await res.json()
-        alert('Error: ' + (err.error || 'Failed to create MR'))
+        throw Object.assign(new Error(result.error || 'Failed to create MR'), { response: { status: res.status, data: result } })
       }
     } catch (err) {
       console.error('MR create error:', err)
-      alert('Failed to create MR')
+      if (isDatabaseUnavailable(err)) {
+        try {
+          const draft = saveLocalDraft('memo', {
+            ...formData,
+            mr_no: getLocalDocumentNumber('memo', 'BTC/MEMO/'),
+            amount: Number(formData.amount)
+          })
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          navigate(`/mr/print?mr_no=${encodeURIComponent(draft.mr_no)}`)
+        } catch (storageError) {
+          console.error('Unable to store the money receipt as a local draft:', storageError)
+          toast.error(`Unable to save money receipt: ${storageError.message}`)
+        }
+      } else {
+        toast.error(err.response?.data?.error || err.message || 'Failed to create money receipt')
+      }
     } finally {
       setLoading(false)
     }

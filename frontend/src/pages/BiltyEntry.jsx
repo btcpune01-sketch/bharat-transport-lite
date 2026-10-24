@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { biltyAPI, customerAPI } from '../api'
 import toast from 'react-hot-toast'
+import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 import { formatDateForInput } from '../utils/dateFormatter'
 import CreatableBranchSelect from '../components/CreatableBranchSelect'
 
@@ -64,9 +65,7 @@ const preferStoredMeasurement = (primary, legacy) => {
 };
 
 const getLocalLrNumber = () => {
-  const date = new Date()
-  const dateSerial = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
-  return `BTC-${dateSerial}${String(localStorage.length).padStart(2, '0')}`
+  return getLocalDocumentNumber('bilty', 'BTC-')
 }
 
 export default function BiltyEntry({ branchMode = false }) {
@@ -328,10 +327,22 @@ export default function BiltyEntry({ branchMode = false }) {
       if (mrActive) { payload.mr_active = true; payload.mr_date = payload.mr_date || null }
       else { for (const field of Object.keys(payload)) { if (field.startsWith('mr_')) delete payload[field] } }
       if (id) {
-        await biltyAPI.update(id, payload)
+        const response = await biltyAPI.update(id, payload)
+        if (response.data?.local) {
+          const draft = saveLocalDraft('bilty', payload)
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          navigate(`/bilty-print/${draft.localDraftId}`)
+          return
+        }
         toast.success('Bilty Updated - ' + payload.lr_no)
       } else {
-        await biltyAPI.create(payload)
+        const response = await biltyAPI.create(payload)
+        if (response.data?.local) {
+          const draft = saveLocalDraft('bilty', payload)
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          navigate(`/bilty-print/${draft.localDraftId}`)
+          return
+        }
         toast.success('Bilty Saved - ' + payload.lr_no)
       }
       navigate('/consignments')
@@ -339,19 +350,17 @@ export default function BiltyEntry({ branchMode = false }) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (errorMsg.toLowerCase().includes('already exists') || errorMsg.toLowerCase().includes('duplicate')) {
         setLrError('This Bilty No already exists'); setIsLrEditable(true); toast.error('This Bilty No already exists')
-      } else {
+      } else if (isDatabaseUnavailable(err)) {
         try {
-          const localDrafts = JSON.parse(localStorage.getItem('btc_pending_bilties') || '[]')
-          if (!Array.isArray(localDrafts)) throw new Error('Saved local Bilty drafts are not a list.')
-          localStorage.setItem('btc_pending_bilties', JSON.stringify([
-            { ...formData, localDraftId: `local-${Date.now()}`, savedAt: new Date().toISOString() },
-            ...localDrafts
-          ]))
-          toast('Database unavailable. Bilty stored as a local draft only; it was not saved to the server.', { icon: '⚠️', duration: 7000 })
+          const draft = saveLocalDraft('bilty', { ...formData, lr_no: formData.lr_no })
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          navigate(`/bilty-print/${draft.localDraftId}`)
         } catch (storageError) {
           console.error('Unable to store the Bilty as a local draft:', storageError)
           toast.error(`Unable to save Bilty: ${errorMsg}`)
         }
+      } else {
+        toast.error(errorMsg)
       }
     } finally { setLoading(false) }
   }

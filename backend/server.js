@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
-const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
@@ -10,6 +9,7 @@ const createBranchAuthRouter = require('./routes/branchAuth');
 const branchPaymentsRouter = require('./routes/branchPayments');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 const getDatabaseUrl = require('./database-url');
+const getDb = require('./db');
 
 require('dotenv').config();
 
@@ -51,6 +51,7 @@ app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 
 const databaseUrl = getDatabaseUrl();
+const pool = getDb();
 const missingEnv = [
   ...(!process.env.JWT_SECRET ? ['JWT_SECRET'] : [])
 ];
@@ -61,7 +62,8 @@ if (!databaseUrl) {
   console.warn('Database configuration warning: no PostgreSQL connection URL is configured. Database-backed endpoints will be unavailable.');
 }
 const invalidDatabaseUrl = Boolean(
-  databaseUrl && !/^postgres(?:ql)?:\/\//i.test(databaseUrl)
+  (process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.POSTGRES_PRISMA_URL ||
+    process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URI) && !databaseUrl
 );
 if (invalidDatabaseUrl) {
   console.warn('Server configuration warning: PostgreSQL connection URL must use postgres:// or postgresql://.');
@@ -85,24 +87,10 @@ app.use((req, res, next) => {
       missing: missingEnv
     });
   }
-  if (invalidDatabaseUrl) {
-    return res.status(503).json({
-      error: 'Database configuration error: connection URL must use postgres:// or postgresql://.'
-    });
-  }
   next();
 });
 
-// ✅ FIX 2: serverless-friendly database pool
-const pool = new Pool({
-  connectionString: databaseUrl,
-  ssl: { rejectUnauthorized: false },
-  max: process.env.VERCEL ? 3 : 20,
-  connectionTimeoutMillis: 10000,
-});
-
-pool.on('connect', () => console.info('PostgreSQL database connection established.'));
-pool.on('error', (err) => console.error('PostgreSQL database connection failed:', err.message));
+pool?.on('connect', () => console.info('PostgreSQL database connection established.'));
 
 const branchAccessMiddleware = createBranchAccessMiddleware(pool);
 
@@ -129,6 +117,7 @@ app.use(async (req, res, next) => {
 
 // ✅ FIX 4: health check
 app.get('/api/health', async (req, res) => {
+  if (!pool) return res.status(503).json({ ok: false, db: 'unavailable', count: 0 });
   try {
     const r = await pool.query(
       `SELECT NOW() AS now, COUNT(*)::int AS count
@@ -548,6 +537,40 @@ async function runMigrations() {
 function sendLocalStorageModeResponse(req, res) {
   console.warn('DB missing - returning empty for:', req.path);
 
+  if (req.path === '/api/consignments/next-number') {
+    return res.json({ lr_no: 'BTC-00001', fallback: true });
+  }
+  if (req.path === '/api/next-lr') {
+    return res.json({ lr_no: 'BTC-00001', fallback: true });
+  }
+  if (req.path === '/api/bills/last-serial') {
+    return res.json({ lastSerial: 0, fallback: true });
+  }
+  if (req.path === '/api/bills/next-number') {
+    return res.json({ bill_no: `${getBillNumberPrefix()}00001`, fallback: true });
+  }
+  if (req.path === '/api/next-bill') {
+    return res.json({ bill_no: `${getBillNumberPrefix()}00001`, fallback: true });
+  }
+  if (req.path === '/api/gadi-challan/next-number') {
+    return res.json({ challan_no: 'BTC/CH/00001', fallback: true });
+  }
+  if (req.path === '/api/next-challan') {
+    return res.json({ challan_no: 'BTC/CH/00001', fallback: true });
+  }
+  if (req.path === '/api/gate-pass/next-number') {
+    return res.json({ pass_no: 'BTC/GP/00001', fallback: true });
+  }
+  if (req.path === '/api/next-gatepass') {
+    return res.json({ pass_no: 'BTC/GP/00001', fallback: true });
+  }
+  if (req.path === '/api/mr/next-number') {
+    return res.json({ mr_no: 'BTC/MEMO/00001', fallback: true });
+  }
+  if (req.path === '/api/next-memo') {
+    return res.json({ mr_no: 'BTC/MEMO/00001', fallback: true });
+  }
+
   if (req.path === '/api/dashboard/stats') {
     const userRole = req.user?.role || 'operator';
     return res.json({
@@ -598,6 +621,10 @@ function authMiddleware(req, res, next) {
     req.user = jwt.verify(authHeader.substring(7), process.env.JWT_SECRET);
     if (!databaseUrl) {
       if (req.method === 'GET') return sendLocalStorageModeResponse(req, res);
+      if (/^\/api\/(consignments|bills|gadi-challan|gate-pass|mr|eway-bills)(\/|$)/.test(req.path)) {
+        console.warn('Database unavailable; returning local-draft response for:', req.path);
+        return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
+      }
       console.warn('Database-backed write rejected because DATABASE_URL is not configured:', req.path);
       return res.status(503).json({
         success: false,
@@ -1223,6 +1250,15 @@ app.get('/api/consignments/next-number', authMiddleware, async (req, res) => {
   }
 });
 
+app.get('/api/next-lr', authMiddleware, async (req, res) => {
+  try {
+    res.json({ lr_no: await generateBiltyNo() });
+  } catch (error) {
+    console.error('LR number generation error:', error.message);
+    res.json({ lr_no: 'BTC-00001', fallback: true });
+  }
+});
+
 app.get('/api/consignments', authMiddleware, async (req, res) => {
   try {
     const userRole = String(req.user.role || '').toLowerCase();
@@ -1722,8 +1758,8 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
     bill.created_by = req.user.username;
     if (typeof bill.bill_no === 'string') bill.bill_no = bill.bill_no.trim();
     if (!bill.bill_no) {
-      const serialResult = await client.query(`SELECT COALESCE(MAX(SUBSTRING(bill_no FROM '/([0-9]+)$')::INTEGER), 0) AS last_serial FROM bill_book WHERE bill_no LIKE 'BTC/26-27/%' AND bill_no ~ '^BTC/26-27/[0-9]+$'`);
-      bill.bill_no = `BTC/26-27/${String(Number(serialResult.rows[0].last_serial) + 1).padStart(3, '0')}`;
+      const serialResult = await client.query(`SELECT COALESCE(MAX(SUBSTRING(bill_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM bill_book WHERE bill_no LIKE 'BTC/BILL/%'`);
+      bill.bill_no = `BTC/BILL/${String(Number(serialResult.rows[0].last_serial) + 1).padStart(5, '0')}`;
     }
     const fields = Object.keys(bill);
     const values = Object.values(bill);
@@ -1782,6 +1818,18 @@ app.get('/api/mr', authMiddleware, async (req, res) => {
   } catch (err) { console.error('GET /api/mr error:', err.message); res.status(503).json({ error: 'Money receipts are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
+app.get('/api/mr/next-number', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(SUBSTRING(mr_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM money_receipts WHERE mr_no LIKE 'BTC/MEMO/%'`
+    );
+    res.json({ mr_no: `BTC/MEMO/${String(Number(result.rows[0].last_serial) + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Memo number query failed; returning the first serial:', error.message);
+    res.json({ mr_no: 'BTC/MEMO/00001', fallback: true });
+  }
+});
+
 app.get('/api/mr/:id', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM money_receipts WHERE id = $1', [req.params.id]);
@@ -1791,6 +1839,7 @@ app.get('/api/mr/:id', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/mr', authMiddleware, async (req, res) => {
+  if (!pool) return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
   const client = await pool.connect();
   let transactionStarted = false;
   try {
@@ -1836,9 +1885,8 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
 
     let finalMRNo = mr_no;
     if (!finalMRNo || finalMRNo === 'Auto-generated') {
-      const year = new Date().getFullYear().toString().slice(-2);
-      const lastMR = await client.query(`SELECT COALESCE(MAX(SUBSTRING(mr_no FROM '/([0-9]+)$')::INTEGER), 0) AS last_serial FROM money_receipts WHERE mr_no LIKE $1`, [`MR/${year}/%`]);
-      finalMRNo = `MR/${year}/${String(Number(lastMR.rows[0].last_serial) + 1).padStart(4, '0')}`;
+      const lastMR = await client.query(`SELECT COALESCE(MAX(SUBSTRING(mr_no FROM '/([0-9]+)$')::BIGINT), 0) AS last_serial FROM money_receipts WHERE mr_no LIKE 'BTC/MEMO/%'`);
+      finalMRNo = `BTC/MEMO/${String(Number(lastMR.rows[0].last_serial) + 1).padStart(5, '0')}`;
     }
     const branchId = req.body.branch_id || req.user.branch_id;
     const result = await client.query(
@@ -2001,17 +2049,29 @@ app.get('/api/gate-pass', authMiddleware, async (req, res) => {
   } catch (err) { console.error('GET /api/gate-pass error:', err.message); res.status(503).json({ error: 'Gate passes are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
+app.get('/api/gate-pass/next-number', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(SUBSTRING(pass_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM gate_passes WHERE pass_no LIKE 'BTC/GP/%'`
+    );
+    res.json({ pass_no: `BTC/GP/${String(Number(result.rows[0].last_serial) + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Gate pass number query failed; returning the first serial:', error.message);
+    res.json({ pass_no: 'BTC/GP/00001', fallback: true });
+  }
+});
+
 app.post('/api/gate-pass', authMiddleware, async (req, res) => {
+  if (!pool) return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
   try {
     const { lr_no, vehicle_no, driver_name, driver_mobile, material_desc, quantity, weight, valid_until, issued_by } = req.body;
     const branchId = req.body.branch_id || req.user.branch_id;
-    const year = String(new Date().getFullYear()).slice(-2);
-    const result = await pool.query(`SELECT pass_no FROM gate_passes WHERE pass_no LIKE $1 ORDER BY id DESC LIMIT 1`, [`GP/${year}/%`]);
+    const result = await pool.query(`SELECT pass_no FROM gate_passes WHERE pass_no LIKE $1 ORDER BY id DESC LIMIT 1`, ['BTC/GP/%']);
     let nextSerial = 1;
     if (result.rows.length > 0 && result.rows[0].pass_no) {
       const parts = result.rows[0].pass_no.split('/'); if (parts.length === 3) nextSerial = parseInt(parts[2]) + 1;
     }
-    const pass_no = `GP/${year}/${String(nextSerial).padStart(4, '0')}`;
+    const pass_no = `BTC/GP/${String(nextSerial).padStart(5, '0')}`;
     const row = await pool.query(`INSERT INTO gate_passes (pass_no, branch_id, lr_no, vehicle_no, driver_name, driver_mobile, material_desc, quantity, weight, valid_until, issued_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [pass_no, branchId, lr_no, vehicle_no, driver_name, driver_mobile, material_desc, quantity, weight, valid_until, issued_by]);
     res.json(row.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2026,6 +2086,18 @@ app.get('/api/gadi-challan', authMiddleware, async (req, res) => {
   } catch (err) { console.error('GET /api/gadi-challan error:', err.message); res.status(503).json({ error: 'Gadi challans are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
+app.get('/api/gadi-challan/next-number', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(SUBSTRING(challan_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM gadi_challans WHERE challan_no LIKE 'BTC/CH/%'`
+    );
+    res.json({ challan_no: `BTC/CH/${String(Number(result.rows[0].last_serial) + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Challan number query failed; returning the first serial:', error.message);
+    res.json({ challan_no: 'BTC/CH/00001', fallback: true });
+  }
+});
+
 app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM gadi_challans WHERE id = $1', [req.params.id]);
@@ -2035,15 +2107,15 @@ app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/gadi-challan', authMiddleware, async (req, res) => {
+  if (!pool) return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
   try {
     const c = { ...req.body }; if (!c.branch_id) c.branch_id = req.user.branch_id;
-    const year = String(new Date().getFullYear()).slice(-2);
-    const result = await pool.query(`SELECT challan_no FROM gadi_challans WHERE challan_no LIKE $1 ORDER BY id DESC LIMIT 1`, [`GC/${year}/%`]);
+    const result = await pool.query(`SELECT challan_no FROM gadi_challans WHERE challan_no LIKE $1 ORDER BY id DESC LIMIT 1`, ['BTC/CH/%']);
     let nextSerial = 1;
     if (result.rows.length > 0 && result.rows[0].challan_no) {
       const parts = result.rows[0].challan_no.split('/'); if (parts.length === 3) nextSerial = parseInt(parts[2]) + 1;
     }
-    c.challan_no = `GC/${year}/${String(nextSerial).padStart(4, '0')}`;
+    c.challan_no = `BTC/CH/${String(nextSerial).padStart(5, '0')}`;
     const numericFields = ['freight_amount', 'advance_paid', 'balance_due', 'toll_expense', 'diesel_expense', 'other_expense', 'tds_deduction', 'net_payable', 'broker_commission'];
     numericFields.forEach(field => { if (c[field] === '' || c[field] === null || c[field] === undefined) c[field] = null; else c[field] = parseFloat(c[field]); });
     const keys = Object.keys(c); const values = Object.values(c);
@@ -2506,11 +2578,8 @@ app.post('/api/migrate/fix-branches', authMiddleware, async (req, res) => {
 // ==========================================
 // BILL NUMBER GENERATION ENDPOINTS
 // ==========================================
-function getBillNumberPrefix(date = new Date()) {
-  const year = date.getFullYear();
-  const financialYearStart = date.getMonth() >= 3 ? year : year - 1;
-  const financialYear = `${String(financialYearStart).slice(-2)}-${String(financialYearStart + 1).slice(-2)}`;
-  return `BTC/${financialYear}/`;
+function getBillNumberPrefix() {
+  return 'BTC/BILL/';
 }
 
 async function getLastBillSerial() {
@@ -2527,11 +2596,57 @@ async function getLastBillSerial() {
 app.get('/api/bills/next-number', authMiddleware, async (req, res) => {
   try {
     const { prefix, lastSerial } = await getLastBillSerial();
-    res.json({ bill_no: `${prefix}${String(lastSerial + 1).padStart(3, '0')}` });
+    res.json({ bill_no: `${prefix}${String(lastSerial + 1).padStart(5, '0')}` });
   } catch (err) {
     const prefix = getBillNumberPrefix();
     console.error('Bill number query failed; returning the first serial as a fallback:', err.message);
-    res.json({ bill_no: `${prefix}001`, fallback: true });
+    res.json({ bill_no: `${prefix}00001`, fallback: true });
+  }
+});
+
+app.get('/api/next-bill', authMiddleware, async (req, res) => {
+  try {
+    const { prefix, lastSerial } = await getLastBillSerial();
+    res.json({ bill_no: `${prefix}${String(lastSerial + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Bill number query failed; returning the first serial:', error.message);
+    res.json({ bill_no: `${getBillNumberPrefix()}00001`, fallback: true });
+  }
+});
+
+app.get('/api/next-challan', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(SUBSTRING(challan_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM gadi_challans WHERE challan_no LIKE 'BTC/CH/%'`
+    );
+    res.json({ challan_no: `BTC/CH/${String(Number(result.rows[0].last_serial) + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Challan number query failed; returning the first serial:', error.message);
+    res.json({ challan_no: 'BTC/CH/00001', fallback: true });
+  }
+});
+
+app.get('/api/next-gatepass', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(SUBSTRING(pass_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM gate_passes WHERE pass_no LIKE 'BTC/GP/%'`
+    );
+    res.json({ pass_no: `BTC/GP/${String(Number(result.rows[0].last_serial) + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Gate pass number query failed; returning the first serial:', error.message);
+    res.json({ pass_no: 'BTC/GP/00001', fallback: true });
+  }
+});
+
+app.get('/api/next-memo', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(MAX(SUBSTRING(mr_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM money_receipts WHERE mr_no LIKE 'BTC/MEMO/%'`
+    );
+    res.json({ mr_no: `BTC/MEMO/${String(Number(result.rows[0].last_serial) + 1).padStart(5, '0')}` });
+  } catch (error) {
+    console.error('Memo number query failed; returning the first serial:', error.message);
+    res.json({ mr_no: 'BTC/MEMO/00001', fallback: true });
   }
 });
 
@@ -2562,7 +2677,7 @@ async function ensureAdminUser() {
 }
 
 async function startServer() {
-  if (databaseUrl && missingEnv.length === 0 && !invalidDatabaseUrl) {
+  if (pool && databaseUrl && missingEnv.length === 0 && !invalidDatabaseUrl) {
     try {
       await pool.query('SELECT 1');
       await runMigrations();

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
+import { getLocalDrafts } from '../utils/offlineDrafts'
 
 const COMPANY = {
   name: "BHARAT TRANSPORT COMPANY",
@@ -35,15 +36,31 @@ export default function MRPrint() {
         } else {
           const res = await api.get('/mr')
           const rows = Array.isArray(res.data) ? res.data : res.data?.data || []
-          if (active) setReceipts(rows)
+          const localReceipts = getLocalDrafts('memo')
+          const mergedReceipts = [...localReceipts, ...rows]
+          if (active) setReceipts(mergedReceipts)
           if (mrNo) {
-            const receipt = rows.find((item) => item.mr_no === mrNo)
+            const receipt = mergedReceipts.find((item) => item.mr_no === mrNo)
             if (!receipt) throw new Error('Money receipt not found.')
             if (active) setData(receipt)
           }
         }
       } catch (err) {
-        if (active) setError(err.response?.data?.message || err.message || 'Unable to load money receipts.')
+        try {
+          const localReceipts = getLocalDrafts('memo')
+          if (mrNo) {
+            const receipt = localReceipts.find((item) => item.mr_no === mrNo)
+            if (receipt) {
+              if (active) setData(receipt)
+              return
+            }
+          }
+          if (!id && active) setReceipts(localReceipts)
+          else if (active) setError(err.response?.data?.message || err.message || 'Unable to load money receipts.')
+        } catch (storageError) {
+          console.error('Unable to load locally saved money receipts:', storageError)
+          if (active) setError(storageError.message)
+        }
       } finally {
         if (active) setLoading(false)
       }

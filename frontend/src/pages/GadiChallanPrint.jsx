@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
+import { getLocalDrafts } from '../utils/offlineDrafts'
 
 const COMPANY = {
   name: "BHARAT TRANSPORT COMPANY",
@@ -30,12 +31,17 @@ export default function GadiChallanPrint() {
     const loadChallan = async () => {
       try {
         if (id) {
+          const localDraft = getLocalDrafts('challan').find((draft) => draft.localDraftId === id)
+          if (localDraft) {
+            if (active) setData(localDraft)
+            return
+          }
           const res = await api.get(`/gadi-challan/${id}`)
           if (active) setData(res.data)
         } else {
           const res = await api.get('/gadi-challan')
           const rows = Array.isArray(res.data) ? res.data : res.data?.data || []
-          if (active) setChallans(rows)
+          if (active) setChallans([...getLocalDrafts('challan'), ...rows])
         }
       } catch (err) {
         if (active) setError(err.response?.data?.message || 'Unable to load challans.')

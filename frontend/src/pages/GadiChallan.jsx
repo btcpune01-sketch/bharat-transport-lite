@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDateForInput } from '../utils/dateFormatter'
+import toast from 'react-hot-toast'
+import { getLocalDocumentNumber, getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
 export default function GadiChallan() {
   const navigate = useNavigate()
@@ -55,10 +57,15 @@ export default function GadiChallan() {
       const res = await fetch(`${apiUrl}/gadi-challan`, { headers })
       if (res.ok) {
         const data = await res.json()
-        setChallans(data.data || [])
+        setChallans([...getLocalDrafts('challan'), ...(data.data || [])])
       }
     } catch (err) {
       console.error('Challan fetch error:', err)
+      try {
+        setChallans(getLocalDrafts('challan'))
+      } catch (storageError) {
+        console.error('Unable to load locally saved challans:', storageError)
+      }
     } finally {
       setLoading(false)
     }
@@ -131,6 +138,17 @@ export default function GadiChallan() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    const saveOffline = () => {
+      const draft = saveLocalDraft('challan', {
+        ...formData,
+        challan_no: getLocalDocumentNumber('challan', 'BTC/CH/'),
+        local: true
+      })
+      setChallans(current => [draft, ...current])
+      setShowForm(false)
+      setEditId(null)
+      toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+    }
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
@@ -148,8 +166,11 @@ export default function GadiChallan() {
         body: JSON.stringify(formData)
       })
 
-      if (res.ok) {
-        alert(editId ? 'Challan updated successfully!' : 'Gadi Challan created successfully!')
+      const result = await res.json()
+      if (result.local) {
+        saveOffline()
+      } else if (res.ok) {
+        toast.success(editId ? 'Challan updated successfully!' : 'Gadi Challan created successfully!')
         setShowForm(false)
         setEditId(null)
         setFormData({
@@ -162,12 +183,20 @@ export default function GadiChallan() {
         })
         fetchData()
       } else {
-        const err = await res.json()
-        alert('Error: ' + err.error)
+        throw Object.assign(new Error(result.error || 'Failed to save challan'), { response: { status: res.status, data: result } })
       }
     } catch (err) {
       console.error('Challan save error:', err)
-      alert('Failed to save challan')
+      if (isDatabaseUnavailable(err)) {
+        try {
+          saveOffline()
+        } catch (storageError) {
+          console.error('Unable to store the challan as a local draft:', storageError)
+          toast.error(`Unable to save challan: ${storageError.message}`)
+        }
+      } else {
+        toast.error(err.response?.data?.error || err.message || 'Failed to save challan')
+      }
     } finally {
       setLoading(false)
     }
@@ -434,13 +463,13 @@ export default function GadiChallan() {
                         <td className="p-4 text-right font-bold text-lime-700">{formatCurrency(c.balance_due)}</td>
                         {/* ✅ FIXED: Added View, Print, and Edit buttons */}
                         <td className="p-4 text-center space-y-1">
-                          <button onClick={() => navigate(`/gadi-challan-print/${c.id}`)} className="block w-full text-center px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold hover:bg-blue-200 mb-1">
+                          <button onClick={() => navigate(`/gadi-challan-print/${c.localDraftId || c.id}`)} className="block w-full text-center px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold hover:bg-blue-200 mb-1">
                             👁️ View
                           </button>
-                          <button onClick={() => navigate(`/gadi-challan-print/${c.id}`)} className="block w-full text-center px-2 py-1 bg-lime-100 text-lime-700 rounded text-xs font-bold hover:bg-lime-200 mb-1">
+                          <button onClick={() => navigate(`/gadi-challan-print/${c.localDraftId || c.id}`)} className="block w-full text-center px-2 py-1 bg-lime-100 text-lime-700 rounded text-xs font-bold hover:bg-lime-200 mb-1">
                             🖨️ Print
                           </button>
-                          <button onClick={() => handleEdit(c)} className="block w-full text-center px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold hover:bg-yellow-200">
+                          <button onClick={() => handleEdit(c)} disabled={Boolean(c.localDraftId)} className="block w-full text-center px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold hover:bg-yellow-200 disabled:opacity-50">
                             ✏️ Edit
                           </button>
                         </td>

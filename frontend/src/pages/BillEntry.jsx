@@ -6,14 +6,9 @@ import { autoTable } from 'jspdf-autotable'
 import toast from 'react-hot-toast'
 import { getNextSerialNumber } from '../utils/billSerial'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
-const getLocalBillNumber = () => {
-  const date = new Date()
-  const financialYearStart = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1
-  const financialYear = `${String(financialYearStart).slice(-2)}-${String(financialYearStart + 1).slice(-2)}`
-  const dateSerial = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
-  return `BTC/${financialYear}/${dateSerial}${String(localStorage.length).padStart(2, '0')}`
-}
+const getLocalBillNumber = () => getLocalDocumentNumber('bill', 'BTC/BILL/')
 
 export default function BillEntry({ branchMode = false }) {
   const navigate = useNavigate()
@@ -352,6 +347,11 @@ export default function BillEntry({ branchMode = false }) {
       const response = id
         ? await api.put(`/bills/${id}`, payload)
         : await api.post('/bills', payload)
+      if (response.data?.local) {
+        saveLocalDraft('bill', { ...payload, bill_no: payload.bill_no || billData.invNo })
+        toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        return
+      }
       const savedBill = response.data
       try {
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
@@ -366,17 +366,16 @@ export default function BillEntry({ branchMode = false }) {
       toast.success(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
       navigate(`/bills/${savedBill.id}/print`)
     } catch (err) {
-      try {
-        const localDrafts = JSON.parse(localStorage.getItem('btc_pending_bills') || '[]')
-        if (!Array.isArray(localDrafts)) throw new Error('Saved local bill drafts are not a list.')
-        localStorage.setItem('btc_pending_bills', JSON.stringify([
-          { ...billData, localDraftId: `local-${Date.now()}`, savedAt: new Date().toISOString() },
-          ...localDrafts
-        ]))
-        toast('Database unavailable. Bill stored as a local draft only; it was not saved to the server.', { icon: '⚠️', duration: 7000 })
-      } catch (storageError) {
-        console.error('Unable to store the bill as a local draft:', storageError)
-        toast.error(`Save failed and the local draft could not be stored: ${err.response?.data?.error || err.message}`)
+      if (isDatabaseUnavailable(err)) {
+        try {
+          saveLocalDraft('bill', { ...billData, bill_no: billData.invNo })
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        } catch (storageError) {
+          console.error('Unable to store the bill as a local draft:', storageError)
+          toast.error(`Save failed and the local draft could not be stored: ${err.response?.data?.error || err.message}`)
+        }
+      } else {
+        toast.error(err.response?.data?.error || err.message || 'Failed to save bill')
       }
     } finally {
       setLoading(false)

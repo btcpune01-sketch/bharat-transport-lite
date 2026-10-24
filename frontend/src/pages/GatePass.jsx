@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateLong } from '../utils/dateFormatter'
+import toast from 'react-hot-toast'
+import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
 export default function GatePass() {
   const navigate = useNavigate()
@@ -21,7 +23,18 @@ export default function GatePass() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    
+    const saveOffline = () => {
+      const draft = saveLocalDraft('gatepass', {
+        ...formData,
+        pass_no: getLocalDocumentNumber('gatepass', 'BTC/GP/'),
+        qr_code: '',
+        issued_at: new Date().toISOString(),
+        local: true
+      })
+      setGatePass(draft)
+      toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+    }
+
     try {
       const token = localStorage.getItem('token')
       const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/gate-pass`, {
@@ -33,9 +46,20 @@ export default function GatePass() {
         body: JSON.stringify(formData)
       })
       const data = await response.json()
-      setGatePass(data)
+      if (data.local) saveOffline()
+      else if (!response.ok) throw Object.assign(new Error(data.error || 'Failed to create gate pass'), { response: { status: response.status, data } })
+      else setGatePass(data)
     } catch (err) {
-      alert('Error: ' + err.message)
+      if (isDatabaseUnavailable(err)) {
+        try {
+          saveOffline()
+        } catch (storageError) {
+          console.error('Unable to store the gate pass as a local draft:', storageError)
+          toast.error(`Unable to save Gate Pass: ${storageError.message}`)
+        }
+      } else {
+        toast.error(err.response?.data?.error || err.message || 'Failed to create gate pass')
+      }
     } finally {
       setLoading(false)
     }
@@ -102,7 +126,7 @@ export default function GatePass() {
               </div>
 
               <div className="mt-4 text-center">
-                <p className="text-xs text-gray-500">QR Code: {gatePass.qr_code.substring(0, 30)}...</p>
+                <p className="text-xs text-gray-500">QR Code: {gatePass.qr_code ? `${gatePass.qr_code.substring(0, 30)}...` : 'Generated when synced to server'}</p>
               </div>
 
               <div className="mt-6 flex justify-between">
