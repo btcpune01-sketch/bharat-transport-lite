@@ -31,6 +31,10 @@ async function runMigrations() {
       ADD COLUMN IF NOT EXISTS login_credentials JSONB
     `);
     await pool.query(`
+      ALTER TABLE branches
+      ADD COLUMN IF NOT EXISTS branch_visible_password TEXT NOT NULL DEFAULT ''
+    `);
+    await pool.query(`
       ALTER TABLE users
       ADD COLUMN IF NOT EXISTS email VARCHAR(100)
     `);

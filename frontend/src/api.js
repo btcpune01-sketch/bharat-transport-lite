@@ -35,7 +35,7 @@ api.interceptors.request.use((config) => {
   const branchSession = getActiveBranchSession()
   if (branchSession) config.headers['X-Branch-Slug'] = branchSession.slug
   const token = branchSession?.token || localStorage.getItem('token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  if (token && (branchSession || !config.headers.Authorization)) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 

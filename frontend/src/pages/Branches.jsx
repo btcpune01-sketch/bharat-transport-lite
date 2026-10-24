@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
 import toast from 'react-hot-toast'
+import { Eye, EyeOff } from 'lucide-react'
 import { getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
 const emptyBranchForm = {
@@ -26,6 +27,8 @@ export default function Branches() {
   const [showBranchLoginSetup, setShowBranchLoginSetup] = useState(null)
   const [branchLoginForm, setBranchLoginForm] = useState({ username: '', password: '' })
   const [branchLoginSaving, setBranchLoginSaving] = useState(false)
+  const [showBranchLoginPassword, setShowBranchLoginPassword] = useState(false)
+  const [visiblePasswords, setVisiblePasswords] = useState({})
   const [newBranchCredentials, setNewBranchCredentials] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('name')
@@ -54,8 +57,29 @@ export default function Branches() {
   const loadBranches = async () => {
     try {
       setLoading(true)
-      const res = await api.get('/branches')
-      setBranches([...getLocalDrafts('branch'), ...(res.data.data || [])])
+      const token = localStorage.getItem('admin_token') || localStorage.getItem('token')
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const res = await api.get('/branches', { params: { includeInactive: 'true' }, headers })
+      let credentials = []
+      try {
+        const credentialsResponse = await api.get('/admin/branches/credentials', {
+          headers
+        })
+        credentials = credentialsResponse.data.data || []
+      } catch (err) {
+        console.error('Unable to load branch credentials:', err)
+        toast.error('Unable to load branch credentials: ' + (err.response?.data?.error || err.message))
+      }
+      const credentialsById = new Map(credentials.map((item) => [String(item._id), item]))
+      const branchRows = (res.data.data || []).map((branch) => {
+        const item = credentialsById.get(String(branch.id))
+        return {
+          ...branch,
+          branch_login_username: item?.branchUsername || branch.branch_login_username || '',
+          visiblePassword: item?.visiblePassword || ''
+        }
+      })
+      setBranches([...getLocalDrafts('branch'), ...branchRows])
     } catch (err) {
       console.error('Unable to load branches:', err)
       if (isDatabaseUnavailable(err)) {
@@ -198,7 +222,7 @@ export default function Branches() {
     setBranchLoginSaving(true)
     try {
       const response = await api.post(
-        `/branches/${showBranchLoginSetup.id}/branch-login`,
+        `/branches/${showBranchLoginSetup.id}/reset-login`,
         branchLoginForm,
         {
           headers: {
@@ -212,8 +236,19 @@ export default function Branches() {
         portal_url: getBranchLoginUrl(response.data.branch.url_slug || showBranchLoginSetup.url_slug),
         ...response.data.credentials
       })
+      setBranches((current) => current.map((branch) => (
+        branch.id === showBranchLoginSetup.id
+          ? {
+            ...branch,
+            branch_login_username: response.data.credentials.username,
+            visiblePassword: response.data.credentials.password,
+            branch_login_enabled: response.data.branch.branch_login_enabled
+          }
+          : branch
+      )))
       setShowBranchLoginSetup(null)
       setBranchLoginForm({ username: '', password: '' })
+      setShowBranchLoginPassword(false)
       await loadBranches()
     } catch (err) {
       alert('Branch login setup failed: ' + (err.response?.data?.error || err.message))
@@ -239,6 +274,29 @@ export default function Branches() {
     link.download = `branches_${new Date().toISOString().split('T')[0]}.csv`
     link.click()
     alert('✅ CSV exported!')
+  }
+
+  const exportAllLogins = () => {
+    const rows = branches.filter((branch) => !branch.local)
+    if (rows.length === 0) {
+      alert('⚠️ No branch logins to export!')
+      return
+    }
+    const escapeCell = (value) => {
+      const cell = String(value ?? '')
+      const safeCell = /^[\s]*[=+\-@]/.test(cell) ? `'${cell}` : cell
+      return `"${safeCell.replaceAll('"', '""')}"`
+    }
+    const csvContent = [
+      ['Branch', 'Username', 'Password'],
+      ...rows.map((branch) => [branch.branch_name, branch.branch_login_username, branch.visiblePassword])
+    ].map((row) => row.map(escapeCell).join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = `branch_logins_${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000)
   }
 
   const filteredBranches = branches
@@ -270,6 +328,7 @@ export default function Branches() {
           <div className="flex gap-3 flex-wrap">
             <button onClick={() => navigate('/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">← Dashboard</button>
             <button onClick={exportToCSV} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">📥 Export CSV</button>
+            <button onClick={exportAllLogins} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">📥 Export All Logins</button>
             <button onClick={() => { setShowForm(!showForm); setForm(emptyBranchForm) }} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-lg">
               {showForm ? '✖ Close' : '➕ Add New Branch'}
             </button>
@@ -279,7 +338,7 @@ export default function Branches() {
         {showForm && (
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border-2 border-blue-200">
             <h2 className="text-xl font-bold text-gray-800 mb-4">➕ Add New Branch</h2>
-            <p className="text-sm text-gray-600 mb-4">Choose a unique URL slug and set a strong branch password. Passwords are stored only as hashes.</p>
+            <p className="text-sm text-gray-600 mb-4">Choose a unique URL slug and set a strong branch password. Login uses a hash; an admin-only credential record also enables password management here.</p>
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Name *</label><input type="text" required value={form.branch_name} onChange={(e) => { const name = e.target.value; const previousSlug = slugify(form.branch_name); const slug = slugify(name); setForm(current => ({...current, branch_name: name, url_slug: current.url_slug === previousSlug ? slug : current.url_slug, username: current.username === previousSlug || !current.username ? slug : current.username})) }} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="e.g., Mumbai Branch" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Code</label><input type="text" value={form.branch_code} onChange={(e) => setForm({...form, branch_code: e.target.value.toUpperCase()})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="Auto-generated from city if blank" /></div>
@@ -339,7 +398,8 @@ export default function Branches() {
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Branch</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Incharge</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Username</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Password</th>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Login URL</th>
                     <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Status</th>
                     <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Actions</th>
@@ -347,7 +407,7 @@ export default function Branches() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredBranches.length === 0 ? (
-                    <tr><td colSpan="5" className="px-6 py-8 text-center text-gray-500">{branches.length === 0 ? 'No branches yet.' : 'No branches match your search.'}</td></tr>
+                    <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-500">{branches.length === 0 ? 'No branches yet.' : 'No branches match your search.'}</td></tr>
                   ) : (
                     filteredBranches.map((branch) => (
                       <tr key={branch.localDraftId || branch.id} className="hover:bg-blue-50">
@@ -355,15 +415,43 @@ export default function Branches() {
                           <div className="font-bold text-gray-900">{branch.branch_name}</div>
                           <div className="text-sm text-gray-500">{branch.city}{branch.state ? ', ' + branch.state : ''}</div>
                           <div className="text-xs text-gray-400 font-mono">Code: {branch.branch_code}</div>
+                          <div className="text-xs text-gray-500">Incharge: {branch.incharge_name || 'N/A'}</div>
                           {branch.local && <div className="mt-1 text-xs font-semibold text-amber-700">Local draft — login setup is available after sync</div>}
                           <div className={`mt-1 text-xs font-semibold ${branch.branch_login_enabled ? 'text-green-700' : 'text-gray-400'}`}>
                             Branch login {branch.branch_login_enabled ? 'enabled' : 'not configured'}
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          <div className="text-sm font-medium">{branch.incharge_name || 'N/A'}</div>
-                          <div className="text-xs text-gray-500 font-mono">{branch.branch_login_username || 'Login not configured'}</div>
-                          {branch.phone && <div className="text-xs text-gray-500">📞 {branch.phone}</div>}
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-mono">{branch.branch_login_username || 'Not configured'}</span>
+                            {branch.branch_login_username && (
+                              <button type="button" onClick={() => copyToClipboard(branch.branch_login_username)} className="text-xs text-blue-700 hover:underline">Copy</button>
+                            )}
+                          </div>
+                          {branch.phone && <div className="mt-1 text-xs text-gray-500">📞 {branch.phone}</div>}
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="max-w-36 truncate font-mono text-sm">
+                              {branch.visiblePassword
+                                ? visiblePasswords[branch.id] ? branch.visiblePassword : '••••••••••••'
+                                : 'Not recorded — reset login'}
+                            </span>
+                            {branch.visiblePassword && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setVisiblePasswords((current) => ({ ...current, [branch.id]: !current[branch.id] }))}
+                                  className="text-gray-600 hover:text-gray-900"
+                                  aria-label={visiblePasswords[branch.id] ? 'Hide password' : 'Show password'}
+                                  title={visiblePasswords[branch.id] ? 'Hide password' : 'Show password'}
+                                >
+                                  {visiblePasswords[branch.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                                </button>
+                                <button type="button" onClick={() => copyToClipboard(branch.visiblePassword)} className="text-xs text-blue-700 hover:underline">Copy</button>
+                              </>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           {branch.url_slug ? (
@@ -397,6 +485,7 @@ export default function Branches() {
                               onClick={() => {
                                 setShowBranchLoginSetup(branch)
                                 setBranchLoginForm({ username: branch.branch_login_username || branch.url_slug || '', password: '' })
+                                setShowBranchLoginPassword(false)
                               }}
                               disabled={branch.local}
                               className="px-2 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs hover:bg-purple-200 disabled:opacity-50"
@@ -493,7 +582,7 @@ export default function Branches() {
                 </label>
                 <input
                   id="branch-login-password"
-                  type="password"
+                  type={showBranchLoginPassword ? 'text' : 'password'}
                   autoComplete="new-password"
                   value={branchLoginForm.password}
                   onChange={(event) => setBranchLoginForm({ ...branchLoginForm, password: event.target.value })}
@@ -503,7 +592,15 @@ export default function Branches() {
                   disabled={branchLoginSaving}
                   className="w-full rounded-lg border border-gray-300 p-2.5"
                 />
-                <p className="mt-1 text-xs text-gray-500">Use at least 12 characters. The password is shown only after saving.</p>
+                <label className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={showBranchLoginPassword}
+                    onChange={(event) => setShowBranchLoginPassword(event.target.checked)}
+                  />
+                  Show password
+                </label>
+                <p className="mt-1 text-xs text-gray-500">Use at least 12 characters. Admins can view this password here after saving.</p>
               </div>
               <div className="flex gap-3">
                 <button
@@ -511,7 +608,7 @@ export default function Branches() {
                   disabled={branchLoginSaving}
                   className="flex-1 rounded-lg bg-purple-700 py-3 font-bold text-white hover:bg-purple-800 disabled:bg-purple-400"
                 >
-                  {branchLoginSaving ? 'Saving...' : 'Enable Login'}
+                  {branchLoginSaving ? 'Saving...' : showBranchLoginSetup.branch_login_username ? 'Save Credentials' : 'Enable Login'}
                 </button>
                 <button
                   type="button"
@@ -532,7 +629,7 @@ export default function Branches() {
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
             <h2 className="mb-2 text-xl font-bold text-gray-800">Branch login enabled</h2>
             <p className="mb-4 text-sm text-gray-600">
-              Save these credentials now. The password cannot be viewed again; reset it to issue a new one.
+              Credentials are saved and available in the branch list. Only administrators can view them.
             </p>
             <div className="space-y-3 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
               <p className="font-semibold text-gray-800">{newBranchCredentials.branch_name}</p>
@@ -551,7 +648,7 @@ export default function Branches() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-bold uppercase text-gray-600">Password — shown once</label>
+                <label className="text-xs font-bold uppercase text-gray-600">Password</label>
                 <div className="mt-1 flex gap-2">
                   <input readOnly value={newBranchCredentials.password} className="min-w-0 flex-1 rounded border bg-white p-2 text-sm font-mono" />
                   <button type="button" onClick={() => copyToClipboard(newBranchCredentials.password)} className="rounded bg-blue-700 px-3 text-sm text-white">Copy</button>
