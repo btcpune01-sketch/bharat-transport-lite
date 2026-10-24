@@ -13,6 +13,10 @@ function slugify(value) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
+function getBranchLoginUrl(slug) {
+  return `${window.location.origin}/#/branch-login/${encodeURIComponent(slug)}`
+}
+
 export default function Branches() {
   const navigate = useNavigate()
   const [branches, setBranches] = useState([])
@@ -184,7 +188,7 @@ export default function Branches() {
       )
       setNewBranchCredentials({
         branch_name: response.data.branch.branch_name,
-        portal_url: response.data.portal_url,
+        portal_url: getBranchLoginUrl(response.data.branch.url_slug || showBranchLoginSetup.url_slug),
         ...response.data.credentials
       })
       setShowBranchLoginSetup(null)
@@ -206,7 +210,7 @@ export default function Branches() {
   const exportToCSV = () => {
     if (filteredBranches.length === 0) { alert('⚠️ No branches to export!'); return }
     const headers = ['Branch Name', 'Code', 'City', 'State', 'Incharge', 'Username', 'Phone', 'Email', 'Status', 'Login URL']
-    const rows = filteredBranches.map(b => [b.branch_name, b.branch_code, b.city, b.state, b.incharge_name, b.branch_login_username, b.phone, b.email, b.is_active ? 'Active' : 'Inactive', `${window.location.origin}${window.location.pathname}#/branch-login/${b.url_slug}`])
+    const rows = filteredBranches.map(b => [b.branch_name, b.branch_code, b.city, b.state, b.incharge_name, b.branch_login_username, b.phone, b.email, b.is_active ? 'Active' : 'Inactive', getBranchLoginUrl(b.url_slug)])
     const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell || ''}"`).join(',')).join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -342,7 +346,23 @@ export default function Branches() {
                         </td>
                         <td className="px-4 py-4">
                           {branch.url_slug ? (
-                            <button onClick={() => copyToClipboard(`${window.location.origin}${window.location.pathname}#/branch-login/${branch.url_slug}`)} className="text-xs text-blue-600 hover:text-blue-800 underline font-mono text-left">/branch-login/{branch.url_slug}</button>
+                            <div className="flex flex-col items-start gap-1">
+                              <a
+                                href={getBranchLoginUrl(branch.url_slug)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:text-blue-800 underline font-mono text-left"
+                              >
+                                {getBranchLoginUrl(branch.url_slug)}
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(getBranchLoginUrl(branch.url_slug))}
+                                className="text-xs text-gray-600 hover:text-gray-900"
+                              >
+                                Copy URL
+                              </button>
+                            </div>
                           ) : (<span className="text-xs text-gray-400">Not set</span>)}
                         </td>
                         <td className="px-4 py-4 text-center">
