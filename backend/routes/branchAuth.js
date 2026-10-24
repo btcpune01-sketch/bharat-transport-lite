@@ -50,10 +50,14 @@ function createBranchAuthRouter(pool) {
       const result = await pool.query(
         `SELECT id, branch_code, branch_name, city, state,
                 COALESCE(NULLIF(url_slug, ''), $1) AS url_slug, COALESCE(is_active, TRUE) AS is_active,
+                COALESCE(branch_login_enabled, TRUE) AS branch_login_enabled,
                 login_credentials
          FROM branches
          WHERE COALESCE(NULLIF(url_slug, ''), trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))) = $1
-            OR trim(both '-' from lower(regexp_replace(trim(branch_code), '[^a-zA-Z0-9]+', '-', 'g'))) = $1`,
+            OR trim(both '-' from lower(regexp_replace(trim(city), '[^a-zA-Z0-9]+', '-', 'g'))) = $1
+            OR trim(both '-' from lower(regexp_replace(trim(branch_code), '[^a-zA-Z0-9]+', '-', 'g'))) = $1
+         ORDER BY CASE WHEN lower(COALESCE(url_slug, '')) = $1 THEN 0 ELSE 1 END
+         LIMIT 1`,
         [branchSlug]
       );
       const branch = result.rows[0];
@@ -62,17 +66,18 @@ function createBranchAuthRouter(pool) {
       if (
         !branch ||
         !branch.is_active ||
+        !branch.branch_login_enabled ||
         !credentials ||
         typeof credentials.username !== 'string' ||
         typeof credentials.password !== 'string' ||
         credentials.username !== username.trim()
       ) {
-        return res.status(401).json({ success: false, error: 'Invalid branch login credentials.' });
+        return res.status(401).json({ success: false, error: 'Invalid ID Password.' });
       }
 
       const passwordMatches = await bcrypt.compare(password, credentials.password);
       if (!passwordMatches) {
-        return res.status(401).json({ success: false, error: 'Invalid branch login credentials.' });
+        return res.status(401).json({ success: false, error: 'Invalid ID Password.' });
       }
 
       const safeBranch = {

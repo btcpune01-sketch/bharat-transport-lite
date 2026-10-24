@@ -126,7 +126,8 @@ function createBranchAccessMiddleware(pool) {
         `SELECT id, branch_code
          FROM branches
          WHERE id = $1 AND url_slug = $2
-           AND COALESCE(is_active, TRUE) = TRUE`,
+           AND COALESCE(is_active, TRUE) = TRUE
+           AND COALESCE(branch_login_enabled, TRUE) = TRUE`,
         [branchId, branchSlug]
       );
       const branch = branchResult.rows[0]

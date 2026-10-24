@@ -4,6 +4,14 @@ import axios from 'axios'
 
 const API_URL = (import.meta.env.VITE_API_URL || '/api')
 
+function branchNameFromSlug(slug) {
+  return (slug || 'Branch')
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
 export default function BranchLoginPage() {
   const { slug } = useParams()
   const navigate = useNavigate()
@@ -29,6 +37,11 @@ export default function BranchLoginPage() {
       } catch (err) {
         if (!controller.signal.aborted) {
           setError(err.response?.data?.error || 'Unable to load this branch.')
+          setBranch({
+            branch_name: branchNameFromSlug(slug),
+            branch_code: slug?.toUpperCase() || '',
+            url_slug: slug || ''
+          })
         }
       } finally {
         if (!controller.signal.aborted) setLoadingBranch(false)
@@ -83,25 +96,11 @@ export default function BranchLoginPage() {
     )
   }
 
-  if (!branch) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-        <section className="w-full max-w-md rounded-2xl bg-white p-8 text-center shadow-xl">
-          <h1 className="mb-3 text-2xl font-bold text-gray-800">Branch unavailable</h1>
-          <p role="alert" className="mb-6 text-sm text-red-700">{error}</p>
-          <Link to="/" className="font-medium text-blue-700 hover:underline">
-            Back to main site
-          </Link>
-        </section>
-      </main>
-    )
-  }
-
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-700 to-indigo-900 p-4">
       <section className="w-full max-w-md rounded-2xl bg-white p-8 shadow-2xl">
         <header className="mb-7 text-center">
-          {branch.logo_url || branch.logo ? (
+          {branch?.logo_url || branch?.logo ? (
             <img
               src={branch.logo_url || branch.logo}
               alt={`${branch.branch_name} logo`}
@@ -110,7 +109,7 @@ export default function BranchLoginPage() {
           ) : (
             <div aria-hidden="true" className="mb-3 text-5xl">🏢</div>
           )}
-          <h1 className="text-2xl font-bold text-gray-900">{branch.branch_name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{branch?.branch_name || branchNameFromSlug(slug)}</h1>
           <p className="mt-1 text-sm text-gray-600">Branch staff sign in</p>
         </header>
 
