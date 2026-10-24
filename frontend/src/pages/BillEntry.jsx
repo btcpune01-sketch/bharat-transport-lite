@@ -3,8 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
+import toast from 'react-hot-toast'
 import { getNextSerialNumber } from '../utils/billSerial'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+
+const getLocalBillNumber = () => {
+  const date = new Date()
+  const financialYearStart = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1
+  const financialYear = `${String(financialYearStart).slice(-2)}-${String(financialYearStart + 1).slice(-2)}`
+  const dateSerial = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
+  return `BTC/${financialYear}/${dateSerial}${String(localStorage.length).padStart(2, '0')}`
+}
 
 export default function BillEntry({ branchMode = false }) {
   const navigate = useNavigate()
@@ -62,7 +71,9 @@ export default function BillEntry({ branchMode = false }) {
       const nextSerial = await getNextSerialNumber()
       setBillData(prev => prev.invNo ? prev : ({ ...prev, invNo: nextSerial }))
     } catch (error) {
-      alert(`Unable to generate the next bill number: ${error.response?.data?.error || error.message}`)
+      console.warn('Unable to query the next bill number; using a local fallback:', error)
+      setBillData(prev => prev.invNo ? prev : ({ ...prev, invNo: getLocalBillNumber() }))
+      toast('Database unavailable. A local bill number was generated; check it before saving.', { icon: '⚠️' })
     }
   }
 
@@ -342,14 +353,31 @@ export default function BillEntry({ branchMode = false }) {
         ? await api.put(`/bills/${id}`, payload)
         : await api.post('/bills', payload)
       const savedBill = response.data
-      const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
-      const nextHistory = [savedBill, ...localHistory.filter(bill => bill.id !== savedBill.id)]
-      localStorage.setItem('btc_history', JSON.stringify(nextHistory))
+      try {
+        const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
+        if (!Array.isArray(localHistory)) throw new Error('Saved bill history is not a list.')
+        const nextHistory = [savedBill, ...localHistory.filter(bill => bill.id !== savedBill.id)]
+        localStorage.setItem('btc_history', JSON.stringify(nextHistory))
+      } catch (storageError) {
+        console.error('Bill saved to the server but local history could not be updated:', storageError)
+        toast('Bill saved to the server, but local history could not be updated.', { icon: '⚠️' })
+      }
       await fetchHistory()
-      alert(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
+      toast.success(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
       navigate(`/bills/${savedBill.id}/print`)
     } catch (err) {
-      alert("Save failed: " + (err.response?.data?.error || err.message))
+      try {
+        const localDrafts = JSON.parse(localStorage.getItem('btc_pending_bills') || '[]')
+        if (!Array.isArray(localDrafts)) throw new Error('Saved local bill drafts are not a list.')
+        localStorage.setItem('btc_pending_bills', JSON.stringify([
+          { ...billData, localDraftId: `local-${Date.now()}`, savedAt: new Date().toISOString() },
+          ...localDrafts
+        ]))
+        toast('Database unavailable. Bill stored as a local draft only; it was not saved to the server.', { icon: '⚠️', duration: 7000 })
+      } catch (storageError) {
+        console.error('Unable to store the bill as a local draft:', storageError)
+        toast.error(`Save failed and the local draft could not be stored: ${err.response?.data?.error || err.message}`)
+      }
     } finally {
       setLoading(false)
     }

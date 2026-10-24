@@ -63,6 +63,12 @@ const preferStoredMeasurement = (primary, legacy) => {
   return primary ?? legacy ?? 0;
 };
 
+const getLocalLrNumber = () => {
+  const date = new Date()
+  const dateSerial = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
+  return `BTC-${dateSerial}${String(localStorage.length).padStart(2, '0')}`
+}
+
 export default function BiltyEntry({ branchMode = false }) {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -179,10 +185,20 @@ export default function BiltyEntry({ branchMode = false }) {
       const response = await biltyAPI.getNextNumber()
       const nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
       if (!nextLrNo) throw new Error('invalid')
-      setFormData(prev => ({ ...prev, lr_no: nextLrNo })); setIsLrEditable(false)
+      setFormData(prev => ({ ...prev, lr_no: nextLrNo }))
+      if (response.data?.fallback) {
+        setNumberError(true)
+        setIsLrEditable(true)
+        toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '⚠️' })
+      } else {
+        setIsLrEditable(false)
+      }
     } catch (err) {
-      setFormData(prev => ({ ...prev, lr_no: '' })); setNumberError(true)
-      toast.error('Unable to generate LR number. Retry.')
+      console.warn('Unable to query the next LR number; using a local fallback:', err)
+      setFormData(prev => ({ ...prev, lr_no: getLocalLrNumber() }))
+      setIsLrEditable(true)
+      setNumberError(true)
+      toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '⚠️' })
     } finally { setNumberLoading(false) }
   }
 
@@ -276,7 +292,7 @@ export default function BiltyEntry({ branchMode = false }) {
     e.preventDefault()
     if (!formData.consignor_name || !formData.consignee_name) { toast.error('Consignor और Consignee का नाम required है'); return }
     if (!formData.lr_no) { toast.error('LR number is still generating. Please retry.'); return }
-    if (!await validateLRNo(formData.lr_no)) { toast.error(lrError || 'Please check LR number'); return }
+    if (!numberError && !await validateLRNo(formData.lr_no)) { toast.error(lrError || 'Please check LR number'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) {
       toast.error('Enter a valid GSTIN for the Third Party')
@@ -323,7 +339,20 @@ export default function BiltyEntry({ branchMode = false }) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (errorMsg.toLowerCase().includes('already exists') || errorMsg.toLowerCase().includes('duplicate')) {
         setLrError('This Bilty No already exists'); setIsLrEditable(true); toast.error('This Bilty No already exists')
-      } else { toast.error(errorMsg) }
+      } else {
+        try {
+          const localDrafts = JSON.parse(localStorage.getItem('btc_pending_bilties') || '[]')
+          if (!Array.isArray(localDrafts)) throw new Error('Saved local Bilty drafts are not a list.')
+          localStorage.setItem('btc_pending_bilties', JSON.stringify([
+            { ...formData, localDraftId: `local-${Date.now()}`, savedAt: new Date().toISOString() },
+            ...localDrafts
+          ]))
+          toast('Database unavailable. Bilty stored as a local draft only; it was not saved to the server.', { icon: '⚠️', duration: 7000 })
+        } catch (storageError) {
+          console.error('Unable to store the Bilty as a local draft:', storageError)
+          toast.error(`Unable to save Bilty: ${errorMsg}`)
+        }
+      }
     } finally { setLoading(false) }
   }
 
