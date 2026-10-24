@@ -589,6 +589,15 @@ export default function Dashboard() {
               <span>Pending Bilties:</span>
               <span className="font-bold text-slate-800">{stats.pending_lr} LR</span>
             </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between">
+              <span>Total Bills: {stats.total_bills || 0}</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between">
+              <span>Total Money Receipts: {stats.total_mr || 0}</span>
+            </div>
+            <div className="mt-2 text-xs text-slate-600 flex items-center justify-between">
+              <span>Total Gadi Challans: {stats.total_gadi_challan || 0}</span>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs relative overflow-hidden group hover:shadow-md transition-shadow">

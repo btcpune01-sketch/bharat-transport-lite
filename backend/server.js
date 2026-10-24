@@ -919,7 +919,8 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       runStat(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date >= $1 {AND_BRANCH}`, [today]),
       globalMasterCount('branches', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
       runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE lr_date = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
-      runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth])
+      runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth]),
+      runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH}`)
     ];
 
     const results = await Promise.all(queries);
@@ -935,7 +936,7 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       pending_bills: get(6), total_mr: get(7), total_parties: get(8), total_customers: get(9), total_revenue: get(10, 'total'),
       pending_amount: get(11, 'total'), pending_pod: get(12), active_drivers: get(13), active_vehicles: get(14),
       open_claims: get(15), today_expenses: get(16, 'total'), total_branches: get(17), today_revenue: get(18, 'total'),
-      month_revenue: get(19, 'total'), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin
+      month_revenue: get(19, 'total'), total_gadi_challan: get(20), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin
     });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
