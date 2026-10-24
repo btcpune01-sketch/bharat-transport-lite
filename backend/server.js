@@ -41,7 +41,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug']
 }));
 
 // Handle OPTIONS preflight requests explicitly
@@ -68,6 +68,7 @@ if (invalidDatabaseUrl) {
 }
 
 app.use((req, res, next) => {
+  if (req.path === '/api/health') return next();
   if (
     req.method === 'POST' &&
     req.path === '/api/auth/login' &&
