@@ -48,10 +48,12 @@ function createBranchAuthRouter(pool) {
 
     try {
       const result = await pool.query(
-        `SELECT id, branch_code, branch_name, city, state, url_slug, is_active,
-                branch_login_enabled, login_credentials
+        `SELECT id, branch_code, branch_name, city, state,
+                COALESCE(NULLIF(url_slug, ''), $1) AS url_slug, COALESCE(is_active, TRUE) AS is_active,
+                login_credentials
          FROM branches
-         WHERE url_slug = $1`,
+         WHERE COALESCE(NULLIF(url_slug, ''), trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))) = $1
+            OR trim(both '-' from lower(regexp_replace(trim(branch_code), '[^a-zA-Z0-9]+', '-', 'g'))) = $1`,
         [branchSlug]
       );
       const branch = result.rows[0];
@@ -60,7 +62,6 @@ function createBranchAuthRouter(pool) {
       if (
         !branch ||
         !branch.is_active ||
-        !branch.branch_login_enabled ||
         !credentials ||
         typeof credentials.username !== 'string' ||
         typeof credentials.password !== 'string' ||

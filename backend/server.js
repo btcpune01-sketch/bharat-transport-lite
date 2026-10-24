@@ -258,7 +258,7 @@ async function widenColumnToText(table, column) {
 async function runMigrations() {
   console.log('🏃 Running database migrations...');
   const tables = [
-    `CREATE TABLE IF NOT EXISTS branches (id SERIAL PRIMARY KEY, branch_code TEXT UNIQUE NOT NULL, branch_name TEXT NOT NULL, address TEXT, city TEXT, state TEXT, pincode TEXT, phone TEXT, email TEXT, gst_no TEXT, pan_no TEXT, manager_name TEXT, manager_phone TEXT, branch_login_enabled BOOLEAN DEFAULT FALSE, login_credentials JSONB, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS branches (id SERIAL PRIMARY KEY, branch_code TEXT UNIQUE NOT NULL, branch_name TEXT NOT NULL, address TEXT, city TEXT, state TEXT, pincode TEXT, phone TEXT, email TEXT, gst_no TEXT, pan_no TEXT, manager_name TEXT, manager_phone TEXT, branch_login_enabled BOOLEAN DEFAULT TRUE, login_credentials JSONB, is_active BOOLEAN DEFAULT TRUE, status TEXT DEFAULT 'active', created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, email TEXT, full_name TEXT, role TEXT DEFAULT 'operator', branch_id INTEGER, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS parties (id SERIAL PRIMARY KEY, party_code TEXT UNIQUE NOT NULL, party_name TEXT NOT NULL, party_type TEXT DEFAULT 'Consignor', address TEXT, city TEXT, state TEXT, pincode TEXT, gst_no TEXT, pan_no TEXT, email TEXT, phone TEXT, mobile TEXT, contact_person TEXT, credit_days INTEGER DEFAULT 0, opening_balance NUMERIC DEFAULT 0, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS customers (id SERIAL PRIMARY KEY, customer_name TEXT NOT NULL, customer_code TEXT UNIQUE, address TEXT, gst_no TEXT, email TEXT, phone TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
@@ -395,13 +395,22 @@ async function runMigrations() {
   await addColumnIfNotExists('branches', 'pan_no', 'TEXT');
   await addColumnIfNotExists('branches', 'manager_name', 'TEXT');
   await addColumnIfNotExists('branches', 'manager_phone', 'TEXT');
-  await addColumnIfNotExists('branches', 'branch_login_enabled', 'BOOLEAN DEFAULT FALSE');
+  await addColumnIfNotExists('branches', 'branch_login_enabled', 'BOOLEAN DEFAULT TRUE');
   await addColumnIfNotExists('branches', 'login_credentials', 'JSONB');
   await addColumnIfNotExists('branches', 'url_slug', 'TEXT');
+  await addColumnIfNotExists('branches', 'status', "TEXT DEFAULT 'active'");
   await addColumnIfNotExists('branches', 'incharge_name', 'TEXT');
   await addColumnIfNotExists('branches', 'incharge_username', 'TEXT');
   await addColumnIfNotExists('branches', 'incharge_password', 'TEXT');
   await addColumnIfNotExists('branches', 'is_active', 'BOOLEAN DEFAULT TRUE');
+  await pool.query(`ALTER TABLE branches ALTER COLUMN branch_login_enabled SET DEFAULT TRUE`);
+  await pool.query(`UPDATE branches SET branch_login_enabled = TRUE WHERE branch_login_enabled IS DISTINCT FROM TRUE`);
+  await pool.query(`UPDATE branches SET status = 'active' WHERE status IS NULL OR status = ''`);
+  await pool.query(`
+    UPDATE branches
+    SET url_slug = trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))
+    WHERE url_slug IS NULL OR url_slug = ''
+  `);
   await addColumnIfNotExists('users', 'branch_id', 'INTEGER');
   await addColumnIfNotExists('users', 'full_name', 'TEXT');
   await addColumnIfNotExists('users', 'role', "TEXT DEFAULT 'operator'");
@@ -1190,21 +1199,41 @@ app.get('/api/branches', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view branches.' });
     const result = await pool.query(
-      `SELECT id, branch_code, branch_name, address, city, state, pincode, phone, email, gst_no, pan_no, manager_name, manager_phone, incharge_name, incharge_username, url_slug, branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active, created_at FROM branches WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY branch_name`
+      `SELECT id, branch_code, branch_name, address, city, state, pincode, phone, email, gst_no, pan_no, manager_name, manager_phone, incharge_name, incharge_username, url_slug, TRUE AS branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active, status, created_at FROM branches WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY branch_name`
     );
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/branches error:', err.message); res.status(503).json({ error: 'Branches are temporarily unavailable.', details: err.message, code: err.code || null }); }
+});
+
+app.get('/api/branches/public', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, branch_code, branch_name, city, state, url_slug
+       FROM branches
+       WHERE COALESCE(is_active, TRUE) = TRUE
+       ORDER BY branch_name`
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    console.error('GET /api/branches/public error:', err.message);
+    res.status(503).json({ error: 'Branches are temporarily unavailable.' });
+  }
 });
 
 app.get('/api/branches/slug/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return res.status(400).json({ error: 'Invalid branch URL.' });
-    const result = await pool.query(`SELECT id, branch_code, branch_name, city, state, url_slug, is_active, branch_login_enabled FROM branches WHERE url_slug = $1`, [slug]);
+    const result = await pool.query(
+      `SELECT id, branch_code, branch_name, city, state, COALESCE(NULLIF(url_slug, ''), $1) AS url_slug, COALESCE(is_active, TRUE) AS is_active
+       FROM branches
+       WHERE COALESCE(NULLIF(url_slug, ''), trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))) = $1
+          OR trim(both '-' from lower(regexp_replace(trim(branch_code), '[^a-zA-Z0-9]+', '-', 'g'))) = $1`,
+      [slug]
+    );
     const branch = result.rows[0];
     if (!branch) return res.status(404).json({ error: 'Branch not found.' });
     if (!branch.is_active) return res.status(403).json({ error: 'Branch is inactive.' });
-    if (!branch.branch_login_enabled) return res.status(403).json({ error: 'Branch login is not enabled.' });
     res.json({ success: true, branch: { id: branch.id, branch_code: branch.branch_code, branch_name: branch.branch_name, city: branch.city, state: branch.state, url_slug: branch.url_slug } });
   } catch (err) {
     console.error('Branch lookup failed:', err);
@@ -1215,12 +1244,27 @@ app.get('/api/branches/slug/:slug', async (req, res) => {
 app.post('/api/branches', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can create branches.' });
-    if (['branch_login_enabled', 'login_credentials', 'incharge_username', 'incharge_password'].some((key) => key in req.body)) {
-      return res.status(400).json({ error: 'Use the branch login setup endpoint to configure login credentials.' });
+    const { branch_name, branch_code: requestedBranchCode, city, state, address, phone, email } = req.body || {};
+    if (typeof branch_name !== 'string' || !branch_name.trim()) {
+      return res.status(400).json({ error: 'Branch name is required.' });
     }
-    const keys = Object.keys(req.body); const values = Object.values(req.body);
-    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-    const result = await pool.query(`INSERT INTO branches (${keys.join(', ')}) VALUES (${placeholders}) RETURNING *`, values);
+    const branchName = branch_name.trim();
+    const slug = generateSlug(branchName);
+    if (!slug) return res.status(400).json({ error: 'Branch name must include letters or numbers.' });
+    const branchCode = typeof requestedBranchCode === 'string' && requestedBranchCode.trim()
+      ? requestedBranchCode.trim().toUpperCase()
+      : slug.toUpperCase().replace(/-/g, '').slice(0, 6);
+    const duplicate = await pool.query(
+      'SELECT id FROM branches WHERE url_slug = $1 OR branch_code = $2',
+      [slug, branchCode]
+    );
+    if (duplicate.rows.length) return res.status(409).json({ error: 'A branch with this name or code already exists.' });
+    const result = await pool.query(
+      `INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, url_slug, is_active, branch_login_enabled, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, TRUE, 'active')
+       RETURNING *`,
+      [branchCode, branchName, city || '', state || '', address || '', phone || '', email || '', slug]
+    );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1297,12 +1341,12 @@ app.post('/api/branches/create', authMiddleware, async (req, res) => {
     if (requestedBranchCode && (typeof requestedBranchCode !== 'string' || !/^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(requestedBranchCode.trim().toUpperCase()))) {
       return res.status(400).json({ error: 'Branch code may contain only letters, numbers, and single hyphens.' });
     }
-    const slug = generateSlug(city);
-    if (!slug) return res.status(400).json({ error: 'Branch city must include letters or numbers.' });
+    const slug = generateSlug(branch_name);
+    if (!slug) return res.status(400).json({ error: 'Branch name must include letters or numbers.' });
     const branch_code = requestedBranchCode ? requestedBranchCode.trim().toUpperCase() : slug.toUpperCase().slice(0, 6);
     const existing = await pool.query('SELECT id FROM branches WHERE url_slug = $1 OR branch_code = $2', [slug, branch_code]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'A branch with this city URL already exists. Use a unique city or code.' });
-    const result = await pool.query(`INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, incharge_name, url_slug, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE) RETURNING id, branch_code, branch_name, city, state, incharge_name, url_slug, branch_login_enabled`, [branch_code, branch_name, city, state, address || '', phone || '', email || '', incharge_name, slug]);
+    const result = await pool.query(`INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, incharge_name, url_slug, is_active, branch_login_enabled, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,TRUE,'active') RETURNING id, branch_code, branch_name, city, state, incharge_name, url_slug, branch_login_enabled, is_active, status`, [branch_code, branch_name, city, state, address || '', phone || '', email || '', incharge_name, slug]);
     const branch = result.rows[0];
     const portal_url = `https://bharat-transport-v2.pages.dev/#/branch-login/${slug}`;
     await logAudit('CREATE', 'branches', branch.id, `Created branch: ${branch_name}`, req.user.username);
@@ -2241,6 +2285,9 @@ const documentStockTypes = ['bilty', 'mr', 'gadi_challan', 'billing', 'gate_pass
 
 app.get('/api/stock', authMiddleware, async (req, res) => {
   try {
+    const branchFilter = req.user?.role === 'branch' || req.user?.role === 'branch_user'
+      ? 'AND branch_id = $1'
+      : '';
     const result = await pool.query(`
       SELECT
         CASE item_type WHEN 'bilty_book' THEN 'bilty' WHEN 'bill_book' THEN 'billing'
@@ -2252,9 +2299,10 @@ app.get('/api/stock', authMiddleware, async (req, res) => {
       FROM stock_items
       WHERE is_active = TRUE
         AND item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book', 'lr_copy_book')
+        ${branchFilter}
       ORDER BY CASE item_type WHEN 'bilty_book' THEN 1 WHEN 'bill_book' THEN 2
         WHEN 'mr_book' THEN 3 WHEN 'challan_book' THEN 4 ELSE 5 END
-    `);
+    `, branchFilter ? [req.user.branch_id] : []);
     res.json({ data: result.rows });
   } catch (err) {
     console.error('Stock lookup error:', err.message);

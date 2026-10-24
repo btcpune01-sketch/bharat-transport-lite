@@ -36,9 +36,10 @@ CREATE TABLE IF NOT EXISTS branches (
     email VARCHAR(100),
     gst_no VARCHAR(20),
     manager_name VARCHAR(100),
-    branch_login_enabled BOOLEAN DEFAULT FALSE,
+    branch_login_enabled BOOLEAN DEFAULT TRUE,
     login_credentials JSONB,
     is_active BOOLEAN DEFAULT TRUE,
+    status TEXT DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

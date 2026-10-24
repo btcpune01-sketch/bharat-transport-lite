@@ -54,6 +54,8 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/dashboard\/stats$/,
   /^\/api\/dashboard\/recent$/,
   /^\/api\/dashboard\/top-parties$/,
+  /^\/api\/stock$/,
+  /^\/api\/branches\/slug\/[^/]+$/,
   /^\/api\/consignments(?:\/next-number|\/\d+)?$/,
   /^\/api\/next-(?:lr|bill|challan|gatepass|memo)$/,
   /^\/api\/pod$/,
@@ -101,6 +103,9 @@ function createBranchAccessMiddleware(pool) {
     if (req.headers['x-branch-slug'] && req.headers['x-branch-slug'] !== branchSlug) {
       return res.status(403).json({ error: 'This session is not authorized for the requested branch.' })
     }
+    if (req.path.startsWith('/api/branches/slug/') && req.params.slug !== branchSlug) {
+      return res.status(403).json({ error: 'This session is not authorized for the requested branch.' })
+    }
 
     if (!BRANCH_ROUTE_PATTERNS.some((pattern) => pattern.test(req.path))) {
       return res.status(403).json({ error: 'This endpoint is not available to branch staff.' })
@@ -109,14 +114,19 @@ function createBranchAccessMiddleware(pool) {
     if (!branchIdsMatch(req.query?.branch_id, branchId) || !branchIdsMatch(req.body?.branch_id, branchId)) {
       return res.status(403).json({ error: 'You can only access data assigned to your branch.' })
     }
+    if (
+      (req.query?.branch && req.query.branch !== branchSlug) ||
+      (req.body?.branch && req.body.branch !== branchSlug)
+    ) {
+      return res.status(403).json({ error: 'You can only access data assigned to your branch.' })
+    }
 
     try {
       const branchResult = await pool.query(
         `SELECT id, branch_code
          FROM branches
          WHERE id = $1 AND url_slug = $2
-           AND COALESCE(is_active, TRUE) = TRUE
-           AND COALESCE(branch_login_enabled, FALSE) = TRUE`,
+           AND COALESCE(is_active, TRUE) = TRUE`,
         [branchId, branchSlug]
       );
       const branch = branchResult.rows[0]

@@ -158,21 +158,25 @@ export default function BranchPortal() {
 
     const activeBranch = session.branch
     const branchId = activeBranch.id
-    const params = { branch_id: branchId }
+    const params = { branch: branchSlug, branch_id: branchId }
     setBranch(activeBranch)
     setLoading(true)
     setRefreshing(true)
     setError('')
 
     Promise.allSettled([
+      api.get(`/branches/slug/${encodeURIComponent(branchSlug)}`, { signal: controller.signal }),
       api.get('/dashboard/stats', { params, signal: controller.signal }),
       api.get('/consignments', { params, signal: controller.signal }),
       api.get('/dashboard/recent', { params, signal: controller.signal }),
       api.get('/dashboard/top-parties', { params, signal: controller.signal }),
       api.get('/stock', { params, signal: controller.signal })
-    ]).then(([statsResult, consignmentsResult, recentResult, consignorsResult, stockResult]) => {
+    ]).then(([branchResult, statsResult, consignmentsResult, recentResult, consignorsResult, stockResult]) => {
       if (controller.signal.aborted) return
 
+      if (branchResult.status === 'fulfilled' && branchResult.value.data?.branch) {
+        setBranch(branchResult.value.data.branch)
+      }
       if (statsResult.status === 'fulfilled') {
         setStats(statsResult.value.data?.data || statsResult.value.data || {})
       }
@@ -190,7 +194,7 @@ export default function BranchPortal() {
         setStock(getList(stockResult.value, ['stock', 'items']))
       }
 
-      const failed = [statsResult, consignmentsResult, recentResult, consignorsResult, stockResult]
+      const failed = [branchResult, statsResult, consignmentsResult, recentResult, consignorsResult, stockResult]
         .filter((result) => result.status === 'rejected')
       if (failed.length) setError(getErrorMessage(failed[0].reason))
     }).finally(() => {
@@ -210,7 +214,7 @@ export default function BranchPortal() {
     setTrackResult(null)
     try {
       const response = await api.get('/consignments/track', {
-        params: { lr_no: trackNumber.trim(), branch_id: branch.id }
+        params: { lr_no: trackNumber.trim(), branch: branchSlug, branch_id: branch.id }
       })
       setTrackResult(response.data?.data || response.data)
     } catch (requestError) {
@@ -222,7 +226,11 @@ export default function BranchPortal() {
     event.preventDefault()
     if (!branch?.id) return
     try {
-      const response = await api.post('/rates/calculate', { ...calculator, branch_id: branch.id })
+      const response = await api.post('/rates/calculate', {
+        ...calculator,
+        branch: branchSlug,
+        branch_id: branch.id
+      })
       setCalcResult(response.data)
     } catch (requestError) {
       setError(getErrorMessage(requestError))

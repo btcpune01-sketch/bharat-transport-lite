@@ -16,7 +16,19 @@ async function runMigrations() {
   try {
     await pool.query(`
       ALTER TABLE branches
-      ADD COLUMN IF NOT EXISTS branch_login_enabled BOOLEAN DEFAULT FALSE
+      ADD COLUMN IF NOT EXISTS branch_login_enabled BOOLEAN DEFAULT TRUE
+    `);
+    await pool.query(`
+      ALTER TABLE branches
+      ALTER COLUMN branch_login_enabled SET DEFAULT TRUE
+    `);
+    await pool.query(`
+      UPDATE branches SET branch_login_enabled = TRUE
+      WHERE branch_login_enabled IS DISTINCT FROM TRUE
+    `);
+    await pool.query(`
+      ALTER TABLE branches
+      ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'
     `);
     await pool.query(`
       ALTER TABLE branches
