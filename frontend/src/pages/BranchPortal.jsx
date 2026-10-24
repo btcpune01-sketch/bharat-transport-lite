@@ -81,7 +81,6 @@ const categories = [
       { label: 'Document Stock', path: 'stock-entry' },
       { label: 'User Management', path: 'user-management' },
       { label: 'Branch Profile', path: 'branch-profile' },
-      { label: 'Backup', path: 'backup' },
       { label: 'Rate Master', path: 'rate-master' }
     ]
   }
