@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   Activity, AlertTriangle, Boxes, Building2, Calculator, ChevronDown,
@@ -116,6 +116,7 @@ function formatMoney(value) {
 export default function BranchPortal() {
   const { branchSlug } = useParams()
   const navigate = useNavigate()
+  const categoryNavRef = useRef(null)
   const [branch, setBranch] = useState(null)
   const [stats, setStats] = useState({})
   const [consignments, setConsignments] = useState([])
@@ -132,6 +133,21 @@ export default function BranchPortal() {
   const [showCalculator, setShowCalculator] = useState(false)
   const [calculator, setCalculator] = useState({ from_city: '', to_city: '', weight_kg: '', packages: '' })
   const [calcResult, setCalcResult] = useState(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (categoryNavRef.current && !categoryNavRef.current.contains(event.target)) setActiveMenu(null)
+    }
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setActiveMenu(null)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [])
 
   function logout() {
     localStorage.removeItem('branch_session')
@@ -309,18 +325,13 @@ export default function BranchPortal() {
           </div>
         </div>
 
-        <nav aria-label="Dashboard categories" className="border-t border-slate-100 bg-white">
-          <div className="mx-auto max-w-[1600px] overflow-x-auto px-4 py-1">
-            <div className="flex min-w-max items-center gap-1">
+        <nav ref={categoryNavRef} aria-label="Dashboard categories" className="relative border-t border-slate-100 bg-white">
+          <div className="mx-auto max-w-[1600px] overflow-visible px-4 py-1">
+            <div className="flex flex-wrap items-center gap-1">
               {categories.map((category) => {
                 const isOpen = activeMenu === category.label
                 return (
-                  <div
-                    key={category.label}
-                    className="relative"
-                    onMouseEnter={() => setActiveMenu(category.label)}
-                    onMouseLeave={() => setActiveMenu(null)}
-                  >
+                  <div key={category.label} className="relative">
                     <button
                       type="button"
                       aria-expanded={isOpen}
@@ -331,7 +342,7 @@ export default function BranchPortal() {
                       <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : 'text-slate-400'}`} />
                     </button>
                     {isOpen && (
-                      <div className="absolute left-0 top-full z-50 mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-2 shadow-xl">
+                      <div className="absolute left-0 top-full z-[999] mt-1 max-h-[70vh] w-64 overflow-y-auto rounded-xl border border-slate-200 bg-white py-2 shadow-2xl">
                         <div className="mb-1 flex items-center justify-between border-b border-slate-100 px-3.5 py-1.5 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
                           <span>{category.label}</span><span className="text-blue-600">{category.items.length} options</span>
                         </div>
