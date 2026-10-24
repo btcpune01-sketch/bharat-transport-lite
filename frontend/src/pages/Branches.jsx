@@ -135,6 +135,11 @@ export default function Branches() {
       alert('A changed username requires a new password of at least 12 characters.')
       return
     }
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('token')
+    if (credentialsChanged && !token) {
+      navigate('/admin/login')
+      return
+    }
     try {
       const { username, password, ...branchChanges } = editForm
       await api.put(`/branches/${showEdit.id}`, branchChanges)
@@ -144,6 +149,11 @@ export default function Branches() {
           password,
           url_slug: branchChanges.url_slug,
           branch_login_enabled: branchChanges.branch_login_enabled
+        }, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
         })
       }
       alert('✅ Branch updated successfully!')
@@ -180,11 +190,22 @@ export default function Branches() {
   const handleBranchLoginSetup = async (e) => {
     e.preventDefault()
     if (!showBranchLoginSetup) return
+    const token = localStorage.getItem('admin_token') || localStorage.getItem('token')
+    if (!token) {
+      navigate('/admin/login')
+      return
+    }
     setBranchLoginSaving(true)
     try {
       const response = await api.post(
         `/branches/${showBranchLoginSetup.id}/branch-login`,
-        branchLoginForm
+        branchLoginForm,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          }
+        }
       )
       setNewBranchCredentials({
         branch_name: response.data.branch.branch_name,

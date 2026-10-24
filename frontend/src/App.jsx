@@ -159,6 +159,7 @@ function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/admin/login" element={<Login />} />
           <Route path="/track" element={<TrackBilty />} />
           <Route path="/consignments/track" element={<TrackBilty />} />
           <Route path="/bilty-print/:id?" element={<BiltyPrint />} />
