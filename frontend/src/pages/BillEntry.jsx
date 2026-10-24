@@ -494,7 +494,7 @@ export default function BillEntry({ branchMode = false }) {
   const formatINR = (num) => parseFloat(num || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       {/* CSS STYLES (Exact match to your HTML) */}
       <style>{`
         :root { --primary: #0d1b3e; --accent: #d32f2f; --bg-light: #f1f4f9; --success: #2e7d32; }

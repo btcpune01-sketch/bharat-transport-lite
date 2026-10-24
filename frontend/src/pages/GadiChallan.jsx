@@ -218,7 +218,7 @@ export default function GadiChallan() {
 
   if (loading && challans.length === 0) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center w-full bg-[#eef2f7]">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-lime-700"></div>
           <p className="mt-4 text-gray-500">Loading Challans...</p>
@@ -228,7 +228,7 @@ export default function GadiChallan() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <nav className="bg-gradient-to-r from-lime-700 to-lime-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">

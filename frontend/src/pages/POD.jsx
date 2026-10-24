@@ -134,7 +134,7 @@ export default function POD({ branchMode = false }) {
   })
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <nav className="bg-gradient-to-r from-green-700 to-green-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div>

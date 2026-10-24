@@ -44,7 +44,7 @@ export default function Outstanding() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <div className="bg-gradient-to-r from-orange-600 to-red-700 text-white p-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
           <div>

@@ -37,7 +37,7 @@ export default function BranchPaymentsSummary() {
     `₹${Number(amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
   return (
-    <main className="min-h-screen bg-white p-6">
+    <main className="min-h-screen p-6 w-full bg-[#eef2f7]">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-slate-900">Branch Payment Summary</h1>

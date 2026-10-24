@@ -21,8 +21,8 @@ function CustomSelect({ label, value, onChange, options = [], name, required }) 
   const selectedLabel = safeOptions.find(o => o.value === value)?.label || (label.includes('Select') ? label : `Select ${label}`)
   return (
     <div className="relative" ref={ref}>
-      <label className="block text-gray-300 text-sm font-medium mb-1">{label}{required && ' *'}</label>
-      <div onClick={() => setIsOpen(!isOpen)} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white cursor-pointer flex justify-between items-center hover:bg-white/10 transition">
+      <label className="block text-[#1e293b] text-sm font-medium mb-1">{label}{required && ' *'}</label>
+      <div onClick={() => setIsOpen(!isOpen)} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] cursor-pointer flex justify-between items-center hover:bg-slate-50 transition">
         <span>{selectedLabel}</span>
         <svg className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
       </div>
@@ -381,14 +381,14 @@ export default function BiltyEntry({ branchMode = false }) {
   const consigneeOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: c.customer_name || c.name }))]
 
   return (
-    <div className="min-h-screen bg-white p-6">
+    <div className="min-h-screen p-6 w-full bg-[#eef2f7]">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-black">{id ? 'Edit Bilty (LR)' : 'Create New Bilty (LR)'}</h1>
-          <button onClick={() => navigate('/dashboard')} className="px-4 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition">← Back</button>
+          <button onClick={() => navigate('/dashboard')} className="px-4 py-2 bg-white border border-[#c2cddf] text-[#1e293b] rounded-lg hover:bg-slate-50 transition">← Back</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="eye-comfort-form bg-white border border-[#d1d9e6] shadow-sm rounded-xl p-6 space-y-6">
           
           <div className="border-b border-white/10 pb-6">
             <h3 className="text-xl font-bold text-white mb-4">📋 Section 1: Header Info</h3>
@@ -565,7 +565,7 @@ export default function BiltyEntry({ branchMode = false }) {
           </div>
 
           <div className="flex justify-end gap-4 pt-6">
-            <button type="button" onClick={() => navigate('/dashboard')} className="px-6 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 transition">Cancel</button>
+            <button type="button" onClick={() => navigate('/dashboard')} className="px-6 py-2 bg-white border border-[#c2cddf] text-[#1e293b] rounded-lg hover:bg-slate-50 transition">Cancel</button>
             <button type="submit" disabled={loading || numberLoading} className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition font-bold text-lg disabled:opacity-50">{loading ? (id ? 'Updating...' : 'Saving...') : numberLoading ? (id ? 'Loading Bilty...' : 'Generating LR...') : id ? 'Update Bilty' : `Save Bilty ${formData.lr_no}`}</button>
           </div>
         </form>

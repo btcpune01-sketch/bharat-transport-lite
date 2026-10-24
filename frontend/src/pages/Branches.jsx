@@ -239,7 +239,7 @@ export default function Branches() {
   const inactiveCount = branches.length - activeCount
   
   return (
-    <div className="min-h-screen bg-white p-4 md:p-6">
+    <div className="min-h-screen p-4 md:p-6 w-full bg-[#eef2f7]">
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
           <div>

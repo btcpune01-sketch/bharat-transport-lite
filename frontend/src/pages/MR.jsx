@@ -72,7 +72,7 @@ export default function MR() {
   const totalAmount = filteredMRs.reduce((sum, mr) => sum + parseFloat(mr.amount || 0), 0)
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <nav className="bg-gradient-to-r from-purple-700 to-purple-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div>

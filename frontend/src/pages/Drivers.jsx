@@ -173,7 +173,7 @@ export default function Drivers() {
   const inactiveDrivers = drivers.filter(d => d.status !== 'Active').length
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <nav className="bg-gradient-to-r from-teal-700 to-teal-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div>

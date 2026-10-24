@@ -12,7 +12,7 @@
 
 body {
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #ffffff;
+  background: #eef2f7;
   color: #1e293b;
   scroll-behavior: smooth;
 }
@@ -27,17 +27,21 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #eef2f7;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
-  border: 2px solid #0f172a;
+  background: #c2cddf;
+  border: 2px solid #eef2f7;
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #f59e0b;
+  background: #94a3b8;
+}
+
+* {
+  scrollbar-color: #c2cddf #eef2f7;
 }
 
 button,
@@ -59,7 +63,7 @@ textarea,
   --tms-text: #1e293b;
   min-height: 100vh;
   overflow-x: hidden;
-  background: #ffffff;
+  background: #eef2f7;
   color: var(--tms-text);
   font-family: 'Inter', 'Segoe UI', sans-serif;
 }
@@ -124,7 +128,7 @@ textarea,
 .tms-dashboard .dashboard-main {
   position: relative;
   isolation: isolate;
-  background: #ffffff;
+  background: #eef2f7;
 }
 
 .tms-dashboard .dashboard-main::before {
@@ -216,6 +220,44 @@ textarea,
 
 .tms-dashboard .dashboard-panel-header {
   background: rgba(241, 245, 249, .82);
+}
+
+.eye-comfort-form {
+  background-color: #fff !important;
+  border-color: #d1d9e6 !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+  backdrop-filter: none;
+}
+
+.eye-comfort-form > div {
+  border-color: #d1d9e6;
+}
+
+.eye-comfort-form label,
+.eye-comfort-form h3,
+.eye-comfort-form .text-gray-300 {
+  color: #1e293b;
+}
+
+.eye-comfort-form input:not([type='checkbox']),
+.eye-comfort-form select,
+.eye-comfort-form textarea {
+  background-color: #fff;
+  border-color: #c2cddf;
+  color: #0f172a;
+}
+
+.eye-comfort-form input:not([type='checkbox'])::placeholder,
+.eye-comfort-form textarea::placeholder {
+  color: #9ca3af;
+}
+
+.eye-comfort-form input:not([type='checkbox']):focus,
+.eye-comfort-form select:focus,
+.eye-comfort-form textarea:focus {
+  border-color: #6366f1;
+  outline: 2px solid rgb(99 102 241 / 0.2);
+  outline-offset: 0;
 }
 
 .tms-dashboard .dashboard-branch-card {

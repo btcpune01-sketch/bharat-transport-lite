@@ -49,7 +49,7 @@ export default function Commissions() {
   const pendingCommission = totalCommission - paidCommission
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <div className="bg-gradient-to-r from-purple-700 to-purple-900 text-white p-6 shadow-lg">
         <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
           <div>

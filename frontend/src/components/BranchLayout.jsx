@@ -12,7 +12,7 @@ export default function BranchLayout() {
     { title: 'MASTERS', items: ['Customer Master', 'Supplier', 'Driver', 'Vehicle', 'Tyre', 'Rate Master', 'City Master', 'Notification', 'Support'] }
   ];
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen w-full bg-[#eef2f7]">
       <div className="w-64 bg-[#111827] text-white flex flex-col fixed h-full overflow-y-auto">
         <div className="p-4 border-b border-gray-800">
           <h1 className="text-lg font-bold">Bharat Transport</h1>

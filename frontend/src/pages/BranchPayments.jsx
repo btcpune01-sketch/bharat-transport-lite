@@ -97,7 +97,7 @@ export default function BranchPayments() {
   }
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div className="p-6 min-h-screen w-full bg-[#eef2f7]">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Branch Payments Ledger</h1>
 
       {/* Summary Card */}

@@ -55,7 +55,7 @@ export default function PartyList() {
   if (loading) return <div className="p-8 text-center text-gray-500">Loading parties...</div>
 
   return (
-    <div className="min-h-screen bg-white p-6">
+    <div className="min-h-screen p-6 w-full bg-[#eef2f7]">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-black">Party Master (Customers)</h1>
@@ -65,61 +65,61 @@ export default function PartyList() {
         </div>
 
         {/* Search & Filter */}
-        <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 mb-6 flex flex-col md:flex-row gap-4">
+        <div className="bg-white border border-[#d1d9e6] shadow-sm rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <input 
               type="text" 
               placeholder="Search by Name, Code, Mobile, or GST..." 
               value={search} 
               onChange={(e) => setSearch(e.target.value)} 
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500" 
+              className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] placeholder:text-gray-400 focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/20"
             />
           </div>
           <div>
             <select 
               value={filterType} 
               onChange={(e) => setFilterType(e.target.value)} 
-              className="w-full md:w-48 px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full md:w-48 px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/20"
             >
-              <option value="All" className="bg-slate-800">All Types</option>
-              <option value="Cash" className="bg-slate-800">Cash</option>
-              <option value="Credit" className="bg-slate-800">Credit</option>
-              <option value="To-Pay" className="bg-slate-800">To-Pay</option>
+              <option value="All">All Types</option>
+              <option value="Cash">Cash</option>
+              <option value="Credit">Credit</option>
+              <option value="To-Pay">To-Pay</option>
             </select>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden">
+        <div className="bg-white border border-[#d1d9e6] shadow-sm rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-white/5 border-b border-white/10">
+              <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Code</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Party Name</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Mobile</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">City</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">GST No</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Type</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase text-right">Actions</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Code</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Party Name</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Mobile</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">City</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">GST No</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Type</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredParties.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="px-6 py-8 text-center text-gray-400">No parties found matching your criteria.</td>
+                    <td colSpan="7" className="px-6 py-8 text-center text-slate-600">No parties found matching your criteria.</td>
                   </tr>
                 ) : (
                   filteredParties.map((party) => (
-                    <tr key={party.id} className="hover:bg-white/5 transition">
-                      <td className="px-6 py-4 text-sm font-medium text-white">{party.customer_code}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300">
+                    <tr key={party.id} className="hover:bg-slate-50 transition">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-900">{party.customer_code}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">
                         <div className="font-medium">{party.customer_name || party.name}</div>
                         {!party.is_active && <span className="text-xs text-red-400 font-semibold">Inactive</span>}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-300">{party.mobile || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300">{party.city || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300 font-mono">{party.gst_no || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{party.mobile || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{party.city || '-'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700 font-mono">{party.gst_no || '-'}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
                           party.customer_type === 'Cash' ? 'bg-green-500/20 text-green-400' : 
@@ -167,7 +167,7 @@ export default function PartyList() {
             </table>
           </div>
         </div>
-        <div className="mt-4 text-sm text-gray-400 text-right">Total Parties: {filteredParties.length}</div>
+        <div className="mt-4 text-sm text-slate-600 text-right">Total Parties: {filteredParties.length}</div>
       </div>
     </div>
   )

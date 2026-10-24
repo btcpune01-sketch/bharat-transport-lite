@@ -73,7 +73,7 @@ export default function Backup() {
   }
 
   return (
-    <div className="min-h-screen bg-white p-6">
+    <div className="min-h-screen p-6 w-full bg-[#eef2f7]">
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>

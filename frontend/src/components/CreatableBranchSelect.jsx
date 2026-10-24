@@ -131,7 +131,7 @@ export default function CreatableBranchSelect({
 
   return (
     <div className="relative" ref={rootRef}>
-      <label className="block text-gray-300 text-sm font-medium mb-1">{label}{required && ' *'}</label>
+      <label className="block text-[#1e293b] text-sm font-medium mb-1">{label}{required && ' *'}</label>
       <input
         type="text"
         value={isOpen && inputValue ? inputValue : selectedBranch?.label || ''}
@@ -157,7 +157,7 @@ export default function CreatableBranchSelect({
         role="combobox"
         aria-expanded={isOpen}
         aria-autocomplete="list"
-        className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white"
+        className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] placeholder:text-gray-400 focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/20"
       />
       {isOpen && (
         <div

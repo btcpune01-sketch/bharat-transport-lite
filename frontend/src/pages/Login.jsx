@@ -59,8 +59,8 @@ export default function Login() {
           flex-direction: column;
           overflow: hidden;
           padding: 26px clamp(20px, 4.1vw, 68px) 20px;
-          color: #e5f7ff;
-          background-color: #ffffff;
+          color: #1e293b;
+          background-color: #eef2f7;
           background-image: none;
           background-size: auto, auto, 48px 48px, 48px 48px;
           font-family: Inter, 'Segoe UI', sans-serif;
@@ -105,7 +105,7 @@ export default function Login() {
         }
         .btc-brand-tagline {
           margin-top: 5px;
-          color: var(--btc-cyan);
+          color: #0e7490;
           font-size: 9px;
           font-weight: 700;
           letter-spacing: .19em;
@@ -303,7 +303,7 @@ export default function Login() {
           display: flex;
           align-items: center;
           gap: 8px;
-          color: #51e6ff;
+          color: #0e7490;
           font-size: 10px;
           font-weight: 700;
           letter-spacing: .24em;
@@ -318,7 +318,7 @@ export default function Login() {
         }
         .btc-truck-copy p {
           max-width: 420px;
-          color: #87a8bd;
+          color: #475569;
           font-size: 13px;
           line-height: 1.7;
         }
@@ -544,7 +544,7 @@ export default function Login() {
           gap: 20px;
           padding-top: 13px;
           border-top: 1px solid rgba(74, 139, 174, .2);
-          color: #6f91a6;
+          color: #475569;
           font-size: 8px;
           font-weight: 600;
           letter-spacing: .09em;
@@ -558,7 +558,7 @@ export default function Login() {
           text-align: right;
         }
         .btc-hud-label {
-          color: #9cc0d3;
+          color: #475569;
         }
         .btc-startup {
           position: fixed;

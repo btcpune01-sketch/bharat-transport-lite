@@ -62,19 +62,19 @@ export default function BiltyList() {
   })
 
   const statusColors = {
-    'Booked': 'bg-blue-500/20 text-blue-400',
-    'In-Transit': 'bg-yellow-500/20 text-yellow-400',
-    'Reached': 'bg-purple-500/20 text-purple-400',
-    'Out for Delivery': 'bg-orange-500/20 text-orange-400',
-    'Delivered': 'bg-green-500/20 text-green-400',
-    'Cancelled': 'bg-red-500/20 text-red-400',
-    'RTO': 'bg-gray-500/20 text-gray-400'
+    'Booked': 'bg-blue-100 text-blue-700',
+    'In-Transit': 'bg-yellow-100 text-yellow-700',
+    'Reached': 'bg-purple-100 text-purple-700',
+    'Out for Delivery': 'bg-orange-100 text-orange-700',
+    'Delivered': 'bg-green-100 text-green-700',
+    'Cancelled': 'bg-red-100 text-red-700',
+    'RTO': 'bg-gray-100 text-gray-700'
   }
 
   if (loading) return <div className="p-8 text-center text-gray-500">Loading bilties...</div>
 
   return (
-    <div className="min-h-screen bg-white p-6">
+    <div className="min-h-screen p-6 w-full bg-[#eef2f7]">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-black">Bilty List (LR)</h1>
@@ -91,60 +91,60 @@ export default function BiltyList() {
         )}
 
         {/* Search & Filter */}
-        <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 p-4 mb-6 flex flex-col md:flex-row gap-4">
+        <div className="bg-white border border-[#d1d9e6] shadow-sm rounded-xl p-4 mb-6 flex flex-col md:flex-row gap-4">
           <div className="flex-1">
             <input 
               type="text" 
               placeholder="Search by LR No, Consignor, Consignee, or Mobile..." 
               value={search} 
               onChange={(e) => setSearch(e.target.value)} 
-              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500" 
+              className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] placeholder:text-gray-400 focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/20"
             />
           </div>
           <div className="flex gap-4">
             <select 
               value={filterStatus} 
               onChange={(e) => setFilterStatus(e.target.value)} 
-              className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/20"
             >
-              <option value="All" className="bg-slate-800">All Status</option>
-              <option value="Booked" className="bg-slate-800">Booked</option>
-              <option value="In-Transit" className="bg-slate-800">In-Transit</option>
-              <option value="Reached" className="bg-slate-800">Reached</option>
-              <option value="Out for Delivery" className="bg-slate-800">Out for Delivery</option>
-              <option value="Delivered" className="bg-slate-800">Delivered</option>
-              <option value="Cancelled" className="bg-slate-800">Cancelled</option>
-              <option value="RTO" className="bg-slate-800">RTO</option>
+              <option value="All">All Status</option>
+              <option value="Booked">Booked</option>
+              <option value="In-Transit">In-Transit</option>
+              <option value="Reached">Reached</option>
+              <option value="Out for Delivery">Out for Delivery</option>
+              <option value="Delivered">Delivered</option>
+              <option value="Cancelled">Cancelled</option>
+              <option value="RTO">RTO</option>
             </select>
             <select 
               value={filterBranch} 
               onChange={(e) => setFilterBranch(e.target.value)} 
-              className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] focus:border-[#6366f1] focus:ring-2 focus:ring-[#6366f1]/20"
             >
-              <option value="All" className="bg-slate-800">All Branches</option>
-              <option value="RAJ" className="bg-slate-800">Rajgarh</option>
-              <option value="DEL" className="bg-slate-800">Delhi</option>
-              <option value="MUM" className="bg-slate-800">Mumbai</option>
-              <option value="JAI" className="bg-slate-800">Jaipur</option>
-              <option value="AHM" className="bg-slate-800">Ahmedabad</option>
+              <option value="All">All Branches</option>
+              <option value="RAJ">Rajgarh</option>
+              <option value="DEL">Delhi</option>
+              <option value="MUM">Mumbai</option>
+              <option value="JAI">Jaipur</option>
+              <option value="AHM">Ahmedabad</option>
             </select>
           </div>
         </div>
 
         {/* Table */}
-        <div className="bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden">
+        <div className="bg-white border border-[#d1d9e6] shadow-sm rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-white/5 border-b border-white/10">
+              <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">LR No</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Date</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">From</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">To</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Consignor</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Grand Total</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase">Status</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-gray-300 uppercase text-right">Actions</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">LR No</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Date</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">From</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">To</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Consignor</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Grand Total</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase">Status</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -156,21 +156,21 @@ export default function BiltyList() {
                   </tr>
                 ) : filteredBilties.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="px-6 py-8 text-center text-gray-400">
+                    <td colSpan="8" className="px-6 py-8 text-center text-slate-600">
                       {biltyList.length === 0 ? 'No bilties found. Create your first bilty!' : 'No bilties found matching your criteria.'}
                     </td>
                   </tr>
                 ) : (
                   filteredBilties.map((bilty) => (
-                    <tr key={bilty.lr_no} className="hover:bg-white/5 transition cursor-pointer" onClick={() => navigate(`/bilty/view/${bilty.lr_no}`)}>
-                      <td className="px-6 py-4 text-sm font-bold text-white">{bilty.lr_no}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300">{formatDate(bilty.lr_date)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300">{bilty.from_code}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300">{bilty.to_code}</td>
-                      <td className="px-6 py-4 text-sm text-gray-300">{bilty.consignor_name}</td>
+                    <tr key={bilty.lr_no} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => navigate(`/bilty/view/${bilty.lr_no}`)}>
+                      <td className="px-6 py-4 text-sm font-bold text-slate-900">{bilty.lr_no}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{formatDate(bilty.lr_date)}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{bilty.from_code}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{bilty.to_code}</td>
+                      <td className="px-6 py-4 text-sm text-slate-700">{bilty.consignor_name}</td>
                       <td className="px-6 py-4 text-sm font-bold text-green-400">₹{bilty.grand_total || 0}</td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[bilty.status] || 'bg-gray-500/20 text-gray-400'}`}>
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${statusColors[bilty.status] || 'bg-gray-100 text-gray-700'}`}>
                           {bilty.status}
                         </span>
                       </td>
@@ -212,7 +212,7 @@ export default function BiltyList() {
             </table>
           </div>
         </div>
-        <div className="mt-4 text-sm text-gray-400 text-right">Total Bilties: {filteredBilties.length}</div>
+        <div className="mt-4 text-sm text-slate-600 text-right">Total Bilties: {filteredBilties.length}</div>
       </div>
     </div>
   )

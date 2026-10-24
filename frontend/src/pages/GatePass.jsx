@@ -70,7 +70,7 @@ export default function GatePass() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen w-full bg-[#eef2f7]">
       <div className="bg-red-700 text-white p-4">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <h1 className="text-2xl font-bold">BHARAT TRANSPORT COMPANY</h1>
