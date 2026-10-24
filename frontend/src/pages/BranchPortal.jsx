@@ -1,8 +1,62 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api'
 import { BRANCH_MODULES } from '../components/branchModules'
 import { formatDate } from '../utils/dateFormatter'
+
+const moduleCategories = {
+  '': 'Bilty & Consignment',
+  'bilty-entry': 'Bilty & Consignment',
+  consignments: 'Bilty & Consignment',
+  'bilty-print': 'Bilty & Consignment',
+  'bill-entry': 'Billing',
+  'bill-list': 'Billing',
+  'bill-print': 'Billing',
+  'money-receipt': 'Billing',
+  payment: 'Billing',
+  'gadi-challan': 'Vehicle & Movement',
+  'gate-pass': 'Vehicle & Movement',
+  drivers: 'Vehicle & Movement',
+  vehicles: 'Vehicle & Movement',
+  'diesel-entry': 'Vehicle & Movement',
+  tyre: 'Vehicle & Movement',
+  'branch-transfer': 'Vehicle & Movement',
+  tracking: 'Vehicle & Movement',
+  'challan-payment': 'Vehicle & Movement',
+  pod: 'POD & Delivery',
+  'pod-list': 'POD & Delivery',
+  'stock-report': 'Masters & Stock',
+  'stock-entry': 'Masters & Stock',
+  customers: 'Masters & Stock',
+  suppliers: 'Masters & Stock',
+  'rate-master': 'Masters & Stock',
+  'city-master': 'Masters & Stock',
+  commission: 'Reports & Accounts',
+  'commission-report': 'Reports & Accounts',
+  'diesel-report': 'Reports & Accounts',
+  expense: 'Reports & Accounts',
+  income: 'Reports & Accounts',
+  'cash-book': 'Reports & Accounts',
+  ledger: 'Reports & Accounts',
+  gst: 'Reports & Accounts',
+  tds: 'Reports & Accounts',
+  'topay-report': 'Reports & Accounts',
+  outstanding: 'Reports & Accounts',
+  'profit-loss': 'Reports & Accounts',
+  notifications: 'Settings',
+  support: 'Settings'
+}
+
+const moduleCategoriesList = [
+  'All',
+  'Bilty & Consignment',
+  'Billing',
+  'Vehicle & Movement',
+  'POD & Delivery',
+  'Masters & Stock',
+  'Reports & Accounts',
+  'Settings'
+]
 
 export default function BranchPortal() {
   const { branchSlug } = useParams()
@@ -13,6 +67,8 @@ export default function BranchPortal() {
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeCategory, setActiveCategory] = useState('All')
+  const [moduleSearch, setModuleSearch] = useState('')
 
   function logout() {
     localStorage.removeItem('branch_session')
@@ -58,6 +114,14 @@ export default function BranchPortal() {
     return () => controller.abort()
   }, [branchSlug, navigate])
 
+  const visibleModules = useMemo(() => {
+    const query = moduleSearch.trim().toLowerCase()
+    return BRANCH_MODULES.filter((module) => {
+      const matchesCategory = activeCategory === 'All' || moduleCategories[module.path] === activeCategory
+      return matchesCategory && (!query || module.label.toLowerCase().includes(query))
+    })
+  }, [activeCategory, moduleSearch])
+
   if (loading) {
     return <main className="min-h-screen flex items-center justify-center bg-slate-100 text-slate-600">Loading branch workspace...</main>
   }
@@ -98,15 +162,43 @@ export default function BranchPortal() {
       </section>
 
       <section>
-        <div className="mb-4 flex items-end justify-between gap-3">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900">Branch Software</h2>
             <p className="mt-1 text-sm text-slate-500">Choose a module to open its workspace.</p>
           </div>
-          <span className="text-sm font-semibold text-blue-800">{BRANCH_MODULES.length} modules</span>
+          <div className="flex items-center gap-3">
+            <input
+              type="search"
+              value={moduleSearch}
+              onChange={(event) => setModuleSearch(event.target.value)}
+              placeholder="Search module..."
+              aria-label="Search modules"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 sm:w-56"
+            />
+            <span className="shrink-0 text-sm font-semibold text-blue-800">{visibleModules.length} modules</span>
+          </div>
+        </div>
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Module categories">
+          {moduleCategoriesList.map((category) => (
+            <button
+              key={category}
+              type="button"
+              role="tab"
+              aria-selected={activeCategory === category}
+              onClick={() => setActiveCategory(category)}
+              className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                activeCategory === category
+                  ? 'bg-blue-700 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-800'
+              }`}
+            >
+              {category}
+            </button>
+          ))}
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
-          {BRANCH_MODULES.map((module) => (
+          {visibleModules.map((module) => (
             <Link
               key={module.path || 'dashboard'}
               to={module.path ? `/branch/${branchSlug}/${module.path}` : `/branch/${branchSlug}`}
@@ -116,6 +208,11 @@ export default function BranchPortal() {
               <span className="mt-3 text-sm font-semibold text-slate-800 group-hover:text-blue-800">{module.label}</span>
             </Link>
           ))}
+          {!visibleModules.length && (
+            <p className="col-span-full rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+              No modules found.
+            </p>
+          )}
         </div>
       </section>
 
