@@ -221,6 +221,8 @@ async function ensureBranchPaymentsSchema() {
 }
 
 app.use('/api/branch-login', createBranchAuthRouter(pool));
+app.use('/api/branch/login', createBranchAuthRouter(pool));
+app.use('/api/branches/login', createBranchAuthRouter(pool));
 app.use('/api/branch-payments', branchPaymentsRouter(pool));
 
 // ==========================================
@@ -1228,6 +1230,17 @@ app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
 // ==========================================
 // BRANCH MANAGEMENT
 // ==========================================
+function noCacheHeaders(req, res, next) {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+    'Surrogate-Control': 'no-store'
+  });
+  next();
+}
+
+app.use('/api/branches', noCacheHeaders);
 app.get('/api/branches', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view branches.' });
@@ -1251,14 +1264,18 @@ app.get('/api/branches', authMiddleware, async (req, res) => {
   } catch (err) { console.error('GET /api/branches error:', err.message); res.status(503).json({ error: 'Branches are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
-app.get('/api/admin/branches/credentials', authMiddleware, async (req, res) => {
+app.get('/api/admin/branches/credentials', noCacheHeaders, authMiddleware, async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view branch credentials.' });
   try {
     const result = await pool.query(
       `SELECT id AS "_id", branch_name AS "branchName", branch_code AS "branchCode",
+              url_slug AS "branchSlug",
               login_credentials->>'username' AS "branchUsername",
               COALESCE(branch_visible_password, '') AS "visiblePassword",
-              city, incharge_name AS incharge
+              city, COALESCE(is_active, TRUE) AS "isActive",
+              COALESCE(branch_login_enabled, TRUE) AS "branchLoginEnabled",
+              incharge_name AS incharge,
+              '/branch-login/' || COALESCE(NULLIF(url_slug, ''), '') AS "loginUrl"
        FROM branches
        ORDER BY branch_name`
     );
@@ -1344,6 +1361,11 @@ app.post('/api/branches', authMiddleware, async (req, res) => {
     )) {
       return res.status(400).json({ error: 'Set a username and a password between 12 and 72 bytes, or disable branch login.' });
     }
+    const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+    const normalizedPassword = typeof password === 'string' ? password.trim() : '';
+    if (loginEnabled && normalizedPassword.length < 12) {
+      return res.status(400).json({ error: 'Password must be at least 12 characters after trimming.' });
+    }
     const branchCode = typeof requestedBranchCode === 'string' && requestedBranchCode.trim()
       ? requestedBranchCode.trim().toUpperCase()
       : slug.toUpperCase().replace(/-/g, '').slice(0, 6);
@@ -1354,15 +1376,15 @@ app.post('/api/branches', authMiddleware, async (req, res) => {
     if (duplicate.rows.length) return res.status(409).json({ error: 'A branch with this name or code already exists.' });
     const credentials = loginEnabled
       ? JSON.stringify({
-        username: username.trim(),
-        password: await bcrypt.hash(password, 12)
+        username: normalizedUsername,
+        password: await bcrypt.hash(normalizedPassword, 12)
       })
       : null;
     const result = await pool.query(
       `INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, url_slug, is_active, branch_login_enabled, login_credentials, branch_visible_password, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, $10::jsonb, $11, 'active')
        RETURNING id, branch_code, branch_name, city, state, address, phone, email, url_slug, is_active, branch_login_enabled, login_credentials->>'username' AS branch_login_username, status`,
-      [branchCode, branchName, city || '', state || '', address || '', phone || '', email || '', slug, loginEnabled, credentials, loginEnabled ? password : '']
+      [branchCode, branchName, city || '', state || '', address || '', phone || '', email || '', slug, loginEnabled, credentials, loginEnabled ? normalizedPassword : '']
     );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1372,10 +1394,18 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can update branches.' });
     const id = req.params.id; const data = { ...req.body }; delete data.id; delete data.created_at;
-    const requestedUsername = data.username;
-    const requestedPassword = data.password;
+    const requestedUsername = data.username ?? data.branchUsername;
+    const requestedPassword = data.password ?? data.newPassword;
+    if (data.branchSlug !== undefined && data.url_slug === undefined) data.url_slug = data.branchSlug;
+    if (data.branchLoginEnabled !== undefined && data.branch_login_enabled === undefined) data.branch_login_enabled = data.branchLoginEnabled;
+    if (data.isActive !== undefined && data.is_active === undefined) data.is_active = data.isActive;
     delete data.username;
     delete data.password;
+    delete data.branchUsername;
+    delete data.newPassword;
+    delete data.branchSlug;
+    delete data.branchLoginEnabled;
+    delete data.isActive;
     if ('login_credentials' in data || 'incharge_username' in data || 'incharge_password' in data || 'branch_visible_password' in data) {
       return res.status(400).json({ error: 'Use the branch login setup endpoint to change login credentials.' });
     }
@@ -1392,6 +1422,11 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
       typeof requestedUsername !== 'string' || !requestedUsername.trim() || requestedUsername.trim().length > 100
     )) {
       return res.status(400).json({ error: 'Username must be between 1 and 100 characters.' });
+    }
+    const normalizedUsername = typeof requestedUsername === 'string' ? requestedUsername.trim().toLowerCase() : undefined;
+    const normalizedPassword = typeof requestedPassword === 'string' ? requestedPassword.trim() : undefined;
+    if (requestedPassword !== undefined && normalizedPassword.length < 12) {
+      return res.status(400).json({ error: 'Password must be at least 12 characters.' });
     }
     if (requestedUsername !== undefined && requestedPassword === undefined) {
       return res.status(400).json({ error: 'Set a new password when changing the branch username.' });
@@ -1410,20 +1445,30 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
     if (requestedPassword !== undefined) {
       const current = await pool.query(`SELECT login_credentials->>'username' AS username FROM branches WHERE id = $1`, [id]);
       if (!current.rows[0]) return res.status(404).json({ error: 'Branch not found.' });
-      const username = requestedUsername === undefined ? current.rows[0].username : requestedUsername.trim();
+      const username = normalizedUsername === undefined ? current.rows[0].username : normalizedUsername;
       if (!username) return res.status(400).json({ error: 'Set a branch username before setting a password.' });
       data.login_credentials = JSON.stringify({
         username,
-        password: await bcrypt.hash(requestedPassword, 12)
+        password: await bcrypt.hash(normalizedPassword, 12)
       });
-      data.branch_visible_password = requestedPassword;
+      data.branch_visible_password = normalizedPassword;
+      data.branch_login_enabled = true;
+      data.is_active = true;
     }
     const keys = Object.keys(data); const values = Object.values(data);
     if (!keys.length) return res.status(400).json({ error: 'No branch changes were provided.' });
     const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', '); values.push(id);
     const result = await pool.query(`UPDATE branches SET ${setClause} WHERE id = $${values.length} RETURNING id, branch_code, branch_name, city, state, address, phone, email, incharge_name, url_slug, branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active`, values);
     if (!result.rows[0]) return res.status(404).json({ error: 'Branch not found.' });
-    res.json(result.rows[0]);
+    res.json({
+      ...result.rows[0],
+      ...(requestedPassword !== undefined ? {
+        branch_login_username: normalizedUsername || result.rows[0].branch_login_username,
+        visiblePassword: normalizedPassword,
+        branch_login_enabled: true,
+        is_active: true
+      } : {})
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1454,31 +1499,44 @@ async function setBranchLogin(req, res) {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can set branch login credentials.' });
     const branchId = Number(req.params.id);
-    const { username, password, url_slug: requestedSlug, branch_login_enabled: loginEnabled = true } = req.body || {};
+    const {
+      username: requestedUsername,
+      branchUsername,
+      password: rawPassword,
+      newPassword,
+      url_slug: requestedSlug,
+      branchSlug
+    } = req.body || {};
+    const username = requestedUsername ?? branchUsername;
+    const password = rawPassword ?? newPassword;
+    const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+    const normalizedPassword = typeof password === 'string' ? password.trim() : '';
     if (!Number.isSafeInteger(branchId) || branchId < 1) return res.status(400).json({ error: 'Invalid branch id.' });
-    if (typeof username !== 'string' || !username.trim() || username.trim().length > 100 || typeof password !== 'string' || password.length < 12 || Buffer.byteLength(password, 'utf8') > 72) {
+    if (!normalizedUsername || normalizedUsername.length > 100 || !normalizedPassword || normalizedPassword.length < 12 || Buffer.byteLength(normalizedPassword, 'utf8') > 72) {
       return res.status(400).json({ error: 'Enter a username and a password between 12 and 72 bytes.' });
     }
-    if (typeof loginEnabled !== 'boolean') return res.status(400).json({ error: 'Branch login enabled must be true or false.' });
     const branchResult = await pool.query('SELECT id, branch_code, branch_name, city, state, url_slug FROM branches WHERE id = $1', [branchId]);
     const branch = branchResult.rows[0];
     if (!branch) return res.status(404).json({ error: 'Branch not found.' });
-    const slug = typeof requestedSlug === 'string' && requestedSlug.trim()
-      ? requestedSlug.trim().toLowerCase()
+    const requestedSlugValue = requestedSlug ?? branchSlug;
+    const slug = typeof requestedSlugValue === 'string' && requestedSlugValue.trim()
+      ? requestedSlugValue.trim().toLowerCase()
       : branch.url_slug || generateSlug(branch.branch_name || branch.city || branch.branch_code);
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return res.status(400).json({ error: 'Invalid branch URL slug.' });
     if (!slug) return res.status(400).json({ error: 'Set a branch city or code before configuring login.' });
     const duplicate = await pool.query('SELECT id FROM branches WHERE url_slug = $1 AND id <> $2', [slug, branchId]);
     if (duplicate.rows.length) return res.status(409).json({ error: 'This branch URL is already assigned to another branch.' });
-    const passwordHash = await bcrypt.hash(password, 10);
-    const credentials = JSON.stringify({ username: username.trim(), password: passwordHash });
-    const updatedResult = await pool.query(`UPDATE branches SET url_slug = $1, branch_login_enabled = $2, login_credentials = $3::jsonb, branch_visible_password = $4 WHERE id = $5 RETURNING id, branch_code, branch_name, city, state, url_slug, branch_login_enabled`, [slug, loginEnabled, credentials, password, branchId]);
+    const passwordHash = await bcrypt.hash(normalizedPassword, 12);
+    const credentials = JSON.stringify({ username: normalizedUsername, password: passwordHash });
+    const updatedResult = await pool.query(`UPDATE branches SET url_slug = $1, branch_login_enabled = TRUE, is_active = TRUE, login_credentials = $2::jsonb, branch_visible_password = $3 WHERE id = $4 RETURNING id, branch_code, branch_name, city, state, url_slug, branch_login_enabled, is_active`, [slug, credentials, normalizedPassword, branchId]);
     const updatedBranch = updatedResult.rows[0];
     await logAudit('SETUP', 'branch_login', branchId, `Configured branch login for ${branch.branch_name}`, req.user.username);
     return res.json({
       success: true,
       branch: updatedBranch,
-      credentials: { username: username.trim(), password },
+      username: normalizedUsername,
+      password: normalizedPassword,
+      credentials: { username: normalizedUsername, password: normalizedPassword },
       portal_url: `/#/branch-login/${slug}`
     });
   } catch (err) {
@@ -1512,13 +1570,18 @@ app.post('/api/branches/create', authMiddleware, async (req, res) => {
     )) {
       return res.status(400).json({ error: 'Set a username and a password between 12 and 72 bytes, or disable branch login.' });
     }
+    const normalizedUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+    const normalizedPassword = typeof password === 'string' ? password.trim() : '';
+    if (loginEnabled && normalizedPassword.length < 12) {
+      return res.status(400).json({ error: 'Password must be at least 12 characters after trimming.' });
+    }
     const branch_code = requestedBranchCode ? requestedBranchCode.trim().toUpperCase() : slug.toUpperCase().slice(0, 6);
     const existing = await pool.query('SELECT id FROM branches WHERE url_slug = $1 OR branch_code = $2', [slug, branch_code]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'A branch with this city URL already exists. Use a unique city or code.' });
     const loginCredentials = loginEnabled
-      ? JSON.stringify({ username: username.trim(), password: await bcrypt.hash(password, 12) })
+      ? JSON.stringify({ username: normalizedUsername, password: await bcrypt.hash(normalizedPassword, 12) })
       : null;
-    const result = await pool.query(`INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, incharge_name, url_slug, is_active, branch_login_enabled, login_credentials, branch_visible_password, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,$10,$11::jsonb,$12,'active') RETURNING id, branch_code, branch_name, city, state, incharge_name, url_slug, branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active, status`, [branch_code, branch_name, city, state, address || '', phone || '', email || '', incharge_name, slug, loginEnabled, loginCredentials, loginEnabled ? password : '']);
+    const result = await pool.query(`INSERT INTO branches (branch_code, branch_name, city, state, address, phone, email, incharge_name, url_slug, is_active, branch_login_enabled, login_credentials, branch_visible_password, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,$10,$11::jsonb,$12,'active') RETURNING id, branch_code, branch_name, city, state, incharge_name, url_slug, branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active, status`, [branch_code, branch_name, city, state, address || '', phone || '', email || '', incharge_name, slug, loginEnabled, loginCredentials, loginEnabled ? normalizedPassword : '']);
     const branch = result.rows[0];
     const portal_url = `/#/branch-login/${slug}`;
     await logAudit('CREATE', 'branches', branch.id, `Created branch: ${branch_name}`, req.user.username);
@@ -1526,7 +1589,7 @@ app.post('/api/branches/create', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/branch/info/:slug', async (req, res) => {
+app.get('/api/branch/info/:slug', noCacheHeaders, async (req, res) => {
   try {
     const result = await pool.query(`SELECT id, branch_code, branch_name, city, state, incharge_name, phone, email, is_active, url_slug FROM branches WHERE url_slug = $1`, [req.params.slug]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Branch not found' });

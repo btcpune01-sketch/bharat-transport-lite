@@ -30,8 +30,8 @@ export default function BranchLoginPage() {
       setError('')
       try {
         const response = await axios.get(
-          `${API_URL}/branches/slug/${encodeURIComponent(slug || '')}`,
-          { signal: controller.signal }
+          `${API_URL}/branches/slug/${encodeURIComponent((slug || '').trim().toLowerCase())}`,
+          { signal: controller.signal, headers: { 'Cache-Control': 'no-cache' } }
         )
         setBranch(response.data.branch)
       } catch (err) {
@@ -58,11 +58,25 @@ export default function BranchLoginPage() {
     setSubmitting(true)
 
     try {
-      const response = await axios.post(`${API_URL}/branch-login/verify`, {
-        branchSlug: slug,
-        username,
-        password
-      })
+      const normalizedSlug = (slug || '').trim().toLowerCase()
+      const normalizedUsername = username.trim().toLowerCase()
+      const normalizedPassword = password.trim()
+      localStorage.removeItem('branch_token')
+      localStorage.removeItem('branch_session')
+      try {
+        const previousUser = JSON.parse(localStorage.getItem('user') || 'null')
+        if (previousUser?.role === 'branch') {
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+        }
+      } catch (storageError) {
+        console.error('Unable to read the saved user session before branch login:', storageError)
+      }
+      const response = await axios.post(
+        `${API_URL}/branch-login/verify`,
+        { branchSlug: normalizedSlug, username: normalizedUsername, password: normalizedPassword },
+        { headers: { 'Cache-Control': 'no-cache' } }
+      )
 
       if (!response.data?.success || !response.data.token || !response.data.branch) {
         setError('Unable to sign in. Check your credentials and try again.')
@@ -77,12 +91,15 @@ export default function BranchLoginPage() {
       localStorage.setItem('user', JSON.stringify({
         ...response.data.branch,
         branch_id: response.data.branch.id,
-        username,
+        username: normalizedUsername,
         role: 'branch'
       }))
-      navigate(`/branch/${slug}`, { replace: true })
+      navigate(`/branch/${normalizedSlug}`, { replace: true })
     } catch (err) {
-      setError(err.response?.data?.error || 'Unable to sign in. Please try again.')
+      const loginError = err.response?.data?.error || 'Unable to sign in. Please try again.'
+      setError(loginError.toLowerCase().includes('disabled')
+        ? 'Login disabled. Contact your admin to enable this branch from Branch Management.'
+        : loginError)
     } finally {
       setSubmitting(false)
     }

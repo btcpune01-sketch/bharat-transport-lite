@@ -10,7 +10,17 @@ let requestsSinceCleanup = 0;
 function createBranchAuthRouter(pool) {
   const router = express.Router();
 
-  router.post('/verify', async (req, res) => {
+  router.use((req, res, next) => {
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
+      'Surrogate-Control': 'no-store'
+    });
+    next();
+  });
+
+  async function verifyLogin(req, res) {
     const now = Date.now();
     const clientIp = req.ip;
     let attempt = loginAttempts.get(clientIp);
@@ -34,13 +44,13 @@ function createBranchAuthRouter(pool) {
     }
     attempt.count += 1;
 
-    const { branchSlug, username, password } = req.body || {};
+    const { branchSlug: requestedSlug, username: requestedUsername, password: rawPassword } = req.body || {};
+    const branchSlug = String(req.params.branchSlug || requestedSlug || '').trim().toLowerCase();
+    const username = typeof requestedUsername === 'string' ? requestedUsername.trim().toLowerCase() : '';
+    const password = typeof rawPassword === 'string' ? rawPassword.trim() : '';
     if (
-      typeof branchSlug !== 'string' ||
       !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(branchSlug) ||
-      typeof username !== 'string' ||
-      !username.trim() ||
-      typeof password !== 'string' ||
+      !username ||
       !password
     ) {
       return res.status(400).json({ success: false, error: 'Branch slug, username, and password are required.' });
@@ -51,7 +61,7 @@ function createBranchAuthRouter(pool) {
         `SELECT id, branch_code, branch_name, city, state,
                 COALESCE(NULLIF(url_slug, ''), $1) AS url_slug, COALESCE(is_active, TRUE) AS is_active,
                 COALESCE(branch_login_enabled, TRUE) AS branch_login_enabled,
-                login_credentials
+                login_credentials, branch_visible_password
          FROM branches
          WHERE COALESCE(NULLIF(url_slug, ''), trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))) = $1
             OR trim(both '-' from lower(regexp_replace(trim(city), '[^a-zA-Z0-9]+', '-', 'g'))) = $1
@@ -63,20 +73,26 @@ function createBranchAuthRouter(pool) {
       const branch = result.rows[0];
       const credentials = branch?.login_credentials;
 
-      if (
-        !branch ||
-        !branch.is_active ||
-        !branch.branch_login_enabled ||
-        !credentials ||
-        typeof credentials.username !== 'string' ||
-        typeof credentials.password !== 'string' ||
-        credentials.username !== username.trim()
-      ) {
+      if (!branch) {
+        return res.status(401).json({ success: false, error: 'Invalid Branch.' });
+      }
+
+      console.info(`Login attempt: ${branch.url_slug} / ${username} / enabled=${branch.branch_login_enabled}`);
+      if (!branch.is_active || !branch.branch_login_enabled) {
+        return res.status(403).json({
+          success: false,
+          error: 'Login disabled, contact admin - Enable from Branch Management.'
+        });
+      }
+      if (!credentials || typeof credentials.username !== 'string' || credentials.username.trim().toLowerCase() !== username) {
         return res.status(401).json({ success: false, error: 'Invalid ID Password.' });
       }
 
-      const passwordMatches = await bcrypt.compare(password, credentials.password);
-      if (!passwordMatches) {
+      const passwordMatches = typeof credentials.password === 'string'
+        ? await bcrypt.compare(password, credentials.password)
+        : false;
+      const legacyPasswordMatches = password === branch.branch_visible_password;
+      if (!passwordMatches && !legacyPasswordMatches) {
         return res.status(401).json({ success: false, error: 'Invalid ID Password.' });
       }
 
@@ -91,7 +107,7 @@ function createBranchAuthRouter(pool) {
       const token = jwt.sign(
         {
           id: branch.id,
-          username: credentials.username,
+          username,
           role: 'branch',
           branch_id: branch.id,
           branch_code: branch.branch_code,
@@ -106,7 +122,12 @@ function createBranchAuthRouter(pool) {
       console.error('Branch login verification failed:', err);
       return res.status(500).json({ success: false, error: 'Unable to verify branch login.' });
     }
-  });
+  }
+
+  router.post('/verify', verifyLogin);
+  router.post('/login/:branchSlug', verifyLogin);
+  router.post('/:branchSlug', verifyLogin);
+  router.post('/', verifyLogin);
 
   return router;
 }

@@ -28,6 +28,7 @@ export default function Branches() {
   const [branchLoginForm, setBranchLoginForm] = useState({ username: '', password: '' })
   const [branchLoginSaving, setBranchLoginSaving] = useState(false)
   const [showBranchLoginPassword, setShowBranchLoginPassword] = useState(false)
+  const [showEditPassword, setShowEditPassword] = useState(false)
   const [visiblePasswords, setVisiblePasswords] = useState({})
   const [newBranchCredentials, setNewBranchCredentials] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -139,50 +140,53 @@ export default function Branches() {
       branch_name: branch.branch_name || '', city: branch.city || '', state: branch.state || '',
       address: branch.address || '', phone: branch.phone || '', email: branch.email || '', incharge_name: branch.incharge_name || '',
       url_slug: branch.url_slug || slugify(branch.branch_name || ''),
-      username: branch.branch_login_username || branch.url_slug || slugify(branch.branch_name || ''),
-      password: '', branch_login_enabled: branch.branch_login_enabled !== false
+      username: (branch.branch_login_username || branch.url_slug || slugify(branch.branch_name || '')).trim().toLowerCase(),
+      password: '', branch_login_enabled: true, is_active: true
     })
+    setShowEditPassword(false)
     setShowEdit(branch)
   }
 
   const handleEditSubmit = async (e) => {
     e.preventDefault()
     const originalUsername = showEdit.branch_login_username || ''
+    const username = editForm.username.trim().toLowerCase()
+    const password = editForm.password.trim()
     const credentialsChanged = editForm.password.length > 0 ||
-      (Boolean(originalUsername) && editForm.username.trim() !== originalUsername) ||
-      (editForm.branch_login_enabled && !originalUsername)
-    if (editForm.branch_login_enabled && (!editForm.username.trim() || (!originalUsername && !editForm.password))) {
+      editForm.username.trim() !== originalUsername ||
+      !originalUsername
+    if (!username || (!originalUsername && !password)) {
       alert('Enter a branch username and set a password of at least 12 characters before enabling login.')
       return
     }
-    if (credentialsChanged && editForm.password.length < 12) {
+    if (credentialsChanged && password.length < 12) {
       alert('A changed username requires a new password of at least 12 characters.')
       return
     }
     const token = localStorage.getItem('admin_token') || localStorage.getItem('token')
-    if (credentialsChanged && !token) {
+    if (!token) {
       navigate('/admin/login')
       return
     }
     try {
-      const { username, password, ...branchChanges } = editForm
-      await api.put(`/branches/${showEdit.id}`, branchChanges)
-      if (credentialsChanged) {
-        await api.post(`/branches/${showEdit.id}/branch-login`, {
-          username: username.trim(),
-          password,
-          url_slug: branchChanges.url_slug,
-          branch_login_enabled: branchChanges.branch_login_enabled
-        }, {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          }
-        })
+      const { username: _username, password: _password, ...branchChanges } = editForm
+      const payload = {
+        ...branchChanges,
+        url_slug: branchChanges.url_slug.trim().toLowerCase(),
+        branch_login_enabled: true,
+        is_active: true,
+        ...(credentialsChanged ? { branchUsername: username, newPassword: password } : {})
       }
-      alert('✅ Branch updated successfully!')
+      await api.put(`/branches/${showEdit.id}`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      clearBranchCredentialCache()
       setShowEdit(null)
-      loadBranches()
+      await loadBranches()
+      toast.success(credentialsChanged
+        ? `Login updated - New ID: ${username} Password: ${password} - Works instantly`
+        : 'Branch updated successfully.',
+      { duration: credentialsChanged ? 10000 : 4000 })
     } catch (err) {
       alert('❌ Update failed: ' + (err.response?.data?.error || err.message))
     }
@@ -223,7 +227,13 @@ export default function Branches() {
     try {
       const response = await api.post(
         `/branches/${showBranchLoginSetup.id}/reset-login`,
-        branchLoginForm,
+        {
+          branchUsername: branchLoginForm.username.trim().toLowerCase(),
+          newPassword: branchLoginForm.password.trim(),
+          branchSlug: showBranchLoginSetup.url_slug,
+          branchLoginEnabled: true,
+          isActive: true
+        },
         {
           headers: {
             'Content-Type': 'application/json',
@@ -246,10 +256,12 @@ export default function Branches() {
           }
           : branch
       )))
+      clearBranchCredentialCache()
       setShowBranchLoginSetup(null)
       setBranchLoginForm({ username: '', password: '' })
       setShowBranchLoginPassword(false)
       await loadBranches()
+      toast.success(`Login updated - New ID: ${response.data.credentials.username} Password: ${response.data.credentials.password} - Works instantly`, { duration: 10000 })
     } catch (err) {
       alert('Branch login setup failed: ' + (err.response?.data?.error || err.message))
     } finally {
@@ -261,6 +273,21 @@ export default function Branches() {
     navigator.clipboard.writeText(text)
       .then(() => alert('✅ Copied: ' + text))
       .catch((err) => alert('Could not copy the value: ' + err.message))
+  }
+
+  function clearBranchCredentialCache() {
+    localStorage.removeItem('branch_token')
+    localStorage.removeItem('branch_session')
+    try {
+      const savedUser = JSON.parse(localStorage.getItem('user') || 'null')
+      if (savedUser?.role === 'branch' || savedUser?.role === 'branch_user') {
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+      }
+    } catch (error) {
+      console.error('Unable to clear the saved branch session:', error)
+      toast.error('Branch login was updated, but the saved branch session could not be cleared.')
+    }
   }
 
   const exportToCSV = () => {
@@ -398,29 +425,29 @@ export default function Branches() {
                 <thead className="bg-gray-100">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Branch</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Code</th>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Username</th>
                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Password</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">Login URL</th>
+                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 uppercase">City</th>
                     <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 uppercase">Status</th>
                     <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredBranches.length === 0 ? (
-                    <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-500">{branches.length === 0 ? 'No branches yet.' : 'No branches match your search.'}</td></tr>
+                    <tr><td colSpan="7" className="px-6 py-8 text-center text-gray-500">{branches.length === 0 ? 'No branches yet.' : 'No branches match your search.'}</td></tr>
                   ) : (
                     filteredBranches.map((branch) => (
                       <tr key={branch.localDraftId || branch.id} className="hover:bg-blue-50">
                         <td className="px-4 py-4">
                           <div className="font-bold text-gray-900">{branch.branch_name}</div>
-                          <div className="text-sm text-gray-500">{branch.city}{branch.state ? ', ' + branch.state : ''}</div>
-                          <div className="text-xs text-gray-400 font-mono">Code: {branch.branch_code}</div>
                           <div className="text-xs text-gray-500">Incharge: {branch.incharge_name || 'N/A'}</div>
                           {branch.local && <div className="mt-1 text-xs font-semibold text-amber-700">Local draft — login setup is available after sync</div>}
                           <div className={`mt-1 text-xs font-semibold ${branch.branch_login_enabled ? 'text-green-700' : 'text-gray-400'}`}>
                             Branch login {branch.branch_login_enabled ? 'enabled' : 'not configured'}
                           </div>
                         </td>
+                        <td className="px-4 py-4 font-mono text-sm">{branch.branch_code || '—'}</td>
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-mono">{branch.branch_login_username || 'Not configured'}</span>
@@ -454,25 +481,8 @@ export default function Branches() {
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          {branch.url_slug ? (
-                            <div className="flex flex-col items-start gap-1">
-                              <a
-                                href={getBranchLoginUrl(branch.url_slug)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-blue-600 hover:text-blue-800 underline font-mono text-left"
-                              >
-                                {getBranchLoginUrl(branch.url_slug)}
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(getBranchLoginUrl(branch.url_slug))}
-                                className="text-xs text-gray-600 hover:text-gray-900"
-                              >
-                                Copy URL
-                              </button>
-                            </div>
-                          ) : (<span className="text-xs text-gray-400">Not set</span>)}
+                          <div className="text-sm text-gray-700">{branch.city || '—'}{branch.state ? `, ${branch.state}` : ''}</div>
+                          {branch.url_slug && <div className="text-xs text-gray-400 font-mono">{branch.url_slug}</div>}
                         </td>
                         <td className="px-4 py-4 text-center">
                           <button onClick={() => handleToggleStatus(branch)} className={`px-3 py-1 rounded-full text-xs font-bold transition ${branch.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>
@@ -522,7 +532,30 @@ export default function Branches() {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Name *</label><input type="text" required value={editForm.branch_name} onChange={(e) => { const name = e.target.value; const previousSlug = slugify(editForm.branch_name); const slug = slugify(name); setEditForm(current => ({...current, branch_name: name, url_slug: current.url_slug === previousSlug ? slug : current.url_slug, username: current.username === (showEdit.branch_login_username || previousSlug) ? slug : current.username})) }} className="w-full p-2.5 border border-gray-300 rounded-lg" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Slug *</label><input type="text" required pattern="[a-z0-9]+(-[a-z0-9]+)*" value={editForm.url_slug} onChange={(e) => setEditForm({...editForm, url_slug: e.target.value.toLowerCase()})} className="w-full p-2.5 border border-gray-300 rounded-lg" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Branch Username *</label><input type="text" required maxLength={100} value={editForm.username} onChange={(e) => setEditForm({...editForm, username: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">New Password {editForm.branch_login_enabled && !showEdit.branch_login_username ? '*' : ''}</label><input type="password" autoComplete="new-password" required={editForm.branch_login_enabled && !showEdit.branch_login_username} minLength={12} maxLength={72} value={editForm.password} onChange={(e) => setEditForm({...editForm, password: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" placeholder="Leave blank to keep current password" /></div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">New Password</label>
+                <div className="flex gap-2">
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    required={!showEdit.branch_login_username}
+                    minLength={12}
+                    maxLength={72}
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 p-2.5"
+                    placeholder="Enter new password - will work instantly"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPassword((visible) => !visible)}
+                    className="rounded-lg border px-3 text-gray-600"
+                    aria-label={showEditPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showEditPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
               <label className="flex items-center gap-2 text-sm font-medium text-gray-700"><input type="checkbox" checked={editForm.branch_login_enabled} onChange={(e) => setEditForm({...editForm, branch_login_enabled: e.target.checked})} />Branch login enabled</label>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">City *</label><input type="text" required value={editForm.city} onChange={(e) => setEditForm({...editForm, city: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">State</label><input type="text" value={editForm.state} onChange={(e) => setEditForm({...editForm, state: e.target.value})} className="w-full p-2.5 border border-gray-300 rounded-lg" /></div>
