@@ -71,6 +71,7 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/stationery-stock\/request$/,
   /^\/api\/stationery-stock\/branch$/,
   /^\/api\/stationery-stock\/branch-history$/,
+  /^\/api\/stationery-stock\/branch-self-update$/,
   /^\/api\/branches\/slug\/[^/]+$/,
   /^\/api\/consignments(?:\/next-number|\/\d+)?$/,
   /^\/api\/next-(?:lr|bill|challan|gatepass|memo)$/,
@@ -144,7 +145,10 @@ function createBranchAccessMiddleware(pool) {
         '/api/stationery-stock/branch',
         '/api/stationery-stock/branch-history'
       ].includes(req.path)) ||
-        (req.method === 'POST' && req.path === '/api/stationery-stock/request'))
+        (req.method === 'POST' && [
+          '/api/stationery-stock/request',
+          '/api/stationery-stock/branch-self-update'
+        ].includes(req.path)))
     ) {
       return res.status(403).json({ error: 'Branch staff can only view stock and submit stationery requests.' })
     }
@@ -157,7 +161,8 @@ function createBranchAccessMiddleware(pool) {
     }
     if (
       (req.query?.branch && req.query.branch !== branchSlug) ||
-      (req.body?.branch && req.body.branch !== branchSlug)
+      (req.body?.branch && req.body.branch !== branchSlug) ||
+      (req.body?.branchSlug && String(req.body.branchSlug).toLowerCase() !== branchSlug.toLowerCase())
     ) {
       return res.status(403).json({ error: 'You can only access data assigned to your branch.' })
     }

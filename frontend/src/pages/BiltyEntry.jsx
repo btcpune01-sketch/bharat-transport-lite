@@ -344,6 +344,7 @@ export default function BiltyEntry({ branchMode = false }) {
           return
         }
         toast.success('Bilty Saved - ' + payload.lr_no)
+        if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
       }
       navigate('/consignments')
     } catch (err) {

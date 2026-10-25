@@ -307,6 +307,12 @@ async function runMigrations() {
       total_assigned INTEGER NOT NULL DEFAULT 0 CHECK (total_assigned >= 0),
       used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
       remaining INTEGER NOT NULL DEFAULT 0 CHECK (remaining >= 0),
+      start_serial TEXT,
+      end_serial TEXT,
+      current_running_serial TEXT,
+      supplier TEXT,
+      cost NUMERIC(14,2),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (branch_id, book_type),
       CHECK (total_assigned = used + remaining)
@@ -323,6 +329,10 @@ async function runMigrations() {
       notes TEXT,
       source TEXT,
       master_remaining INTEGER,
+      start_serial TEXT,
+      end_serial TEXT,
+      current_running_serial TEXT,
+      bilty_no TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS stationery_requests (
@@ -367,6 +377,22 @@ async function runMigrations() {
   await addColumnIfNotExists('stationery_stock_batches', 'source', "TEXT NOT NULL DEFAULT 'direct'");
   await addColumnIfNotExists('stationery_stock_history', 'source', 'TEXT');
   await addColumnIfNotExists('stationery_stock_history', 'master_remaining', 'INTEGER');
+  await addColumnIfNotExists('stationery_stocks', 'start_serial', 'TEXT');
+  await addColumnIfNotExists('stationery_stocks', 'end_serial', 'TEXT');
+  await addColumnIfNotExists('stationery_stocks', 'current_running_serial', 'TEXT');
+  await addColumnIfNotExists('stationery_stocks', 'supplier', 'TEXT');
+  await addColumnIfNotExists('stationery_stocks', 'cost', 'NUMERIC(14,2)');
+  await addColumnIfNotExists('stationery_stocks', 'created_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()');
+  await addColumnIfNotExists('stationery_stock_history', 'start_serial', 'TEXT');
+  await addColumnIfNotExists('stationery_stock_history', 'end_serial', 'TEXT');
+  await addColumnIfNotExists('stationery_stock_history', 'current_running_serial', 'TEXT');
+  await addColumnIfNotExists('stationery_stock_history', 'bilty_no', 'TEXT');
+  await pool.query(`
+    ALTER TABLE stationery_stock_history
+      DROP CONSTRAINT IF EXISTS stationery_stock_history_action_check,
+      ADD CONSTRAINT stationery_stock_history_action_check
+        CHECK (action IN ('assigned', 'used', 'requested', 'added', 'updated', 'correction'))
+  `);
   await pool.query(`
     UPDATE stock_items SET
       item_type = CASE item_type
@@ -1749,6 +1775,12 @@ async function generateBiltyNo(db = pool) {
   return `BTC-${String(nextSerial).padStart(5, '0')}`;
 }
 
+function incrementStationerySerial(value) {
+  const match = String(value || '').match(/^(.*?)(\d+)$/);
+  if (!match) return value || null;
+  return `${match[1]}${(BigInt(match[2]) + 1n).toString().padStart(match[2].length, '0')}`;
+}
+
 app.get('/api/consignments/track', async (req, res) => {
   try {
     const lr_no = req.query.lr_no;
@@ -1907,32 +1939,46 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     const placeholders = finalKeys.map((_, i) => "$" + (i + 1)).join(", ");
     const result = await client.query("INSERT INTO consignments (" + finalKeys.join(", ") + ") VALUES (" + placeholders + ") RETURNING *", finalVals);
     await useStock(client, 'bilty_book', result.rows[0].lr_no, req.user.username, c.branch_id);
+    let stationeryWarning = null;
     if (c.branch_id) {
       const stationeryStock = await client.query(
-        `UPDATE stationery_stocks
-         SET used = used + 1, remaining = remaining - 1, updated_at = NOW()
-         WHERE branch_id = $1 AND book_type = 'bilty_book' AND remaining > 0
-         RETURNING remaining`,
+        `SELECT remaining, current_running_serial
+         FROM stationery_stocks
+         WHERE branch_id = $1 AND book_type = 'bilty_book'
+         FOR UPDATE`,
         [c.branch_id]
       );
-      if (!stationeryStock.rows.length) {
-        const branchResult = await client.query('SELECT branch_name FROM branches WHERE id = $1', [c.branch_id])
-        const branchName = branchResult.rows[0]?.branch_name || 'This branch'
-        const message = `${branchName} Bilty Book stock finished - Please request admin to add more from the Branch Stock tab.`
-        const stockError = new Error(message)
-        stockError.code = 'STATIONERY_STOCK_UNAVAILABLE'
-        throw stockError
+      const stockRow = stationeryStock.rows[0];
+      if (stockRow && Number(stockRow.remaining) > 0) {
+        const usedSerial = stockRow.current_running_serial || null;
+        const nextSerial = incrementStationerySerial(usedSerial);
+        const updatedStock = await client.query(
+          `UPDATE stationery_stocks
+           SET used = used + 1, remaining = remaining - 1,
+               current_running_serial = $2, updated_at = NOW()
+           WHERE branch_id = $1 AND book_type = 'bilty_book'
+           RETURNING remaining`,
+          [c.branch_id, nextSerial]
+        );
+        await client.query(
+          `INSERT INTO stationery_stock_history
+             (branch_id, book_type, action, quantity, remaining, reference, performed_by,
+              current_running_serial, bilty_no)
+           VALUES ($1, 'bilty_book', 'used', 1, $2, $3, $4, $5, $3)`,
+          [c.branch_id, updatedStock.rows[0].remaining, result.rows[0].lr_no, req.user.username, usedSerial]
+        );
+        if (Number(updatedStock.rows[0].remaining) === 0) {
+          const branchResult = await client.query('SELECT branch_name FROM branches WHERE id = $1', [c.branch_id]);
+          stationeryWarning = `${branchResult.rows[0]?.branch_name || 'This branch'} Bilty Book stock is low. Please add stock.`;
+        }
+      } else {
+        const branchResult = await client.query('SELECT branch_name FROM branches WHERE id = $1', [c.branch_id]);
+        stationeryWarning = `${branchResult.rows[0]?.branch_name || 'This branch'} Bilty Book stock is exhausted. Please add stock.`;
       }
-      await client.query(
-        `INSERT INTO stationery_stock_history
-           (branch_id, book_type, action, quantity, remaining, reference, performed_by)
-         VALUES ($1, 'bilty_book', 'used', 1, $2, $3, $4)`,
-        [c.branch_id, stationeryStock.rows[0].remaining, result.rows[0].lr_no, req.user.username]
-      )
     }
     await client.query('COMMIT');
     transactionStarted = false;
-    res.json(result.rows[0]);
+    res.json({ ...result.rows[0], ...(stationeryWarning ? { warning: stationeryWarning } : {}) });
   } catch (err) {
     // 🚨 DETAILED ERROR LOGGING FOR DEBUGGING
     console.error('--- CONSIGNMENTS POST ERROR START ---');

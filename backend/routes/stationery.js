@@ -40,6 +40,12 @@ function positiveQuantity(value) {
   return Number.isSafeInteger(quantity) && quantity > 0 ? quantity : null
 }
 
+function incrementSerial(value) {
+  const match = String(value || '').match(/^(.*?)(\d+)$/)
+  if (!match) return value || null
+  return `${match[1]}${(BigInt(match[2]) + 1n).toString().padStart(match[2].length, '0')}`
+}
+
 function isAdmin(req, res) {
   if (req.user?.role === 'admin') return true
   res.status(403).json({ error: 'Only admin can manage company stationery stock.' })
@@ -162,7 +168,8 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
           `SELECT history.id, history.branch_id, branches.branch_name, branches.url_slug,
                   history.book_type, history.action, history.quantity, history.remaining,
                   history.reference, history.performed_by, history.notes, history.source,
-                  history.master_remaining, history.created_at
+                  history.master_remaining, history.start_serial, history.end_serial,
+                  history.current_running_serial, history.bilty_no, history.created_at
            FROM stationery_stock_history AS history
            JOIN branches ON branches.id = history.branch_id
            ORDER BY history.created_at DESC, history.id DESC
@@ -170,7 +177,8 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         )
       ])
       const branchStockResult = await pool.query(
-        `SELECT branch_id, book_type, total_assigned, used, remaining
+        `SELECT branch_id, book_type, total_assigned, used, remaining,
+                start_serial, end_serial, current_running_serial, supplier, cost, created_at, updated_at
          FROM stationery_stocks ORDER BY branch_id, book_type`
       )
       const masterByType = new Map(masterResult.rows.map((item) => [item.book_type, item]))
@@ -236,7 +244,9 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         `SELECT books.book_type,
                 COALESCE(stocks.total_assigned, 0)::INTEGER AS total_assigned,
                 COALESCE(stocks.used, 0)::INTEGER AS used,
-                COALESCE(stocks.remaining, 0)::INTEGER AS remaining
+                COALESCE(stocks.remaining, 0)::INTEGER AS remaining,
+                stocks.start_serial, stocks.end_serial, stocks.current_running_serial,
+                stocks.supplier, stocks.cost, stocks.created_at, stocks.updated_at
          FROM unnest($2::TEXT[]) AS books(book_type)
          LEFT JOIN stationery_stocks AS stocks
            ON stocks.branch_id = $1 AND stocks.book_type = books.book_type
@@ -292,7 +302,8 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         `SELECT history.id, history.branch_id, branches.branch_name, branches.url_slug,
                 history.book_type, history.action, history.quantity, history.remaining,
                 history.reference, history.performed_by, history.notes, history.source,
-                history.master_remaining, history.created_at
+                history.master_remaining, history.start_serial, history.end_serial,
+                history.current_running_serial, history.bilty_no, history.created_at
          FROM stationery_stock_history AS history
          JOIN branches ON branches.id = history.branch_id
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -314,7 +325,9 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
           `SELECT books.book_type,
                   COALESCE(stocks.total_assigned, 0)::INTEGER AS total_assigned,
                   COALESCE(stocks.used, 0)::INTEGER AS used,
-                  COALESCE(stocks.remaining, 0)::INTEGER AS remaining
+                  COALESCE(stocks.remaining, 0)::INTEGER AS remaining,
+                  stocks.start_serial, stocks.end_serial, stocks.current_running_serial,
+                  stocks.supplier, stocks.cost, stocks.created_at, stocks.updated_at
            FROM unnest($2::TEXT[]) AS books(book_type)
            LEFT JOIN stationery_stocks AS stocks
              ON stocks.book_type = books.book_type AND stocks.branch_id = $1
@@ -322,7 +335,8 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
           [req.user.branch_id, BOOK_TYPES.map((book) => book.key)]
         )
         const historyResult = await pool.query(
-          `SELECT book_type, action, quantity, remaining, reference, performed_by, notes, created_at
+          `SELECT book_type, action, quantity, remaining, reference, performed_by, notes,
+                  start_serial, end_serial, current_running_serial, bilty_no, created_at
            FROM stationery_stock_history
            WHERE branch_id = $1
            ORDER BY created_at DESC, id DESC
@@ -357,7 +371,9 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
                     books.book_type,
                     COALESCE(stocks.total_assigned, 0)::INTEGER AS total_assigned,
                     COALESCE(stocks.used, 0)::INTEGER AS used,
-                    COALESCE(stocks.remaining, 0)::INTEGER AS remaining
+                    COALESCE(stocks.remaining, 0)::INTEGER AS remaining,
+                    stocks.start_serial, stocks.end_serial, stocks.current_running_serial,
+                    stocks.supplier, stocks.cost, stocks.created_at, stocks.updated_at
              FROM branches
              CROSS JOIN unnest(ARRAY['bilty_book','bill_book','mr_book','challan_book']::TEXT[]) AS books(book_type)
              LEFT JOIN stationery_stocks AS stocks
@@ -376,7 +392,9 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         `SELECT books.book_type,
                 COALESCE(stocks.total_assigned, 0)::INTEGER AS total_assigned,
                 COALESCE(stocks.used, 0)::INTEGER AS used,
-                COALESCE(stocks.remaining, 0)::INTEGER AS remaining
+                COALESCE(stocks.remaining, 0)::INTEGER AS remaining,
+                stocks.start_serial, stocks.end_serial, stocks.current_running_serial,
+                stocks.supplier, stocks.cost, stocks.created_at, stocks.updated_at
          FROM unnest($2::TEXT[]) AS books(book_type)
          LEFT JOIN stationery_stocks AS stocks
            ON stocks.branch_id = $1 AND stocks.book_type = books.book_type
@@ -384,7 +402,8 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         [branch.id, BOOK_TYPES.map((book) => book.key)]
       )
       const historyResult = await pool.query(
-        `SELECT book_type, action, quantity, remaining, reference, performed_by, notes, created_at
+        `SELECT book_type, action, quantity, remaining, reference, performed_by, notes,
+                start_serial, end_serial, current_running_serial, bilty_no, created_at
          FROM stationery_stock_history
          WHERE branch_id = $1
          ORDER BY created_at DESC, id DESC
@@ -403,6 +422,145 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
     } catch (error) {
       console.error('Stationery stock lookup failed:', error.message)
       return res.status(500).json({ error: 'Unable to load stationery stock.' })
+    }
+  })
+
+  app.post('/api/stationery-stock/branch-self-update', authMiddleware, async (req, res) => {
+    if (!pool) return res.status(503).json({ error: 'Branch stationery stock cannot be changed while the database is offline.' })
+    const isBranchUser = ['branch', 'branch_user'].includes(req.user?.role)
+    if (!isBranchUser && !isAdmin(req, res)) return
+
+    const branchSlug = String(req.body?.branchSlug || '').trim()
+    const bookType = normalizeBookType(req.body?.bookType)
+    const action = String(req.body?.action || 'add').toLowerCase()
+    const rawQuantity = Number(req.body?.quantity)
+    const quantity = action === 'correction'
+      ? (Number.isSafeInteger(rawQuantity) && rawQuantity !== 0 ? rawQuantity : null)
+      : positiveQuantity(rawQuantity)
+    const startSerial = String(req.body?.startSerial || '').trim()
+    const endSerial = String(req.body?.endSerial || '').trim()
+    const currentRunningSerial = String(req.body?.currentRunningSerial || '').trim()
+    const supplier = String(req.body?.supplier || '').trim()
+    const remark = String(req.body?.remark || '').trim()
+    const cost = req.body?.cost === '' || req.body?.cost == null ? null : Number(req.body.cost)
+    const stockDate = String(req.body?.date || '').trim()
+    const parsedStockDate = stockDate ? new Date(`${stockDate}T00:00:00.000Z`) : null
+
+    if (!branchSlug || !bookType || !quantity || !['add', 'update', 'correction'].includes(action)) {
+      return res.status(400).json({ error: 'A valid branch, book type, action, and quantity are required.' })
+    }
+    if (!BOOK_TYPE_KEYS.has(bookType)) {
+      return res.status(400).json({ error: 'Choose a supported stationery book type.' })
+    }
+    if (isBranchUser && branchSlug.toLowerCase() !== String(req.user.branch_slug || '').toLowerCase()) {
+      return res.status(403).json({ error: 'You can only update stationery stock for your own branch.' })
+    }
+    if (cost !== null && (!Number.isFinite(cost) || cost < 0)) {
+      return res.status(400).json({ error: 'Cost must be a non-negative number.' })
+    }
+    if ((startSerial && !endSerial) || (!startSerial && endSerial)) {
+      return res.status(400).json({ error: 'Provide both starting and ending serial numbers.' })
+    }
+    if (startSerial && action !== 'correction') {
+      const startMatch = startSerial.match(/^(.*?)(\d+)$/)
+      const endMatch = endSerial.match(/^(.*?)(\d+)$/)
+      if (!startMatch || !endMatch || startMatch[1] !== endMatch[1] ||
+          BigInt(endMatch[2]) - BigInt(startMatch[2]) + 1n !== BigInt(quantity)) {
+        return res.status(400).json({ error: 'Ending serial must match the quantity and starting serial range.' })
+      }
+    }
+    if (stockDate && (
+      !/^\d{4}-\d{2}-\d{2}$/.test(stockDate) ||
+      Number.isNaN(parsedStockDate.getTime()) ||
+      parsedStockDate.toISOString().slice(0, 10) !== stockDate
+    )) {
+      return res.status(400).json({ error: 'Date must use YYYY-MM-DD format.' })
+    }
+
+    let client
+    try {
+      client = await pool.connect()
+      await client.query('BEGIN')
+      const branch = await findBranch(client, isBranchUser ? req.user.branch_id : branchSlug)
+      if (!branch || branch.url_slug.toLowerCase() !== branchSlug.toLowerCase()) {
+        await client.query('ROLLBACK')
+        return res.status(404).json({ error: 'Branch not found.' })
+      }
+      await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [branch.id, bookType])
+      const existingResult = await client.query(
+        `SELECT * FROM stationery_stocks
+         WHERE branch_id = $1 AND book_type = $2
+         FOR UPDATE`,
+        [branch.id, bookType]
+      )
+      const existing = existingResult.rows[0]
+      let totalAssigned
+      let remaining
+      if (action === 'update') {
+        const used = Number(existing?.used) || 0
+        if (quantity < used) {
+          await client.query('ROLLBACK')
+          return res.status(400).json({ error: `Total stock cannot be less than the ${used} units already used.` })
+        }
+        totalAssigned = quantity
+        remaining = quantity - used
+      } else {
+        totalAssigned = (Number(existing?.total_assigned) || 0) + quantity
+        remaining = (Number(existing?.remaining) || 0) + quantity
+        if (remaining < 0) {
+          await client.query('ROLLBACK')
+          return res.status(400).json({ error: 'Correction cannot reduce remaining stock below zero.' })
+        }
+      }
+      if (totalAssigned < (Number(existing?.used) || 0)) {
+        await client.query('ROLLBACK')
+        return res.status(400).json({ error: 'Correction cannot reduce total stock below units already used.' })
+      }
+
+      const updated = await client.query(
+        `INSERT INTO stationery_stocks
+           (branch_id, book_type, total_assigned, used, remaining, start_serial, end_serial,
+            current_running_serial, supplier, cost, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         ON CONFLICT (branch_id, book_type) DO UPDATE
+           SET total_assigned = EXCLUDED.total_assigned,
+               remaining = EXCLUDED.remaining,
+               start_serial = COALESCE(EXCLUDED.start_serial, stationery_stocks.start_serial),
+               end_serial = COALESCE(EXCLUDED.end_serial, stationery_stocks.end_serial),
+               current_running_serial = COALESCE(EXCLUDED.current_running_serial, stationery_stocks.current_running_serial),
+               supplier = COALESCE(EXCLUDED.supplier, stationery_stocks.supplier),
+               cost = COALESCE(EXCLUDED.cost, stationery_stocks.cost),
+               updated_at = NOW()
+         RETURNING *`,
+        [
+          branch.id, bookType, totalAssigned, Number(existing?.used) || 0, remaining,
+          startSerial || null, endSerial || null,
+          currentRunningSerial || startSerial || existing?.current_running_serial || null,
+          supplier || null, cost
+        ]
+      )
+      await client.query(
+        `INSERT INTO stationery_stock_history
+           (branch_id, book_type, action, quantity, remaining, performed_by, notes,
+            start_serial, end_serial, current_running_serial, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11::DATE::TIMESTAMPTZ, NOW()))`,
+        [
+          branch.id, bookType, action === 'add' ? 'added' : action === 'update' ? 'updated' : 'correction',
+          Math.abs(quantity), remaining, req.user.username, remark || null,
+          startSerial || null, endSerial || null, currentRunningSerial || startSerial || null,
+          stockDate || null
+        ]
+      )
+      await client.query('COMMIT')
+      return res.status(200).json({ data: { branch, stock: updated.rows[0] } })
+    } catch (error) {
+      if (client) {
+        try { await client.query('ROLLBACK') } catch (rollbackError) { console.error('Branch self-update rollback failed:', rollbackError.message) }
+      }
+      console.error('Branch stationery self-update failed:', error.message)
+      return res.status(500).json({ error: 'Unable to update branch stationery stock.' })
+    } finally {
+      client?.release()
     }
   })
 
