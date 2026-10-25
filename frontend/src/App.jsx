@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { useAuth } from './AuthContext'
 import { autoBackup } from './utils/autoBackup'
 
-const Dashboard = lazy(() => import('./pages/Dashboard'))
+const TMSDashboard = lazy(() => import('./pages/dashboard/TMSDashboard'))
 const Consignments = lazy(() => import('./pages/Consignments'))
 const BiltyEntry = lazy(() => import('./pages/BiltyEntry'))
 const BillEntry = lazy(() => import('./pages/BillEntry'))
@@ -42,9 +42,7 @@ const BranchPaymentsSummary = lazy(() => import('./pages/BranchPaymentsSummary')
 const Settings = lazy(() => import('./pages/Settings'))
 const StockManagement = lazy(() => import('./pages/StockManagement'))
 const VehicleExpiring = lazy(() => import('./pages/VehicleExpiring'))
-const BranchPortal = lazy(() => import('./pages/BranchPortal'))
 const BranchLoginPage = lazy(() => import('./pages/BranchLoginPage'))
-const BranchDashboard = lazy(() => import('./pages/BranchDashboard'))
 const Ledger = lazy(() => import('./pages/Ledger'))
 const Outstanding = lazy(() => import('./pages/Outstanding'))
 const Commissions = lazy(() => import('./pages/Commissions'))
@@ -54,7 +52,7 @@ const BranchFeatureNotice = lazy(() => import('./pages/BranchFeatureNotice'))
 
 // --- ALL 40 MODULES MAPPED ---
 const branchPages = {
-  'dashboard': null, // will be handled separately
+  'dashboard': TMSDashboard,
   'bilty-entry': BiltyEntry,
   'consignments': Consignments,
   'bilty-print': BiltyPrint,
@@ -94,16 +92,22 @@ const branchPages = {
   'city-master': Branches,
   'notification': Reports,
   'support': Reports,
+  'user-management': Users,
+  'backup': Backup,
+  'admin': Settings,
+  'settings': Settings,
+  'reports': Reports,
+  'stationery-stock': StockManagement,
+  'branch-profile': Branches,
 }
 
 function BranchModuleRoute() {
   const { module, branchCode, id } = useParams()
-  if (module === 'dashboard') {
-    return <BranchDashboard />
-  }
   const Page = module === 'money-receipt' && id === 'create' ? MRCreate : branchPages[module]
   if (Page) {
-    return <Page branchMode branchCode={branchCode} />
+    return module === 'dashboard'
+      ? <Page branch={branchCode} isMainAdmin={false} />
+      : <Page branchMode branchCode={branchCode} />
   }
   return <BranchFeatureNotice title={module ? module.replaceAll('-', ' ') : 'Module'} branchCode={branchCode} />
 }
@@ -172,17 +176,19 @@ function App() {
           <Route path="/branch-login" element={<Navigate to="/login" replace />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
           <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
-          <Route path="/branch/:branchSlug" element={<BranchPortal />} />
+          <Route path="/branch/:branchSlug" element={<TMSDashboard isMainAdmin={false} />} />
 
           {/* --- FIXED BRANCH LAYOUT ROUTES - Nested with Outlet --- */}
           <Route path="/branch/:branchCode" element={<BranchLayout />}>
-            <Route path="dashboard" element={<BranchDashboard />} />
+            <Route path="dashboard" element={<TMSDashboard isMainAdmin={false} />} />
             <Route path=":module" element={<BranchModuleRoute />} />
             <Route path=":module/:id" element={<BranchModuleRoute />} />
           </Route>
 
-          <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-          <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
+          <Route path="/dashboard" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
+          <Route path="/admin" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
+          <Route path="/admin/dashboard" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
           <Route path="/consignments" element={<PrivateRoute><Consignments /></PrivateRoute>} />
           <Route path="/consignments/new" element={<PrivateRoute><BiltyEntry /></PrivateRoute>} />
           <Route path="/eway-bills" element={<PrivateRoute><EwayBill /></PrivateRoute>} />

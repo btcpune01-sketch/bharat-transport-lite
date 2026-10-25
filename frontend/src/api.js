@@ -133,14 +133,40 @@ export const expenseAPI = { getAll: (params) => api.get('/expenses', { params })
 export const stockAPI = { getItems: () => api.get('/stock/items'), createItem: (data) => api.post('/stock/items', data), getCurrent: (params) => api.get('/stock/current', { params }), getTransactions: (params) => api.get('/stock/transactions', { params }), addIn: (data) => api.post('/stock/in', data), getAlerts: (params) => api.get('/stock/alerts', { params }), markAlertRead: (id) => api.patch(`/stock/alerts/${id}/read`) }
 
 export const dashboardAPI = {
-  getStats: (params) => api.get('/dashboard/stats', { params }),
-  recentBilties: (params) => api.get('/dashboard/recent', { params }),
-  getRecentActivities: (params) => api.get('/dashboard/recent', { params }),
+  getStats: (params) => api.get('/dashboard/stats', { params: normalizeDashboardParams(params) }),
+  recentBilties: (params) => api.get('/dashboard/recent', { params: normalizeDashboardParams(params) }),
+  getRecentActivities: (params) => api.get('/dashboard/recent', { params: normalizeDashboardParams(params) }),
   topParties: (params) => api.get('/dashboard/top-parties', { params }),
-  getDashboardStats: (params) => api.get('/dashboard/stats', { params }),
+  getDashboardStats: (branchSlug, branchId) => api.get('/dashboard/stats', {
+    params: normalizeDashboardParams({ branch: branchSlug, branch_id: branchId })
+  }),
+  getDashboardRecentActivities: (branchSlug, branchId) => api.get('/dashboard/recent', {
+    params: normalizeDashboardParams({ branch: branchSlug, branch_id: branchId })
+  }),
   getTopParties: (params) => api.get('/dashboard/top-parties', { params }),
   revenueChart: () => api.get('/dashboard/revenue-chart'),
   lrChart: () => api.get('/dashboard/lr-chart')
+}
+
+function normalizeDashboardParams(params = {}) {
+  const normalized = { ...params }
+  if (normalized.branch === 'global') delete normalized.branch
+  else if (normalized.branch !== undefined && normalized.branch !== null) {
+    normalized.branch = String(normalized.branch || 'ahmedabad').trim().toLowerCase()
+  }
+
+  if (normalized.branch_id !== undefined && normalized.branch_id !== null && normalized.branch_id !== 'all') {
+    const digits = String(normalized.branch_id).split(':')[0].replace(/[^0-9]/g, '')
+    const branchId = Number.parseInt(digits, 10)
+    normalized.branch_id = Number.isSafeInteger(branchId) && branchId > 0
+      ? branchId
+      : normalized.branch ? 1 : undefined
+  } else if (normalized.branch_id === 'all') {
+    delete normalized.branch_id
+  }
+
+  if (normalized.branch_id === undefined) delete normalized.branch_id
+  return normalized
 }
 
 export const reportAPI = { monthly: (params) => api.get('/reports/monthly', { params }), outstanding: () => api.get('/accounts/summary'), pendingLR: () => api.get('/reports/pending-lr'), partyWise: (params) => api.get('/reports/party-wise', { params }), branchWise: (params) => api.get('/reports/branch-wise', { params }), gst: (params) => api.get('/reports/gst', { params }), vehicleWise: (params) => api.get('/reports/vehicle-wise', { params }), driverWise: () => api.get('/reports/driver-wise') }
