@@ -293,6 +293,8 @@ async function runMigrations() {
       start_no TEXT NOT NULL,
       end_no TEXT NOT NULL,
       supplier_name TEXT,
+      bill_no TEXT,
+      source TEXT NOT NULL DEFAULT 'direct',
       cost NUMERIC(14,2),
       stock_date DATE NOT NULL DEFAULT CURRENT_DATE,
       created_by TEXT,
@@ -319,6 +321,8 @@ async function runMigrations() {
       reference TEXT,
       performed_by TEXT,
       notes TEXT,
+      source TEXT,
+      master_remaining INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS stationery_requests (
@@ -359,6 +363,10 @@ async function runMigrations() {
   await addColumnIfNotExists('stock_items', 'remaining_quantity', 'INTEGER');
   await addColumnIfNotExists('stock_items', 'low_stock_limit', 'INTEGER DEFAULT 10');
   await addColumnIfNotExists('stock_items', 'branch_id', 'INTEGER');
+  await addColumnIfNotExists('stationery_stock_batches', 'bill_no', 'TEXT');
+  await addColumnIfNotExists('stationery_stock_batches', 'source', "TEXT NOT NULL DEFAULT 'direct'");
+  await addColumnIfNotExists('stationery_stock_history', 'source', 'TEXT');
+  await addColumnIfNotExists('stationery_stock_history', 'master_remaining', 'INTEGER');
   await pool.query(`
     UPDATE stock_items SET
       item_type = CASE item_type
@@ -419,6 +427,24 @@ async function runMigrations() {
     ON CONFLICT (item_code) DO NOTHING
   `);
   await pool.query(`
+    INSERT INTO stock_items (item_code, item_name, item_type, name, type, unit, total_quantity, used_quantity, remaining_quantity, low_stock_limit)
+    SELECT seed.item_code, seed.item_name, seed.item_type, seed.item_name, seed.item_type,
+      seed.unit, seed.quantity, 0, seed.quantity, 10
+    FROM (VALUES
+      ('ST-A4-PAPER', 'A4 Paper Reams', 'a4_paper_reams', 'Reams', 100),
+      ('ST-PRINTER-INK', 'Printer Ink (Black)', 'printer_ink_black', 'Cartridges', 50),
+      ('ST-DOT-MATRIX', 'Dot Matrix Ribbon', 'dot_matrix_ribbon', 'Ribbons', 40),
+      ('ST-ENVELOPES', 'Envelopes (Large)', 'envelopes_large', 'Pieces', 500),
+      ('ST-STAPLER-PINS', 'Stapler Pins', 'stapler_pins', 'Boxes', 100),
+      ('ST-FILE-FOLDERS', 'File Folders', 'file_folders', 'Pieces', 200),
+      ('ST-CARBON-PAPER', 'Carbon Paper', 'carbon_paper', 'Pieces', 150),
+      ('ST-STAMP-PAD', 'Stamp Pad', 'stamp_pad', 'Pieces', 20),
+      ('ST-PEN-MARKER', 'Pen / Marker', 'pen_marker', 'Pieces', 80)
+    ) AS seed(item_code, item_name, item_type, unit, quantity)
+    WHERE NOT EXISTS (SELECT 1 FROM stock_items existing WHERE existing.item_type = seed.item_type)
+    ON CONFLICT (item_code) DO NOTHING
+  `);
+  await pool.query(`
     UPDATE stock_items SET
       used_quantity = CASE item_type
         WHEN 'bilty_book' THEN (SELECT COUNT(*) FROM consignments)
@@ -435,6 +461,21 @@ async function runMigrations() {
     SET remaining_quantity = GREATEST(COALESCE(total_quantity, 0) - COALESCE(used_quantity, 0), 0)
     WHERE item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book')
       AND is_active = TRUE
+  `);
+  await pool.query(`
+    INSERT INTO stationery_stock_batches (book_type, quantity, available_quantity, start_no, end_no, source)
+    SELECT item.item_type, GREATEST(COALESCE(item.total_quantity, 0), 0),
+      GREATEST(COALESCE(item.remaining_quantity, 0), 0), 'LEGACY-' || item.id, 'LEGACY-' || item.id, 'legacy'
+    FROM stock_items AS item
+    WHERE item.is_active = TRUE
+      AND item.item_type IN (
+        'bilty_book', 'bill_book', 'mr_book', 'challan_book',
+        'a4_paper_reams', 'printer_ink_black', 'dot_matrix_ribbon', 'envelopes_large',
+        'stapler_pins', 'file_folders', 'carbon_paper', 'stamp_pad', 'pen_marker'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM stationery_stock_batches AS batch WHERE batch.book_type = item.item_type
+      )
   `);
   
   console.log('🔧 Adding missing columns...');
@@ -1875,14 +1916,9 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
         [c.branch_id]
       );
       if (!stationeryStock.rows.length) {
-        const assigned = await client.query(
-          `SELECT remaining FROM stationery_stocks
-           WHERE branch_id = $1 AND book_type = 'bilty_book'`,
-          [c.branch_id]
-        );
-        const message = assigned.rows.length
-          ? 'This branch has no Bilty Books remaining.'
-          : 'No Bilty Book stock has been assigned to this branch.'
+        const branchResult = await client.query('SELECT branch_name FROM branches WHERE id = $1', [c.branch_id])
+        const branchName = branchResult.rows[0]?.branch_name || 'This branch'
+        const message = `${branchName} Bilty Book stock finished - Please request admin to add more from the Branch Stock tab.`
         const stockError = new Error(message)
         stockError.code = 'STATIONERY_STOCK_UNAVAILABLE'
         throw stockError
@@ -2677,10 +2713,26 @@ app.get('/api/stock', authMiddleware, async (req, res) => {
         CASE item_type WHEN 'bilty_book' THEN 'bilty' WHEN 'bill_book' THEN 'billing'
           WHEN 'mr_book' THEN 'mr' WHEN 'challan_book' THEN 'gadi_challan'
           WHEN 'lr_copy_book' THEN 'lr_copy' END AS document_type,
-        name, item_type AS type, total_quantity AS total_stock, used_quantity AS used_count,
-        GREATEST(total_quantity - used_quantity, 0) AS remaining_count,
+        name, item_type AS type,
+        COALESCE(batch_stock.total_stock, total_quantity) AS total_stock,
+        GREATEST(
+          COALESCE(batch_stock.total_stock, total_quantity) -
+          COALESCE(batch_stock.available, GREATEST(total_quantity - used_quantity, 0)) -
+          COALESCE(branch_stock.remaining, 0), 0
+        ) AS used_count,
+        COALESCE(batch_stock.available, GREATEST(total_quantity - used_quantity, 0)) AS remaining_count,
         low_stock_limit, branch_id
       FROM stock_items
+      LEFT JOIN LATERAL (
+        SELECT SUM(quantity)::INTEGER AS total_stock, SUM(available_quantity)::INTEGER AS available
+        FROM stationery_stock_batches AS batches
+        WHERE batches.book_type = stock_items.item_type
+      ) AS batch_stock ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(remaining)::INTEGER AS remaining
+        FROM stationery_stocks AS assigned
+        WHERE assigned.book_type = stock_items.item_type
+      ) AS branch_stock ON TRUE
       WHERE is_active = TRUE
         AND item_type IN ('bilty_book', 'bill_book', 'mr_book', 'challan_book', 'lr_copy_book')
         ${branchFilter}
@@ -2764,6 +2816,13 @@ app.post('/api/stock/add', authMiddleware, async (req, res) => {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Stock record not found' });
     }
+    const batchSerial = `STOCK-API-${Date.now()}`
+    await client.query(
+      `INSERT INTO stationery_stock_batches
+         (book_type, quantity, available_quantity, start_no, end_no, source, created_by)
+       VALUES ($1, $2, $2, $3, $4, 'direct', $5)`,
+      [stockType, quantity, `${batchSerial}-0001`, `${batchSerial}-${String(quantity).padStart(4, '0')}`, req.user.username]
+    );
     const stockItem = await client.query('SELECT id FROM stock_items WHERE item_type = $1 AND is_active = TRUE', [stockType]);
     await client.query(
       `INSERT INTO stock_history (stock_item_id, action, used_by, date, branch_id)

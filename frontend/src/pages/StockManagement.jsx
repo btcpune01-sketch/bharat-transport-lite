@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
 import api from '../api'
@@ -7,6 +7,33 @@ const getAuthConfig = () => {
   const token = localStorage.getItem('token')
   if (!token) throw new Error('Your session has expired. Please sign in again.')
   return { headers: { Authorization: `Bearer ${token}` } }
+}
+
+const branchStockTypes = [
+  { key: 'bilty_book', label: 'Bilty Book', unit: 'Books' },
+  { key: 'bill_book', label: 'Bill Book', unit: 'Books' },
+  { key: 'mr_book', label: 'Money Receipt Book', unit: 'Books' },
+  { key: 'challan_book', label: 'Gadi Challan Book', unit: 'Books' },
+  { key: 'a4_paper_reams', label: 'A4 Paper Reams', unit: 'Reams' },
+  { key: 'printer_ink_black', label: 'Printer Ink (Black)', unit: 'Cartridges' },
+  { key: 'dot_matrix_ribbon', label: 'Dot Matrix Ribbon', unit: 'Ribbons' },
+  { key: 'envelopes_large', label: 'Envelopes (Large)', unit: 'Pieces' },
+  { key: 'stapler_pins', label: 'Stapler Pins', unit: 'Boxes' },
+  { key: 'file_folders', label: 'File Folders', unit: 'Pieces' },
+  { key: 'carbon_paper', label: 'Carbon Paper', unit: 'Pieces' },
+  { key: 'stamp_pad', label: 'Stamp Pad', unit: 'Pieces' },
+  { key: 'pen_marker', label: 'Pen / Marker', unit: 'Pieces' }
+]
+
+const emptyBranchAddForm = {
+  bookType: branchStockTypes[0].key,
+  quantity: '',
+  source: 'master',
+  supplier: '',
+  billNo: '',
+  cost: '',
+  reason: '',
+  date: new Date().toISOString().slice(0, 10)
 }
 
 export default function StockManagement() {
@@ -29,6 +56,20 @@ export default function StockManagement() {
   const [filterCategory, setFilterCategory] = useState('all')
   const [documentStockError, setDocumentStockError] = useState('')
   const [documentStockLoading, setDocumentStockLoading] = useState(true)
+  const [branchOverview, setBranchOverview] = useState({ branches: [], masterStock: [], history: [] })
+  const [branchOverviewLoading, setBranchOverviewLoading] = useState(false)
+  const [branchOverviewError, setBranchOverviewError] = useState('')
+  const [branchSearch, setBranchSearch] = useState('')
+  const [branchHistory, setBranchHistory] = useState([])
+  const [branchRequests, setBranchRequests] = useState([])
+  const [branchHistoryFilters, setBranchHistoryFilters] = useState({ branch: '', bookType: '', from: '', to: '' })
+  const [branchHistoryLoading, setBranchHistoryLoading] = useState(false)
+  const [selectedBranch, setSelectedBranch] = useState(null)
+  const [showBranchAddModal, setShowBranchAddModal] = useState(false)
+  const [branchAddForm, setBranchAddForm] = useState(emptyBranchAddForm)
+  const [branchAddError, setBranchAddError] = useState('')
+  const [branchAddSaving, setBranchAddSaving] = useState(false)
+  const branchHistoryRef = useRef(null)
 
   const defaultStock = [
     { id: 'bilty', documentType: 'bilty', name: 'Bilty Book (BTC)', category: 'document', currentStock: 100, totalStock: 100, threshold: 10, unit: 'Pages', used: 0, running: 0, pending: 0 },
@@ -106,12 +147,40 @@ export default function StockManagement() {
       }
 
       try {
-        const [stockResult, historyResult] = await Promise.allSettled([
+        const [stockResult, historyResult, branchMasterResult] = await Promise.allSettled([
           api.get('/stock', getAuthConfig()),
-          api.get('/stock/history', getAuthConfig())
+          api.get('/stock/history', getAuthConfig()),
+          api.get('/stationery-stock/branch-overview', getAuthConfig())
         ])
         if (stockResult.status === 'rejected') throw stockResult.reason
         applyDocumentStock(stockResult.value.data?.data)
+        if (branchMasterResult.status === 'fulfilled') {
+          const overview = branchMasterResult.value.data?.data
+          if (Array.isArray(overview?.masterStock)) {
+            const masterByType = new Map(overview.masterStock.map((item) => [item.book_type, item]))
+            setStock((current) => current.map((item) => {
+              if (item.category !== 'stationery') return item
+              const type = branchStockTypes.find((book) => book.label === item.name)?.key
+              const master = masterByType.get(type)
+              if (!master) return item
+              return {
+                ...item,
+                totalStock: Number(master.total_stock) || 0,
+                used: Number(master.used) || 0,
+                currentStock: Number(master.available) || 0
+              }
+            }))
+            if (Array.isArray(overview.branches)) {
+              setBranchOverview({
+                branches: overview.branches,
+                masterStock: overview.masterStock,
+                history: Array.isArray(overview.history) ? overview.history : []
+              })
+            }
+          }
+        } else {
+          console.error('Unable to load company stationery master stock:', branchMasterResult.reason)
+        }
         if (historyResult.status === 'rejected') {
           console.error('Unable to load document stock history:', historyResult.reason)
         } else {
@@ -138,6 +207,55 @@ export default function StockManagement() {
 
     initializeStock()
   }, [])
+
+  useEffect(() => {
+    let active = true
+    setBranchOverviewLoading(true)
+    setBranchOverviewError('')
+    Promise.all([
+      api.get('/stationery-stock/branch-overview'),
+      api.get('/stationery-stock/requests')
+    ])
+      .then(([response, requestsResponse]) => {
+        const data = response.data?.data
+        if (!Array.isArray(data?.branches) || !Array.isArray(data?.masterStock)) {
+          throw new Error('The server returned an invalid branch stock overview.')
+        }
+        const requests = requestsResponse.data?.data
+        if (!Array.isArray(requests)) throw new Error('The server returned invalid stationery requests.')
+        if (active) {
+          setBranchOverview({
+            branches: data.branches,
+            masterStock: data.masterStock,
+            history: Array.isArray(data.history) ? data.history : []
+          })
+          setBranchRequests(requests)
+        }
+      })
+      .catch((error) => {
+        if (active) setBranchOverviewError(error.response?.data?.error || error.message || 'Unable to load branch stock.')
+      })
+      .finally(() => { if (active) setBranchOverviewLoading(false) })
+    return () => { active = false }
+  }, [activeTab])
+
+  useEffect(() => {
+    if (activeTab !== 'branch-stock') return undefined
+    let active = true
+    setBranchHistoryLoading(true)
+    const params = Object.fromEntries(Object.entries(branchHistoryFilters).filter(([, value]) => value))
+    api.get('/stationery-stock/branch-history', { params })
+      .then((response) => {
+        const data = response.data?.data
+        if (!Array.isArray(data)) throw new Error('The server returned invalid branch stock history.')
+        if (active) setBranchHistory(data)
+      })
+      .catch((error) => {
+        if (active) setBranchOverviewError(error.response?.data?.error || error.message || 'Unable to load branch stock history.')
+      })
+      .finally(() => { if (active) setBranchHistoryLoading(false) })
+    return () => { active = false }
+  }, [activeTab, branchHistoryFilters])
 
   const saveStock = (newStock) => {
     setStock(newStock)
@@ -173,28 +291,39 @@ export default function StockManagement() {
     e.preventDefault()
     const qty = parseInt(quantity)
     if (!qty || qty <= 0) { alert('⚠️ Valid quantity daalo!'); return }
-    if (selectedItem.documentType) {
-      try {
-        const response = await api.post('/stock/add', {
-          document_type: selectedItem.documentType,
-          quantity: qty
-        }, getAuthConfig())
-        const totalStock = Number(response.data?.data?.total_stock)
-        if (!Number.isSafeInteger(totalStock) || totalStock < 0) throw new Error('The server returned an invalid purchased stock total.')
+    const type = selectedItem.documentType
+      ? ({ bilty: 'bilty_book', billing: 'bill_book', mr: 'mr_book', gadi_challan: 'challan_book' }[selectedItem.documentType] || selectedItem.documentType)
+      : branchStockTypes.find((book) => book.label === selectedItem.name)?.key
+    if (!type) {
+      alert('This stock item is not available in the company stock catalog.')
+      return
+    }
+    const serial = `MASTER-${Date.now()}`
+    try {
+      const response = await api.post('/stationery-stock/add', {
+        type,
+        qty,
+        supplier: remarks,
+        startNo: selectedItem.documentType ? `${serial}-0001` : '',
+        endNo: selectedItem.documentType ? `${serial}-${String(qty).padStart(4, '0')}` : ''
+      }, getAuthConfig())
+      if (!response.data?.data) throw new Error('The server did not confirm the stock purchase.')
+      if (selectedItem.documentType) {
+        const totalStock = Number(selectedItem.totalStock || 0) + qty
         setStock(current => current.map(item => item.documentType === selectedItem.documentType
-          ? { ...item, totalStock, currentStock: Math.max(0, totalStock - item.used) }
+          ? { ...item, totalStock, currentStock: item.currentStock + qty }
           : item))
         setDocumentStockError('')
-      } catch (error) {
-        console.error('Unable to record document stock purchase:', error)
-        alert(error.response?.data?.error || error.message || 'Unable to record the purchase.')
-        return
+      } else {
+        const updatedStock = stock.map(item =>
+          item.id === selectedItem.id ? { ...item, currentStock: item.currentStock + qty, totalStock: (item.totalStock || item.currentStock) + qty } : item
+        )
+        saveStock(updatedStock)
       }
-    } else {
-      const updatedStock = stock.map(item =>
-        item.id === selectedItem.id ? { ...item, currentStock: item.currentStock + qty } : item
-      )
-      saveStock(updatedStock)
+    } catch (error) {
+      console.error('Unable to record stock purchase:', error)
+      alert(error.response?.data?.error || error.message || 'Unable to record the purchase.')
+      return
     }
     const entry = {
       id: Date.now(),
@@ -207,7 +336,7 @@ export default function StockManagement() {
       performedBy: user.username || 'Admin',
       balanceAfter: selectedItem.currentStock + qty
     }
-    saveHistory([entry, ...history])
+    setHistory(current => [entry, ...current])
     setShowAddModal(false)
     alert(`✅ ${qty} ${selectedItem.unit} ${selectedItem.name} add ho gaye!`)
   }
@@ -249,6 +378,156 @@ export default function StockManagement() {
   const lowStockItems = stock.filter(s => s.currentStock <= (s.threshold || 50))
   const documentItems = filteredStock.filter(s => s.category === 'document')
   const stationeryItems = filteredStock.filter(s => s.category === 'stationery')
+
+  const branchHasLowStock = (branch) => branch.stocks.some((item) =>
+    Number(item.remaining) < 5
+  )
+  const filteredBranches = branchOverview.branches.filter((branch) =>
+    `${branch.branch_name} ${branch.branch_code} ${branch.url_slug}`.toLowerCase().includes(branchSearch.toLowerCase())
+  )
+  const branchSummary = useMemo(() => {
+    const used = branchOverview.branches.reduce((sum, branch) =>
+      sum + branch.stocks.reduce((branchSum, item) => branchSum + Number(item.used || 0), 0), 0)
+    const assigned = branchOverview.branches.reduce((sum, branch) =>
+      sum + branch.stocks.reduce((branchSum, item) => branchSum + Number(item.total_assigned || 0), 0), 0)
+    return {
+      branches: branchOverview.branches.length,
+      assigned,
+      used,
+      low: branchOverview.branches.filter(branchHasLowStock).length
+    }
+  }, [branchOverview.branches])
+  const selectedMasterStock = branchOverview.masterStock.find((item) => item.book_type === branchAddForm.bookType)
+  const availableMasterStock = Number(selectedMasterStock?.available) || 0
+  const allocationQuantity = Number(branchAddForm.quantity) || 0
+  const masterAllocationInsufficient = branchAddForm.source === 'master' && allocationQuantity > availableMasterStock
+
+  const downloadBranchReport = (rows, filename) => {
+    const columns = ['Date', 'Branch', 'Book Type', 'Action', 'Quantity', 'Source', 'By', 'Branch Remaining', 'Master Remaining']
+    const escapeCsv = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
+    const csv = [
+      columns.map(escapeCsv).join(','),
+      ...rows.map((row) => [
+        row.created_at,
+        row.branch_name,
+        branchStockTypes.find((book) => book.key === row.book_type)?.label || row.book_type,
+        row.action,
+        row.quantity,
+        row.source,
+        row.performed_by,
+        row.remaining,
+        row.master_remaining
+      ].map(escapeCsv).join(','))
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadBranchInventory = (branches, filename) => {
+    const columns = ['Branch', 'Branch Code', 'Book Type', 'Total Assigned', 'Used', 'Remaining', 'Master Remaining', 'Unit']
+    const escapeCsv = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
+    const csv = [
+      columns.map(escapeCsv).join(','),
+      ...branches.flatMap((branch) => branch.stocks.map((item) => [
+        branch.branch_name,
+        branch.branch_code,
+        item.label,
+        item.total_assigned,
+        item.used,
+        item.remaining,
+        item.master_available,
+        item.unit
+      ].map(escapeCsv).join(','))
+      )
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const reloadBranchStock = async () => {
+    const [overviewResponse, historyResponse, requestsResponse] = await Promise.all([
+      api.get('/stationery-stock/branch-overview'),
+      api.get('/stationery-stock/branch-history', {
+        params: Object.fromEntries(Object.entries(branchHistoryFilters).filter(([, value]) => value))
+      }),
+      api.get('/stationery-stock/requests')
+    ])
+    const overview = overviewResponse.data?.data
+    const rows = historyResponse.data?.data
+    const requests = requestsResponse.data?.data
+    if (!Array.isArray(overview?.branches) || !Array.isArray(rows) || !Array.isArray(requests)) {
+      throw new Error('The server returned invalid branch stock data.')
+    }
+    setBranchOverview({
+      branches: overview.branches,
+      masterStock: Array.isArray(overview.masterStock) ? overview.masterStock : [],
+      history: Array.isArray(overview.history) ? overview.history : []
+    })
+    setBranchHistory(rows)
+    setBranchRequests(requests)
+  }
+
+  const submitBranchStock = async (event) => {
+    event.preventDefault()
+    if (!selectedBranch || !allocationQuantity) return
+    if (masterAllocationInsufficient) {
+      setBranchAddError(`Master stock only ${availableMasterStock} left, cannot allocate ${allocationQuantity}.`)
+      return
+    }
+    if (branchAddForm.source === 'direct' && !branchAddForm.supplier.trim()) {
+      setBranchAddError('Enter a supplier or press name for a direct purchase.')
+      return
+    }
+    setBranchAddSaving(true)
+    setBranchAddError('')
+    try {
+      await api.post('/stationery-stock/branch-add', {
+        branchSlug: selectedBranch.url_slug,
+        branchId: selectedBranch.branch_id,
+        bookType: branchAddForm.bookType,
+        quantity: allocationQuantity,
+        source: branchAddForm.source,
+        supplier: branchAddForm.supplier.trim(),
+        billNo: branchAddForm.billNo.trim(),
+        cost: branchAddForm.cost === '' ? null : Number(branchAddForm.cost),
+        reason: branchAddForm.reason.trim(),
+        date: branchAddForm.date
+      }, getAuthConfig())
+      setShowBranchAddModal(false)
+      setSelectedBranch(null)
+      setBranchAddForm(emptyBranchAddForm)
+      await reloadBranchStock()
+    } catch (error) {
+      setBranchAddError(error.response?.data?.error || error.message || 'Unable to add stock to this branch.')
+    } finally {
+      setBranchAddSaving(false)
+    }
+  }
+
+  const openBranchAdd = (branch) => {
+    setSelectedBranch(branch)
+    setBranchAddError('')
+    setBranchAddForm(emptyBranchAddForm)
+    setShowBranchAddModal(true)
+  }
+
+  const reviewBranchRequest = async (request, action) => {
+    setBranchOverviewError('')
+    try {
+      await api.patch(`/stationery-stock/requests/${request.id}`, { action }, getAuthConfig())
+      await reloadBranchStock()
+    } catch (error) {
+      setBranchOverviewError(error.response?.data?.error || error.message || `Unable to ${action} this request.`)
+    }
+  }
 
   const renderStockCard = (item) => {
     const status = getStockStatus(item.currentStock, item.threshold)
@@ -387,11 +666,17 @@ export default function StockManagement() {
             <button onClick={() => setActiveTab('document')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'document' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📄 Document Books ({documentItems.length})</button>
             <button onClick={() => setActiveTab('stationery')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'stationery' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📦 Stationery ({stationeryItems.length})</button>
             <button onClick={() => setActiveTab('history')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'history' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📜 History ({history.length})</button>
+            {user.role === 'admin' && (
+              <button onClick={() => setActiveTab('branch-stock')} className={`relative px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'branch-stock' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>
+                🏢 Branch Stock ({branchOverview.branches.length})
+                {branchOverview.branches.some(branchHasLowStock) && <span aria-label="Branch stock is low" className="absolute right-3 top-2 h-2 w-2 rounded-full bg-red-600" />}
+              </button>
+            )}
           </div>
         </div>
 
         {/* SEARCH BAR */}
-        {activeTab !== 'history' && (
+        {activeTab !== 'history' && activeTab !== 'branch-stock' && (
           <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="md:col-span-2">
@@ -479,6 +764,301 @@ export default function StockManagement() {
                 </table>
               </div>
             )}
+
+            {activeTab === 'branch-stock' && user.role === 'admin' && (
+              <div className="space-y-6">
+                {branchOverviewError && (
+                  <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+                    {branchOverviewError}
+                  </div>
+                )}
+                <section aria-label="Branch stock summary" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                  <article className="rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 p-5 text-white shadow-lg">
+                    <p className="text-xs font-medium uppercase text-blue-100">Total Branches</p>
+                    <p className="mt-2 text-3xl font-bold">{branchOverviewLoading ? '…' : branchSummary.branches}</p>
+                  </article>
+                  <article className="rounded-2xl bg-gradient-to-br from-green-500 to-green-700 p-5 text-white shadow-lg">
+                    <p className="text-xs font-medium uppercase text-green-100">Total Branch Stock</p>
+                    <p className="mt-2 text-3xl font-bold">{branchOverviewLoading ? '…' : branchSummary.assigned}</p>
+                    <p className="mt-1 text-xs text-green-100">Units assigned</p>
+                  </article>
+                  <article className="rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 p-5 text-white shadow-lg">
+                    <p className="text-xs font-medium uppercase text-orange-100">Low Branch Stock</p>
+                    <p className="mt-2 text-3xl font-bold">{branchOverviewLoading ? '…' : branchSummary.low}</p>
+                    <p className="mt-1 text-xs text-orange-100">Branches with fewer than 5 items</p>
+                  </article>
+                  <article className="rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 p-5 text-white shadow-lg">
+                    <p className="text-xs font-medium uppercase text-purple-100">Total Used by Branches</p>
+                    <p className="mt-2 text-3xl font-bold">{branchOverviewLoading ? '…' : branchSummary.used}</p>
+                  </article>
+                </section>
+
+                <section className="rounded-2xl bg-white p-5 shadow-lg">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-800">Branch Stock Requests</h2>
+                      <p className="mt-1 text-sm text-gray-500">Requests submitted by branch teams.</p>
+                    </div>
+                    {branchRequests.some((request) => request.status === 'pending') && (
+                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+                        {branchRequests.filter((request) => request.status === 'pending').length} pending
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-4 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                        <tr>
+                          {['Branch', 'Book Type', 'Qty', 'Urgency', 'Reason', 'Date', 'Action'].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {branchRequests.map((request) => (
+                          <tr key={request.id}>
+                            <td className="px-3 py-3 font-semibold text-slate-800">{request.branch_name}</td>
+                            <td className="px-3 py-3">{branchStockTypes.find((book) => book.key === request.book_type)?.label || request.book_type}</td>
+                            <td className="px-3 py-3">{request.qty}</td>
+                            <td className="px-3 py-3 capitalize">{request.urgency}</td>
+                            <td className="max-w-56 truncate px-3 py-3" title={request.reason}>{request.reason}</td>
+                            <td className="whitespace-nowrap px-3 py-3">{formatDate(request.date)}</td>
+                            <td className="px-3 py-3">
+                              {request.status === 'pending' ? (
+                                <div className="flex gap-2">
+                                  <button type="button" onClick={() => reviewBranchRequest(request, 'approve')} className="font-semibold text-green-700 hover:underline">Approve</button>
+                                  <button type="button" onClick={() => reviewBranchRequest(request, 'reject')} className="font-semibold text-red-700 hover:underline">Reject</button>
+                                </div>
+                              ) : <span className="capitalize text-slate-500">{request.status}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                        {!branchRequests.length && <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">No branch requests.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl bg-white p-5 shadow-lg">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-800">Branch Stock by Location</h2>
+                      <p className="mt-1 text-sm text-gray-500">Each branch has its own separately tracked allocation.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="search"
+                        aria-label="Search branches"
+                        placeholder="Search branch..."
+                        value={branchSearch}
+                        onChange={(event) => setBranchSearch(event.target.value)}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => downloadBranchInventory(branchOverview.branches, 'branch-stock-report.csv')}
+                        className="rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                      >
+                        Export Branch Stock CSV
+                      </button>
+                    </div>
+                  </div>
+                  {branchOverviewLoading ? (
+                    <p className="py-8 text-center text-gray-500">Loading branch stock…</p>
+                  ) : filteredBranches.length ? (
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {filteredBranches.map((branch) => (
+                        <article key={branch.branch_id} className="rounded-xl border-2 border-slate-200 p-4">
+                          <header className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h3 className="text-lg font-bold uppercase text-slate-900">{branch.branch_name}</h3>
+                              <span className="mt-1 inline-block rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                                Code: {branch.branch_code || branch.url_slug}
+                              </span>
+                            </div>
+                            <button type="button" onClick={() => openBranchAdd(branch)} className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                              + Add Stock
+                            </button>
+                          </header>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            {branch.stocks.map((item) => {
+                              const total = Number(item.total_assigned) || 0
+                              const remaining = Number(item.remaining) || 0
+                              const used = Number(item.used) || 0
+                              const percent = total ? Math.min(100, Math.round(remaining / total * 100)) : 0
+                              const status = !total
+                                ? { label: 'NOT ASSIGNED', style: 'bg-slate-100 text-slate-600', bar: 'bg-slate-300' }
+                                : percent < 10
+                                  ? { label: 'CRITICAL', style: 'bg-red-100 text-red-700', bar: 'bg-red-500' }
+                                  : percent <= 20
+                                    ? { label: 'LOW', style: 'bg-yellow-100 text-yellow-800', bar: 'bg-yellow-500' }
+                                    : { label: 'GOOD', style: 'bg-green-100 text-green-700', bar: 'bg-green-500' }
+                              return (
+                                <div key={item.book_type} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-xs font-bold text-slate-700">{item.label}</p>
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${status.style}`}>{status.label}</span>
+                                  </div>
+                                  <p className="mt-2 text-sm font-semibold text-slate-800">{remaining}/{total} remaining <span className="font-normal text-slate-500">· Used {used}</span></p>
+                                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                                    <div className={`h-full ${status.bar}`} style={{ width: `${percent}%` }} />
+                                  </div>
+                                  <p className="mt-1 text-right text-[10px] text-slate-500">{percent}% remaining</p>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <footer className="mt-4 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBranchHistoryFilters((current) => ({ ...current, branch: branch.url_slug }))
+                                branchHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                              }}
+                              className="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                            >
+                              View History
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadBranchInventory([branch], `${branch.url_slug || 'branch'}-stock-report.csv`)}
+                              className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            >
+                              Request Report
+                            </button>
+                          </footer>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-8 text-center text-gray-500">No matching branches found.</p>
+                  )}
+                </section>
+
+                <section ref={branchHistoryRef} className="scroll-mt-4 rounded-2xl bg-white shadow-lg">
+                  <div className="border-b bg-gray-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-800">Branch Stock History</h2>
+                        <p className="mt-1 text-sm text-gray-500">Allocations, usage, and requests recorded by branch.</p>
+                      </div>
+                      <button type="button" onClick={() => downloadBranchReport(branchHistory, 'branch-stock-history.csv')} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white">
+                        Export Filtered History
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <select aria-label="Filter history by branch" value={branchHistoryFilters.branch} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, branch: event.target.value })} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+                        <option value="">All branches</option>
+                        {branchOverview.branches.map((branch) => <option key={branch.branch_id} value={branch.url_slug}>{branch.branch_name}</option>)}
+                      </select>
+                      <select aria-label="Filter history by book type" value={branchHistoryFilters.bookType} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, bookType: event.target.value })} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+                        <option value="">All book types</option>
+                        {branchStockTypes.map((book) => <option key={book.key} value={book.key}>{book.label}</option>)}
+                      </select>
+                      <label className="text-xs font-semibold text-slate-600">From <input type="date" value={branchHistoryFilters.from} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, from: event.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-600">To <input type="date" value={branchHistoryFilters.to} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, to: event.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          {['Date', 'Branch', 'Book Type', 'Action', 'Qty', 'Source', 'By', 'Branch Remaining', 'Master Remaining'].map((label) => <th key={label} className="px-4 py-3 text-left text-xs font-bold uppercase text-gray-600">{label}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {branchHistory.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{formatDate(entry.created_at)}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-slate-800">{entry.branch_name}</td>
+                            <td className="px-4 py-3 text-sm">{branchStockTypes.find((book) => book.key === entry.book_type)?.label || entry.book_type}</td>
+                            <td className="px-4 py-3 text-sm">{entry.action === 'assigned' ? 'Add' : entry.action === 'requested' ? 'Request' : 'Used'}</td>
+                            <td className="px-4 py-3 text-sm">{entry.quantity}</td>
+                            <td className="px-4 py-3 text-sm capitalize">{entry.source || '—'}</td>
+                            <td className="px-4 py-3 text-sm">{entry.performed_by || '—'}</td>
+                            <td className="px-4 py-3 text-sm">{entry.remaining ?? '—'}</td>
+                            <td className="px-4 py-3 text-sm">{entry.master_remaining ?? '—'}</td>
+                          </tr>
+                        ))}
+                        {!branchHistoryLoading && !branchHistory.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No branch stock history matches these filters.</td></tr>}
+                        {branchHistoryLoading && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Loading branch stock history…</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showBranchAddModal && selectedBranch && (
+          <div role="dialog" aria-modal="true" aria-labelledby="branch-stock-add-title" className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <form onSubmit={submitBranchStock} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border-2 border-blue-500 bg-white p-6 shadow-2xl">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 id="branch-stock-add-title" className="text-xl font-bold text-slate-900">Add Stock to {selectedBranch.branch_name}</h2>
+                  <p className="mt-1 text-sm text-slate-500">This allocation is recorded only against the selected branch.</p>
+                </div>
+                <button type="button" aria-label="Close" onClick={() => setShowBranchAddModal(false)} className="text-2xl text-slate-400 hover:text-slate-700">×</button>
+              </div>
+              {branchAddError && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{branchAddError}</p>}
+              <label className="mb-3 block text-sm font-semibold text-slate-700">
+                Branch Name
+                <input readOnly value={`${selectedBranch.branch_name} (${selectedBranch.branch_code || selectedBranch.url_slug})`} className="mt-1 block w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-600" />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Book Type
+                  <select value={branchAddForm.bookType} onChange={(event) => setBranchAddForm({ ...branchAddForm, bookType: event.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+                    {branchStockTypes.map((book) => <option key={book.key} value={book.key}>{book.label}</option>)}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  Quantity to Add
+                  <input required type="number" min="1" step="1" value={branchAddForm.quantity} onChange={(event) => setBranchAddForm({ ...branchAddForm, quantity: event.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+                </label>
+              </div>
+              <label className="mt-3 block text-sm font-semibold text-slate-700">
+                Source
+                <select value={branchAddForm.source} onChange={(event) => { setBranchAddForm({ ...branchAddForm, source: event.target.value }); setBranchAddError('') }} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+                  <option value="master">From Master Stock (Company)</option>
+                  <option value="direct">Direct Purchase / New Printing</option>
+                </select>
+              </label>
+              {branchAddForm.source === 'master' ? (
+                <div className={`mt-3 rounded-lg border p-3 text-sm ${masterAllocationInsufficient ? 'border-red-200 bg-red-50 text-red-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
+                  <p className="font-semibold">{branchStockTypes.find((item) => item.key === branchAddForm.bookType)?.label} Master Stock: {availableMasterStock} remaining</p>
+                  {masterAllocationInsufficient && <p className="mt-1">Master stock insufficient. Master stock only {availableMasterStock} left, cannot allocate {allocationQuantity}.</p>}
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Supplier / Press Name
+                    <input required value={branchAddForm.supplier} onChange={(event) => setBranchAddForm({ ...branchAddForm, supplier: event.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Bill No.
+                    <input value={branchAddForm.billNo} onChange={(event) => setBranchAddForm({ ...branchAddForm, billNo: event.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Cost
+                    <input type="number" min="0" step="0.01" value={branchAddForm.cost} onChange={(event) => setBranchAddForm({ ...branchAddForm, cost: event.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+                  </label>
+                </div>
+              )}
+              <label className="mt-3 block text-sm font-semibold text-slate-700">
+                Reason
+                <input value={branchAddForm.reason} onChange={(event) => setBranchAddForm({ ...branchAddForm, reason: event.target.value })} placeholder="e.g. Stock low, monthly allocation" className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+              </label>
+              <label className="mt-3 block text-sm font-semibold text-slate-700">
+                Date
+                <input required type="date" value={branchAddForm.date} onChange={(event) => setBranchAddForm({ ...branchAddForm, date: event.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2.5" />
+              </label>
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowBranchAddModal(false)} className="rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button disabled={branchAddSaving || masterAllocationInsufficient} type="submit" className="rounded-lg bg-blue-600 px-4 py-2.5 font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+                  {branchAddSaving ? 'Adding…' : 'Add to Branch Stock'}
+                </button>
+              </div>
+            </form>
           </div>
         )}
 

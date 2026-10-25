@@ -69,6 +69,8 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/stock$/,
   /^\/api\/stationery-stock$/,
   /^\/api\/stationery-stock\/request$/,
+  /^\/api\/stationery-stock\/branch$/,
+  /^\/api\/stationery-stock\/branch-history$/,
   /^\/api\/branches\/slug\/[^/]+$/,
   /^\/api\/consignments(?:\/next-number|\/\d+)?$/,
   /^\/api\/next-(?:lr|bill|challan|gatepass|memo)$/,
@@ -137,7 +139,11 @@ function createBranchAccessMiddleware(pool) {
     }
     if (
       req.path.startsWith('/api/stationery-stock') &&
-      !((req.method === 'GET' && req.path === '/api/stationery-stock') ||
+      !((req.method === 'GET' && [
+        '/api/stationery-stock',
+        '/api/stationery-stock/branch',
+        '/api/stationery-stock/branch-history'
+      ].includes(req.path)) ||
         (req.method === 'POST' && req.path === '/api/stationery-stock/request'))
     ) {
       return res.status(403).json({ error: 'Branch staff can only view stock and submit stationery requests.' })

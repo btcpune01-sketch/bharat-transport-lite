@@ -6,7 +6,16 @@ const bookTypes = [
   { key: 'bilty_book', label: 'Bilty Book' },
   { key: 'bill_book', label: 'Bill Book' },
   { key: 'mr_book', label: 'Money Receipt Book' },
-  { key: 'challan_book', label: 'Gadi Challan Book' }
+  { key: 'challan_book', label: 'Gadi Challan Book' },
+  { key: 'a4_paper_reams', label: 'A4 Paper Reams' },
+  { key: 'printer_ink_black', label: 'Printer Ink (Black)' },
+  { key: 'dot_matrix_ribbon', label: 'Dot Matrix Ribbon' },
+  { key: 'envelopes_large', label: 'Envelopes (Large)' },
+  { key: 'stapler_pins', label: 'Stapler Pins' },
+  { key: 'file_folders', label: 'File Folders' },
+  { key: 'carbon_paper', label: 'Carbon Paper' },
+  { key: 'stamp_pad', label: 'Stamp Pad' },
+  { key: 'pen_marker', label: 'Pen / Marker' }
 ]
 
 const emptyRequest = { type: bookTypes[0].key, qty: '', reason: '', urgency: 'medium' }
