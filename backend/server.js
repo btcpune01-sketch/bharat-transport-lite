@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const createBranchAuthRouter = require('./routes/branchAuth');
 const branchPaymentsRouter = require('./routes/branchPayments');
+const registerStationeryRoutes = require('./routes/stationery');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 const getDatabaseUrl = require('./database-url');
 const getDb = require('./db');
@@ -284,6 +285,55 @@ async function runMigrations() {
     `CREATE TABLE IF NOT EXISTS gate_passes (id SERIAL PRIMARY KEY, pass_no TEXT UNIQUE NOT NULL, branch_id INTEGER, lr_no TEXT, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, material_desc TEXT, quantity TEXT, weight TEXT, valid_until DATE, issued_by TEXT, qr_code TEXT, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS gadi_challans (id SERIAL PRIMARY KEY, challan_no TEXT UNIQUE NOT NULL, branch_id INTEGER, lr_no TEXT, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, driver_license TEXT, owner_name TEXT, owner_mobile TEXT, broker_name TEXT, broker_mobile TEXT, broker_commission TEXT, from_place TEXT, to_place TEXT, material_desc TEXT, weight TEXT, packages TEXT, bilty_date DATE, consignor_name TEXT, consignee_name TEXT, freight_amount NUMERIC, advance_paid NUMERIC, balance_due NUMERIC, toll_expense NUMERIC, diesel_expense NUMERIC, other_expense NUMERIC, tds_deduction NUMERIC, net_payable NUMERIC, issue_date DATE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS document_stock (id SERIAL PRIMARY KEY, document_type TEXT UNIQUE NOT NULL, total_stock INTEGER DEFAULT 0, used_count INTEGER DEFAULT 0, last_updated TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS stationery_stock_batches (
+      id SERIAL PRIMARY KEY,
+      book_type TEXT NOT NULL,
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      available_quantity INTEGER NOT NULL CHECK (available_quantity >= 0),
+      start_no TEXT NOT NULL,
+      end_no TEXT NOT NULL,
+      supplier_name TEXT,
+      cost NUMERIC(14,2),
+      stock_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS stationery_stocks (
+      id SERIAL PRIMARY KEY,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+      book_type TEXT NOT NULL,
+      total_assigned INTEGER NOT NULL DEFAULT 0 CHECK (total_assigned >= 0),
+      used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
+      remaining INTEGER NOT NULL DEFAULT 0 CHECK (remaining >= 0),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (branch_id, book_type),
+      CHECK (total_assigned = used + remaining)
+    )`,
+    `CREATE TABLE IF NOT EXISTS stationery_stock_history (
+      id BIGSERIAL PRIMARY KEY,
+      branch_id INTEGER REFERENCES branches(id) ON DELETE RESTRICT,
+      book_type TEXT NOT NULL,
+      action TEXT NOT NULL CHECK (action IN ('assigned', 'used', 'requested')),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      remaining INTEGER,
+      reference TEXT,
+      performed_by TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS stationery_requests (
+      id SERIAL PRIMARY KEY,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+      book_type TEXT NOT NULL,
+      qty INTEGER NOT NULL CHECK (qty > 0),
+      reason TEXT NOT NULL,
+      urgency TEXT NOT NULL CHECK (urgency IN ('low', 'medium', 'high')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      requested_by TEXT,
+      reviewed_by TEXT,
+      reviewed_at TIMESTAMPTZ,
+      date TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
     `CREATE TABLE IF NOT EXISTS stock_items (id SERIAL PRIMARY KEY, item_code VARCHAR(30) UNIQUE, item_name VARCHAR(100) NOT NULL, item_type VARCHAR(30), unit VARCHAR(20) DEFAULT 'sheets', min_level INTEGER DEFAULT 50, critical_level INTEGER DEFAULT 20, urgent_level INTEGER DEFAULT 10, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS stock_history (id SERIAL PRIMARY KEY, stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE, action TEXT NOT NULL, document_number TEXT, used_by TEXT, date DATE NOT NULL DEFAULT CURRENT_DATE, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS trips (id SERIAL PRIMARY KEY, trip_no TEXT UNIQUE NOT NULL, trip_date DATE, branch_id INTEGER, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, from_branch TEXT, to_branch TEXT, via_hub TEXT, expected_departure DATE, expected_arrival DATE, distance_km NUMERIC, estimated_days INTEGER, status TEXT DEFAULT 'Planning', remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
@@ -763,6 +813,8 @@ function authMiddleware(req, res, next) {
     if (req.path === '/api/admin/branches/credentials' && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Only admin can view branch credentials.' });
     }
+
+    registerStationeryRoutes(app, { pool, authMiddleware });
     if (!databaseUrl) {
       if (req.method === 'GET') return sendLocalStorageModeResponse(req, res);
       if (/^\/api\/(consignments|bills|gadi-challan|gate-pass|mr|eway-bills)(\/|$)/.test(req.path)) {
@@ -1814,6 +1866,34 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     const placeholders = finalKeys.map((_, i) => "$" + (i + 1)).join(", ");
     const result = await client.query("INSERT INTO consignments (" + finalKeys.join(", ") + ") VALUES (" + placeholders + ") RETURNING *", finalVals);
     await useStock(client, 'bilty_book', result.rows[0].lr_no, req.user.username, c.branch_id);
+    if (c.branch_id) {
+      const stationeryStock = await client.query(
+        `UPDATE stationery_stocks
+         SET used = used + 1, remaining = remaining - 1, updated_at = NOW()
+         WHERE branch_id = $1 AND book_type = 'bilty_book' AND remaining > 0
+         RETURNING remaining`,
+        [c.branch_id]
+      );
+      if (!stationeryStock.rows.length) {
+        const assigned = await client.query(
+          `SELECT remaining FROM stationery_stocks
+           WHERE branch_id = $1 AND book_type = 'bilty_book'`,
+          [c.branch_id]
+        );
+        const message = assigned.rows.length
+          ? 'This branch has no Bilty Books remaining.'
+          : 'No Bilty Book stock has been assigned to this branch.'
+        const stockError = new Error(message)
+        stockError.code = 'STATIONERY_STOCK_UNAVAILABLE'
+        throw stockError
+      }
+      await client.query(
+        `INSERT INTO stationery_stock_history
+           (branch_id, book_type, action, quantity, remaining, reference, performed_by)
+         VALUES ($1, 'bilty_book', 'used', 1, $2, $3, $4)`,
+        [c.branch_id, stationeryStock.rows[0].remaining, result.rows[0].lr_no, req.user.username]
+      )
+    }
     await client.query('COMMIT');
     transactionStarted = false;
     res.json(result.rows[0]);
@@ -1831,6 +1911,7 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     }
     if (err.code === '23505') return res.status(409).json({ error: 'This Bilty No already exists' });
     if (err.code === '42703') return res.status(400).json({ error: 'Invalid field in request. Please check the data.' });
+    if (err.code === 'STATIONERY_STOCK_UNAVAILABLE') return res.status(409).json({ error: err.message });
     
     res.status(500).json({ 
       error: 'Failed to save consignment', 

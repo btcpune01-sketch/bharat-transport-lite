@@ -67,6 +67,8 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/dashboard\/recent$/,
   /^\/api\/dashboard\/top-parties$/,
   /^\/api\/stock$/,
+  /^\/api\/stationery-stock$/,
+  /^\/api\/stationery-stock\/request$/,
   /^\/api\/branches\/slug\/[^/]+$/,
   /^\/api\/consignments(?:\/next-number|\/\d+)?$/,
   /^\/api\/next-(?:lr|bill|challan|gatepass|memo)$/,
@@ -132,6 +134,13 @@ function createBranchAccessMiddleware(pool) {
 
     if (!BRANCH_ROUTE_PATTERNS.some((pattern) => pattern.test(req.path))) {
       return res.status(403).json({ error: 'This endpoint is not available to branch staff.' })
+    }
+    if (
+      req.path.startsWith('/api/stationery-stock') &&
+      !((req.method === 'GET' && req.path === '/api/stationery-stock') ||
+        (req.method === 'POST' && req.path === '/api/stationery-stock/request'))
+    ) {
+      return res.status(403).json({ error: 'Branch staff can only view stock and submit stationery requests.' })
     }
     if (req.method !== 'GET' && BRANCH_READ_ONLY_PATTERNS.some((pattern) => pattern.test(req.path))) {
       return res.status(403).json({ error: 'Branch staff can view shared party and customer records but cannot change them.' })

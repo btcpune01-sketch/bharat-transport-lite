@@ -140,7 +140,7 @@ const administrationMenus = {
       { label: 'Branch Management', path: 'admin/branches' },
       { label: 'Global User Management', path: 'admin/users' },
       { label: 'Backup & Restore', path: 'admin/backup' },
-      { label: 'Global Stationery Stock', path: 'admin/stationery-stock' },
+      { label: 'Stationery Stock Management', path: 'admin/stationery-stock' },
       { label: 'System Settings', path: 'admin/settings' },
       { label: 'Audit Logs', path: 'admin/audit' },
       { label: 'Database Management', path: 'admin/database' },
@@ -154,7 +154,7 @@ const administrationMenus = {
     label: 'Administration',
     items: [
       { label: 'Branch User Management', path: 'user-management' },
-      { label: 'Stationery Stock (Branch)', path: 'stationery-stock' },
+      { label: 'Branch Stationery Stock', path: 'stationery-stock' },
       { label: 'Branch Settings', path: 'settings' }
     ]
   }
@@ -279,7 +279,7 @@ export default function TMSDashboard({ branch }) {
 
     Promise.allSettled([
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
-      api.get('/stock', { params: query })
+      api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query })
     ]).then((results) => {
       if (!active) return
       const [statsResult, stockResult] = results
@@ -410,11 +410,11 @@ export default function TMSDashboard({ branch }) {
 
   function stockBalance(stationery) {
     const itemStock = stock.find((entry) => {
-      const entryType = String(entry.document_type || entry.documentType || entry.type || '').toLowerCase()
+      const entryType = String(entry.book_type || entry.document_type || entry.documentType || entry.type || '').toLowerCase()
       return stationery.matches.some((key) => entryType.includes(key))
     })
     return itemStock
-      ? `${number(itemStock.remaining_count ?? itemStock.remaining_quantity)}/${number(itemStock.total_stock ?? itemStock.total_quantity)}`
+      ? `${number(itemStock.remaining ?? itemStock.remaining_count ?? itemStock.remaining_quantity)}/${number(itemStock.total_assigned ?? itemStock.total_stock ?? itemStock.total_quantity)}`
       : '--/--'
   }
 
@@ -665,6 +665,12 @@ export default function TMSDashboard({ branch }) {
             <ArrowDownToLine className="h-5 w-5 text-indigo-600" />
             <h2 className="text-base font-bold text-slate-900">Stationery &amp; Printed Books Stock (Remaining)</h2>
             {loading && <span className="text-xs text-slate-500">Updating…</span>}
+            <Link
+              to={isBranchDashboard ? branchPath('stationery-stock') : '/admin/stationery-stock'}
+              className="ml-auto text-sm font-semibold text-blue-700 hover:underline"
+            >
+              {isBranchDashboard ? 'View & request stock' : 'Manage stock'}
+            </Link>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {stationeryTypes.map((item) => (

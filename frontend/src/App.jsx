@@ -37,7 +37,8 @@ const EwayBill = lazy(() => import('./pages/EwayBill'))
 const Claims = lazy(() => import('./pages/Claims'))
 const Users = lazy(() => import('./pages/Users'))
 const BranchUserManagement = lazy(() => import('./pages/BranchUserManagement'))
-const BranchStationeryStock = lazy(() => import('./pages/BranchStationeryStock'))
+const BranchStationeryStock = lazy(() => import('./pages/branch/StationeryStockBranch'))
+const StationeryStockAdmin = lazy(() => import('./pages/admin/StationeryStockAdmin'))
 const Backup = lazy(() => import('./pages/Backup'))
 const BranchPayments = lazy(() => import('./pages/BranchPayments'))
 const BranchPaymentsSummary = lazy(() => import('./pages/BranchPaymentsSummary'))
@@ -238,7 +239,7 @@ function App() {
           <Route path="/admin/branches" element={<PrivateRoute><AdminOnly><Branches /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/backup" element={<PrivateRoute><AdminOnly><Backup /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/users" element={<PrivateRoute><AdminOnly><Users /></AdminOnly></PrivateRoute>} />
-          <Route path="/admin/stationery-stock" element={<PrivateRoute><AdminOnly><StockManagement /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/stationery-stock" element={<PrivateRoute><AdminOnly><StationeryStockAdmin /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/settings" element={<PrivateRoute><AdminOnly><Settings /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/audit" element={<PrivateRoute><AdminOnly><Audit /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/database" element={<PrivateRoute><AdminOnly><Backup /></AdminOnly></PrivateRoute>} />
