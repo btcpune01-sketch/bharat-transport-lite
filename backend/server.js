@@ -471,7 +471,9 @@ async function runMigrations() {
   await addColumnIfNotExists('customers', 'opening_balance', 'NUMERIC DEFAULT 0');
   await addColumnIfNotExists('drivers', 'status', "TEXT DEFAULT 'Active'");
   await addColumnIfNotExists('drivers', 'phone', 'TEXT');
+  await addColumnIfNotExists('drivers', 'branch_id', 'INTEGER');
   await addColumnIfNotExists('vehicles', 'status', "TEXT DEFAULT 'Active'");
+  await addColumnIfNotExists('vehicles', 'branch_id', 'INTEGER');
   await addColumnIfNotExists('money_receipts', 'branch_id', 'INTEGER');
   await addColumnIfNotExists('money_receipts', 'updated_at', 'TIMESTAMP DEFAULT NOW()');
   await addColumnIfNotExists('money_receipts', 'created_by', 'TEXT');
@@ -1075,9 +1077,16 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       return pool.query(finalSql, [...baseParams, ...cond.params]);
     };
 
-    const globalMasterCount = (table, condition) => isAdmin
-      ? pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`)
-      : Promise.resolve({ rows: [{ count: 0 }] });
+    const globalMasterCount = (table, condition) => {
+      if (isAdmin) return pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`);
+      if (['drivers', 'vehicles'].includes(table) && userBranchId) {
+        return pool.query(
+          `SELECT COUNT(*) as count FROM ${table} ${condition} AND branch_id = $1`,
+          [userBranchId]
+        );
+      }
+      return Promise.resolve({ rows: [{ count: 0 }] });
+    };
 
     const queries = [
       runStat(`SELECT COUNT(*) as count FROM consignments WHERE lr_date = $1 {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
@@ -1857,7 +1866,14 @@ app.post('/api/pod', authMiddleware, async (req, res) => {
 // DRIVERS & VEHICLES
 // ==========================================
 app.get('/api/drivers', authMiddleware, async (req, res) => {
-  try { const result = await pool.query("SELECT * FROM drivers WHERE COALESCE(status, 'Active') = 'Active' ORDER BY driver_name"); res.json({ data: result.rows }); }
+  try {
+    const branchClause = ['branch', 'branch_user'].includes(req.user?.role) ? 'AND branch_id = $1' : '';
+    const result = await pool.query(
+      `SELECT * FROM drivers WHERE COALESCE(status, 'Active') = 'Active' ${branchClause} ORDER BY driver_name`,
+      branchClause ? [req.user.branch_id] : []
+    );
+    res.json({ data: result.rows });
+  }
   catch (err) { console.error('GET /api/drivers error:', err.message); res.status(503).json({ error: 'Drivers are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
@@ -1881,7 +1897,14 @@ app.put('/api/drivers/:id', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/vehicles', authMiddleware, async (req, res) => {
-  try { const result = await pool.query("SELECT * FROM vehicles WHERE COALESCE(status, 'Active') = 'Active' ORDER BY vehicle_no"); res.json({ data: result.rows }); }
+  try {
+    const branchClause = ['branch', 'branch_user'].includes(req.user?.role) ? 'AND branch_id = $1' : '';
+    const result = await pool.query(
+      `SELECT * FROM vehicles WHERE COALESCE(status, 'Active') = 'Active' ${branchClause} ORDER BY vehicle_no`,
+      branchClause ? [req.user.branch_id] : []
+    );
+    res.json({ data: result.rows });
+  }
   catch (err) { console.error('GET /api/vehicles error:', err.message); res.status(503).json({ error: 'Vehicles are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
@@ -1897,7 +1920,17 @@ app.post('/api/vehicles', authMiddleware, async (req, res) => {
 app.get('/api/vehicles/expiring', authMiddleware, async (req, res) => {
   try {
     const thirtyDays = new Date(); thirtyDays.setDate(thirtyDays.getDate() + 30);
-    const result = await pool.query(`SELECT * FROM vehicles WHERE insurance_expiry <= $1 OR fitness_expiry <= $1 OR permit_expiry <= $1 OR rc_expiry <= $1 ORDER BY insurance_expiry ASC`, [thirtyDays.toISOString().split('T')[0]]);
+    const isBranchUser = ['branch', 'branch_user'].includes(req.user?.role);
+    const branchClause = isBranchUser ? 'AND branch_id = $2' : '';
+    const params = [thirtyDays.toISOString().split('T')[0]];
+    if (isBranchUser) params.push(req.user.branch_id);
+    const result = await pool.query(
+      `SELECT * FROM vehicles
+       WHERE (insurance_expiry <= $1 OR fitness_expiry <= $1 OR permit_expiry <= $1 OR rc_expiry <= $1)
+       ${branchClause}
+       ORDER BY insurance_expiry ASC`,
+      params
+    );
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/vehicles/expiring error:', err.message); res.status(503).json({ error: 'Expiring vehicle records are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -2859,6 +2892,27 @@ app.get('/api/users', authMiddleware, async (req, res) => {
     const result = await pool.query(`SELECT u.id, u.username, u.email, u.full_name, u.role, u.branch_id, COALESCE(u.is_active, TRUE) as is_active, u.created_at, b.branch_code, b.branch_name, b.city FROM users u LEFT JOIN branches b ON u.branch_id = b.id ORDER BY u.created_at DESC`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/users error:', err.message); res.status(503).json({ error: 'Users are temporarily unavailable.', details: err.message, code: err.code || null }); }
+});
+
+app.get('/api/branch/users', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'branch' && req.user.role !== 'branch_user') {
+      return res.status(403).json({ error: 'Only branch staff can view their branch users.' });
+    }
+    const branchId = Number(req.user.branch_id);
+    if (!Number.isSafeInteger(branchId) || branchId < 1) {
+      return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    }
+    const result = await pool.query(
+      `SELECT id, username, full_name, role, COALESCE(is_active, TRUE) AS is_active
+       FROM users WHERE branch_id = $1 AND role <> 'admin' ORDER BY full_name, username`,
+      [branchId]
+    );
+    res.json({ data: result.rows });
+  } catch (err) {
+    console.error('GET /api/branch/users error:', err.message);
+    res.status(503).json({ error: 'Branch users are temporarily unavailable.' });
+  }
 });
 
 app.post('/api/users', authMiddleware, async (req, res) => {

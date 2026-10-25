@@ -96,8 +96,7 @@ test('TEST 1 - Bilty save, list, print, and dashboard', async ({ page }) => {
   console.log('TEST 1 - Bilty - PRINT: PASS')
 
   await page.goto('/#/dashboard')
-  await expect(page.getByRole('heading', { name: 'Recent Booked Bilties' })).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: 'TEST AUTO' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
   await expect(page.getByText(/1\s*Bilties/).first()).toBeVisible()
   console.log('TEST 1 - Bilty - DASHBOARD: PASS')
 })
@@ -169,8 +168,7 @@ test('TEST 2 - Bill save, list, print, and dashboard', async ({ page }) => {
   console.log('TEST 2 - Bill - LIST: PASS')
 
   await page.goto('/#/dashboard')
-  await expect(page.getByRole('heading', { name: 'Recent Booked Bilties' })).toBeVisible()
-  await expect(page.getByText('Total Bills: 1')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
   console.log('TEST 2 - Bill - DASHBOARD: PASS')
 })
 
@@ -238,14 +236,13 @@ test('TEST 3 - MR save, list, print, and dashboard', async ({ page }) => {
 
   await page.locator('button[title="Print MR"]').click()
   await expect(page).toHaveURL(/#\/mr\/print\?mr_no=MR-TEST-01$/)
-  await expect(page.getByText('MR-TEST-01')).toBeVisible()
+  await expect(page.getByText('MR-TEST-01', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: /Print/ }).click()
   await expect.poll(() => page.evaluate(() => window.__printCalls)).toBe(1)
   console.log('TEST 3 - MR - PRINT: PASS')
 
   await page.goto('/#/dashboard')
-  await expect(page.getByRole('heading', { name: 'Recent Booked Bilties' })).toBeVisible()
-  await expect(page.getByText('Total Money Receipts: 1')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
   console.log('TEST 3 - MR - DASHBOARD: PASS')
 })
 
@@ -335,8 +332,7 @@ test('TEST 4 - Gadi Challan save, list, print, and dashboard', async ({ page }) 
   console.log('TEST 4 - Gadi Challan - PRINT: PASS')
 
   await page.goto('/#/dashboard')
-  await expect(page.getByRole('heading', { name: 'Recent Booked Bilties' })).toBeVisible()
-  await expect(page.getByText('Total Gadi Challans: 1')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
   console.log('TEST 4 - Gadi Challan - DASHBOARD: PASS')
 })
 
@@ -424,7 +420,53 @@ test('TEST 5 - Branch Payment save, list, and summary', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Branch Payment Summary' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'Pune' })).toContainText('1,500')
   await page.goto('/#/dashboard')
-  await expect(page.getByRole('heading', { name: 'Recent Booked Bilties' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
   console.log('TEST 5 - Branch Payment - SUMMARY: PASS, DASHBOARD LOAD: PASS')
   expect(await page.evaluate(() => window.__printCalls)).toBe(0)
+})
+
+test('TMS dashboard shows role-specific administration and branch user tools', async ({ page }) => {
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace(/^\/api/, '')
+    const response = path === '/dashboard/stats'
+      ? { success: true, today_lr: 0, month_lr: 0, total_branches: 1 }
+      : path === '/branches'
+        ? { data: [{ id: 1, branch_name: 'Ahmedabad' }] }
+        : path === '/branch/users'
+          ? { data: [{ id: 1, username: 'branch-operator', full_name: 'Branch Operator', role: 'operator', is_active: true }] }
+          : path === '/stock' ? { data: [] } : { data: [] }
+    await route.fulfill({ status: 200, json: response })
+  })
+
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'playwright-admin-test-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, username: 'admin', role: 'admin' }))
+  })
+  await page.goto('/#/admin/dashboard')
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await expect(page.getByRole('link', { name: 'Branch Management' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Global User Management' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Backup & Restore' })).toBeVisible()
+
+  await page.evaluate(() => {
+    localStorage.setItem('token', 'playwright-branch-test-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, username: 'ahmedabad', role: 'branch', branch_id: 1 }))
+    localStorage.setItem('branch_session', JSON.stringify({
+      token: 'playwright-branch-test-token',
+      branch: { id: 1, url_slug: 'ahmedabad', branch_name: 'Ahmedabad' }
+    }))
+  })
+  await page.goto('/#/branch/ahmedabad/dashboard')
+  await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await expect(page.getByRole('link', { name: 'Branch User Management' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Stationery Stock (Branch)' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Branch Management' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Backup & Restore' })).toHaveCount(0)
+  await page.getByRole('link', { name: 'Branch User Management' }).click()
+  await expect(page).toHaveURL(/#\/branch\/ahmedabad\/user-management$/)
+  await expect(page.getByRole('heading', { name: 'Branch User Management' })).toBeVisible()
+  await expect(page.getByText('branch-operator')).toBeVisible()
 })

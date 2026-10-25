@@ -47,6 +47,18 @@ const BRANCH_RECORD_ROUTES = [
     table: 'consignments',
     column: 'id',
     key: 1
+  },
+  {
+    pattern: /^\/api\/drivers\/(\d+)$/,
+    table: 'drivers',
+    column: 'id',
+    key: 1
+  },
+  {
+    pattern: /^\/api\/vehicles\/(\d+)$/,
+    table: 'vehicles',
+    column: 'id',
+    key: 1
   }
 ]
 
@@ -74,8 +86,19 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/rates\/calculate$/,
   /^\/api\/accounts\/summary$/,
   /^\/api\/accounts\/tds-register$/,
+  /^\/api\/branch\/users$/,
+  /^\/api\/parties$/,
+  /^\/api\/customers(?:\/\d+)?$/,
+  /^\/api\/drivers(?:\/\d+)?$/,
+  /^\/api\/vehicles(?:\/\d+)?$/,
+  /^\/api\/vehicles\/expiring$/,
   /^\/api\/eway-bills(?:\/\d+)?$/,
   /^\/api\/branch-payments(?:\/summary)?$/
+]
+
+const BRANCH_READ_ONLY_PATTERNS = [
+  /^\/api\/parties$/,
+  /^\/api\/customers(?:\/\d+)?$/
 ]
 
 function getRecordRoute(path) {
@@ -109,6 +132,9 @@ function createBranchAccessMiddleware(pool) {
 
     if (!BRANCH_ROUTE_PATTERNS.some((pattern) => pattern.test(req.path))) {
       return res.status(403).json({ error: 'This endpoint is not available to branch staff.' })
+    }
+    if (req.method !== 'GET' && BRANCH_READ_ONLY_PATTERNS.some((pattern) => pattern.test(req.path))) {
+      return res.status(403).json({ error: 'Branch staff can view shared party and customer records but cannot change them.' })
     }
 
     if (!branchIdsMatch(req.query?.branch_id, branchId) || !branchIdsMatch(req.body?.branch_id, branchId)) {

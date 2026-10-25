@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api';
 
 const Consignments = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [consignments, setConsignments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -62,8 +63,15 @@ const Consignments = () => {
       c.to_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+    const date = String(c.lr_date || '').slice(0, 10);
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const filter = searchParams.get('filter');
+    const matchesDate = filter === 'today'
+      ? date === today
+      : filter === 'month' ? date.startsWith(today.slice(0, 7)) : true;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesDate;
   });
 
   const handleDelete = async (id, lr_no) => {

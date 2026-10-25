@@ -36,6 +36,8 @@ const Accounts = lazy(() => import('./pages/Accounts'))
 const EwayBill = lazy(() => import('./pages/EwayBill'))
 const Claims = lazy(() => import('./pages/Claims'))
 const Users = lazy(() => import('./pages/Users'))
+const BranchUserManagement = lazy(() => import('./pages/BranchUserManagement'))
+const BranchStationeryStock = lazy(() => import('./pages/BranchStationeryStock'))
 const Backup = lazy(() => import('./pages/Backup'))
 const BranchPayments = lazy(() => import('./pages/BranchPayments'))
 const BranchPaymentsSummary = lazy(() => import('./pages/BranchPaymentsSummary'))
@@ -65,7 +67,7 @@ const branchPages = {
   'vehicle-tracking': TrackBilty,
   'pod': POD,
   'pod-list': POD,
-  'stock-report': StockManagement,
+  'stock-report': BranchStationeryStock,
   'stock-entry': StockManagement,
   'diesel-entry': StockManagement,
   'diesel-report': StockManagement,
@@ -92,13 +94,52 @@ const branchPages = {
   'city-master': Branches,
   'notification': Reports,
   'support': Reports,
-  'user-management': Users,
+  'user-management': BranchUserManagement,
   'backup': Backup,
   'admin': Settings,
   'settings': Settings,
   'reports': Reports,
-  'stationery-stock': StockManagement,
+  'stationery-stock': BranchStationeryStock,
   'branch-profile': Branches,
+  'bookings': Consignments,
+  'booking-list': Consignments,
+  'party-master': PartyList,
+  'party-entry': PartyEntry,
+  'party': PartyList,
+  'customers': Customers,
+  'customer-ledger': Ledger,
+  'delivery': POD,
+  'delivery-entry': POD,
+  'pending-delivery': POD,
+  'pod-upload': PODUpload,
+  'pod-view': PODView,
+  'public-pod-view': PODView,
+  'pod-report': POD,
+  'delivery-report': Reports,
+  'party-wise-report': Reports,
+  'paid-report': Reports,
+  'day-book': Accounts,
+  'profit-report': Reports,
+  'branch-wise-report': Reports,
+  'all-reports': Reports,
+  'vehicle-challan-list': GadiChallan,
+  'gate-pass-list': GatePass,
+  'branch-transfer-list': Transit,
+  'fleet-status': Vehicles,
+  'trips': Trips,
+  'manifests': Transit,
+  'rates': Rates,
+  'track': TrackBilty,
+  'eway-bills': EwayBill,
+  'vehicles': Vehicles,
+  'accounts': Accounts,
+  'expenses': Expenses,
+  'commissions': Commissions,
+  'claims': Claims,
+  'branch-portal': Branches,
+  'branch-payments': BranchPayments,
+  'branch-payments-summary': BranchPaymentsSummary,
+  'bills': BillList,
 }
 
 function BranchModuleRoute() {
@@ -137,6 +178,11 @@ function PrivateRoute({ children }) {
     )
   }
   return currentUser ? children : <Navigate to="/login" replace />
+}
+
+function AdminOnly({ children }) {
+  const { currentUser } = useAuth()
+  return currentUser?.role === 'admin' ? children : <Navigate to="/dashboard" replace />
 }
 
 function LoadingFallback() {
@@ -187,8 +233,19 @@ function App() {
 
           <Route path="/" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
           <Route path="/dashboard" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
-          <Route path="/admin" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
-          <Route path="/admin/dashboard" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
+          <Route path="/admin" element={<PrivateRoute><AdminOnly><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/dashboard" element={<PrivateRoute><AdminOnly><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/branches" element={<PrivateRoute><AdminOnly><Branches /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/backup" element={<PrivateRoute><AdminOnly><Backup /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/users" element={<PrivateRoute><AdminOnly><Users /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/stationery-stock" element={<PrivateRoute><AdminOnly><StockManagement /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/settings" element={<PrivateRoute><AdminOnly><Settings /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/audit" element={<PrivateRoute><AdminOnly><Audit /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/database" element={<PrivateRoute><AdminOnly><Backup /></AdminOnly></PrivateRoute>} />
+          <Route path="/admin/all-branches" element={<PrivateRoute><AdminOnly><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></AdminOnly></PrivateRoute>} />
+          <Route path="/bookings/list" element={<PrivateRoute><Consignments /></PrivateRoute>} />
+          <Route path="/billing/pending" element={<PrivateRoute><Outstanding /></PrivateRoute>} />
+          <Route path="/fleet/status" element={<PrivateRoute><Vehicles /></PrivateRoute>} />
           <Route path="/consignments" element={<PrivateRoute><Consignments /></PrivateRoute>} />
           <Route path="/consignments/new" element={<PrivateRoute><BiltyEntry /></PrivateRoute>} />
           <Route path="/eway-bills" element={<PrivateRoute><EwayBill /></PrivateRoute>} />

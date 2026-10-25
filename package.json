@@ -2,7 +2,8 @@
   "name": "bharat-transport-lite",
   "private": true,
   "scripts": {
-    "build": "cd frontend && npm run build"
+    "build": "cd frontend && npm run build",
+    "audit:functions": "cd frontend && npm run audit:functions"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

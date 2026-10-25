@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     blood_group VARCHAR(10),
     emergency_contact VARCHAR(15),
     is_active BOOLEAN DEFAULT TRUE,
+    branch_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -115,6 +116,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     pollution_expiry DATE,
     gps_device_id VARCHAR(50),
     is_active BOOLEAN DEFAULT TRUE,
+    branch_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -5,14 +5,29 @@ import {
   Receipt, Search, Truck, Wallet
 } from 'lucide-react'
 import api, { branchAPI, dashboardAPI } from '../../api'
+import { useAuth } from '../../AuthContext'
 
 const navigation = [
-  { label: 'Dashboard', items: [{ label: 'Dashboard Overview', path: 'dashboard' }] },
+  {
+    label: 'Dashboard',
+    items: [
+      { label: 'Dashboard Overview', path: 'dashboard' },
+      { label: "Today's Booking", path: 'bookings/list?filter=today' },
+      { label: "This Month's Booking", path: 'bookings/list?filter=month' },
+      { label: 'Refresh Dashboard Data', action: 'refresh' }
+    ]
+  },
   {
     label: 'Bookings',
     items: [
       { label: 'New Bilty', path: 'bilty-entry' },
-      { label: 'Bilty Register', path: 'consignments' },
+      { label: 'Consignments', path: 'consignments' },
+      { label: 'Bilty Print / LR Print', path: 'bilty-print' },
+      { label: 'Booking List', path: 'bookings/list' },
+      { label: 'Gate Pass', path: 'gate-pass' },
+      { label: 'Branch Transfer', path: 'branch-transfer' },
+      { label: 'LR Tracking', path: 'track' },
+      { label: 'E-Way Bills', path: 'eway-bills' },
       { label: 'Freight Calculator', path: 'freight-calculator' }
     ]
   },
@@ -20,71 +35,130 @@ const navigation = [
     label: 'Fleet & Drivers',
     items: [
       { label: 'Gadi Challan', path: 'gadi-challan' },
-      { label: 'Vehicles', path: 'vehicle' },
-      { label: 'Drivers', path: 'driver' }
+      { label: 'Vehicle Master', path: 'vehicle' },
+      { label: 'Driver Master', path: 'driver' },
+      { label: 'Vehicle Tracking', path: 'vehicle-tracking' },
+      { label: 'Vehicle Challan History', path: 'vehicle-challan-list' },
+      { label: 'Fleet Status', path: 'fleet-status' },
+      { label: 'Document Expiry Alerts', path: 'vehicles/expiring' },
+      { label: 'Trip Management', path: 'trips' }
     ]
   },
   {
     label: 'Operations',
     items: [
       { label: 'Gate Pass', path: 'gate-pass' },
-      { label: 'Branch Transfer', path: 'branch-transfer' }
+      { label: 'Gate Pass List', path: 'gate-pass-list' },
+      { label: 'Branch Transfer', path: 'branch-transfer' },
+      { label: 'Branch Transfer List', path: 'branch-transfer-list' },
+      { label: 'Manifest / Transit', path: 'manifests' },
+      { label: 'Tracking', path: 'track' }
     ]
   },
   {
     label: 'Delivery',
     items: [
       { label: 'POD Entry', path: 'pod' },
-      { label: 'POD Register', path: 'pod-list' }
+      { label: 'Delivery Entry', path: 'delivery' },
+      { label: 'POD Upload', path: 'pod-upload' },
+      { label: 'Pending Delivery', path: 'pending-delivery' },
+      { label: 'POD Register', path: 'pod-list' },
+      { label: 'POD Report', path: 'pod-report' },
+      { label: 'Delivery Report', path: 'delivery-report' },
+      { label: 'POD Viewer', path: 'pod-view' },
+      { label: 'Public POD View', path: 'public-pod-view' }
     ]
   },
   {
     label: 'Customers & Parties',
     items: [
-      { label: 'Customers', path: 'customer-master' },
-      { label: 'Parties', path: 'supplier' }
+      { label: 'Party Master', path: 'party-master' },
+      { label: 'Customer Directory', path: 'customers' },
+      { label: 'Create Party', path: 'party/new', adminOnly: true },
+      { label: 'Customer Ledger', path: 'customer-ledger' },
+      { label: 'Party Wise Report', path: 'party-wise-report' },
+      { label: 'Rate Contracts', path: 'rates' }
     ]
   },
   {
     label: 'Billing & Invoices',
     items: [
       { label: 'Bill Entry', path: 'bill-entry' },
-      { label: 'Bill List', path: 'bill-list' }
+      { label: 'Bill List', path: 'bill-list' },
+      { label: 'Bill Print', path: 'bill-print' },
+      { label: 'Bill Register', path: 'bills' },
+      { label: 'To Pay Report', path: 'to-pay-report' }
     ]
   },
   {
     label: 'Payments',
     items: [
       { label: 'Payment Entry', path: 'payment-entry' },
-      { label: 'Money Receipts', path: 'money-receipt' }
+      { label: 'Money Receipt', path: 'money-receipt' },
+      { label: 'Create Money Receipt', path: 'mr/create' },
+      { label: 'Outstanding Report', path: 'outstanding' },
+      { label: 'Paid Report', path: 'paid-report' },
+      { label: 'Day Book', path: 'day-book' }
     ]
   },
   {
     label: 'Accounts & Finance',
     items: [
       { label: 'Ledger', path: 'ledger' },
-      { label: 'Outstanding', path: 'outstanding' },
-      { label: 'Reports', path: 'reports' }
-    ]
-  },
-  {
-    label: 'Administration',
-    items: [
-      { label: 'User Management', path: 'user-management' },
-      { label: 'Backup', path: 'backup' },
-      { label: 'Stationery Stock', path: 'stationery-stock' },
-      { label: 'Settings', path: 'settings' }
+      { label: 'Profit Report', path: 'profit-report' },
+      { label: 'Stock Report', path: 'stock-report' },
+      { label: 'Branch Wise Report', path: 'branch-wise-report' },
+      { label: 'All Reports', path: 'all-reports' },
+      { label: 'Daily Expenses', path: 'expenses' },
+      { label: 'TDS Register', path: 'accounts/tds-register' },
+      { label: 'Commissions', path: 'commissions' },
+      { label: 'Claims', path: 'claims' }
     ]
   }
 ]
 
-const quickActions = [
+const adminQuickActions = [
   { label: 'New Bilty', path: 'bilty-entry', icon: FilePlus2, color: 'bg-blue-600 hover:bg-blue-700' },
   { label: 'New Bill', path: 'bill-entry', icon: Receipt, color: 'bg-blue-600 hover:bg-blue-700' },
   { label: 'Money Receipt', path: 'money-receipt', icon: Wallet, color: 'bg-purple-600 hover:bg-purple-700' },
   { label: 'Vehicle Challan', path: 'gadi-challan', icon: Truck, color: 'bg-emerald-600 hover:bg-emerald-700' },
-  { label: 'Freight Calculator', path: 'freight-calculator', icon: Calculator, color: 'bg-slate-600 hover:bg-slate-700' }
+  { label: 'Freight Calculator', path: 'freight-calculator', icon: Calculator, color: 'bg-slate-600 hover:bg-slate-700' },
+  { label: 'Gate Pass', path: 'gate-pass', icon: FilePlus2, color: 'bg-cyan-600 hover:bg-cyan-700' },
+  { label: 'Delivery Entry', path: 'delivery', icon: FilePlus2, color: 'bg-teal-600 hover:bg-teal-700' },
+  { label: 'Branch Transfer', path: 'branch-transfer', icon: Truck, color: 'bg-indigo-600 hover:bg-indigo-700' },
+  { label: 'Party Master', path: 'party-master', icon: Receipt, color: 'bg-violet-600 hover:bg-violet-700' },
+  { label: 'Vehicle Master', path: 'vehicle', icon: Truck, color: 'bg-emerald-700 hover:bg-emerald-800' },
+  { label: 'Reports', path: 'reports', icon: Activity, color: 'bg-slate-700 hover:bg-slate-800' },
+  { label: 'Backup', path: 'backup', icon: ArrowDownToLine, color: 'bg-rose-600 hover:bg-rose-700', adminOnly: true },
+  { label: 'User Management', path: 'user-management', icon: Wallet, color: 'bg-purple-700 hover:bg-purple-800' }
 ]
+
+const administrationMenus = {
+  admin: {
+    label: 'Administration',
+    items: [
+      { label: 'Branch Management', path: 'admin/branches' },
+      { label: 'Global User Management', path: 'admin/users' },
+      { label: 'Backup & Restore', path: 'admin/backup' },
+      { label: 'Global Stationery Stock', path: 'admin/stationery-stock' },
+      { label: 'System Settings', path: 'admin/settings' },
+      { label: 'Audit Logs', path: 'admin/audit' },
+      { label: 'Database Management', path: 'admin/database' },
+      { label: 'All Branches Data View', path: 'admin/all-branches' },
+      { label: 'Branch Portal Management', path: 'branch-portal' },
+      { label: 'Branch Ledger', path: 'branch-payments/summary' },
+      { label: 'Role Management', path: 'admin/users' }
+    ]
+  },
+  branch: {
+    label: 'Administration',
+    items: [
+      { label: 'Branch User Management', path: 'user-management' },
+      { label: 'Stationery Stock (Branch)', path: 'stationery-stock' },
+      { label: 'Branch Settings', path: 'settings' }
+    ]
+  }
+}
 
 const stationeryTypes = [
   { label: 'BILTY', matches: ['bilty', 'lr'] },
@@ -114,6 +188,7 @@ export default function TMSDashboard({
   isMainAdmin = false,
   showAllBranchesSelector = false
 }) {
+  const { currentUser } = useAuth()
   const routeParams = useParams()
   const branchSlug = branch && branch !== 'global'
     ? branch
@@ -130,6 +205,14 @@ export default function TMSDashboard({
   const [trackMessage, setTrackMessage] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const [branchSession, setBranchSession] = useState(null)
+  const isAdmin = isMainAdmin && currentUser?.role === 'admin' && !isBranchDashboard
+  const menuItems = [
+    ...navigation,
+    ...(isAdmin ? [administrationMenus.admin] : isBranchDashboard ? [administrationMenus.branch] : [])
+  ]
+  const quickActions = isAdmin
+    ? adminQuickActions
+    : adminQuickActions.filter((item) => !item.adminOnly && (isBranchDashboard || item.path !== 'user-management'))
 
   useEffect(() => {
     if (!isBranchDashboard) return
@@ -165,7 +248,7 @@ export default function TMSDashboard({
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
       api.get('/stock', { params: query })
     ]
-    if (showAllBranchesSelector && isMainAdmin) requests.push(branchAPI.getAll())
+    if (showAllBranchesSelector && isAdmin) requests.push(branchAPI.getAll())
 
     Promise.allSettled(requests).then((results) => {
       if (!active) return
@@ -193,7 +276,7 @@ export default function TMSDashboard({
 
     return () => { active = false }
   }, [
-    branchSlug, branchSession, isBranchDashboard, isMainAdmin,
+    branchSlug, branchSession, isBranchDashboard, isAdmin,
     selectedBranchId, showAllBranchesSelector, refreshKey
   ])
 
@@ -203,12 +286,76 @@ export default function TMSDashboard({
 
   const branchPath = (path) => {
     if (isBranchDashboard) {
-      const modulePath = path === 'freight-calculator' ? 'rate-master' : path
+      if (path.startsWith('bookings/list')) {
+        return `/branch/${branchSlug}/consignments${path.includes('?') ? `?${path.split('?')[1]}` : ''}`
+      }
+      const moduleAliases = {
+        'freight-calculator': 'rate-master',
+        'party/new': 'party-entry',
+        'mr/create': 'money-receipt/create',
+        'party-master': 'party-master',
+        vehicle: 'vehicle',
+        'accounts/tds-register': 'accounts',
+        'billing/pending': 'outstanding',
+        'fleet/status': 'fleet-status',
+        bills: 'bill-list',
+        'branch-payments/summary': 'branch-payments-summary'
+      }
+      const modulePath = moduleAliases[path] || path
       return `/branch/${branchSlug}/${modulePath}`
     }
+    if (path.startsWith('bookings/list')) {
+      return `/bookings/list${path.includes('?') ? `?${path.split('?')[1]}` : ''}`
+    }
+    const globalAliases = {
+      'bilty-entry': '/consignments/new',
+      'bilty-print': '/bilty-print',
+      'bill-entry': '/bill-entry',
+      'bill-list': '/bills',
+      'bill-print': '/bill-print',
+      'money-receipt': '/mr',
+      'mr/create': '/mr/create',
+      'payment-entry': '/branch-payments',
+      'party-master': '/parties',
+      'party/new': '/party/new',
+      vehicle: '/vehicles',
+      driver: '/drivers',
+      delivery: '/pod',
+      'pod-upload': '/pod-upload',
+      'public-pod-view': '/public/pod-view',
+      'pending-delivery': '/pod',
+      'pod-list': '/pod',
+      'pod-report': '/pod',
+      'delivery-report': '/reports',
+      'party-wise-report': '/reports',
+      'paid-report': '/reports',
+      'day-book': '/accounts/summary',
+      'profit-report': '/reports',
+      'stock-report': '/stock',
+      'branch-wise-report': '/reports',
+      'all-reports': '/reports',
+      'vehicle-challan-list': '/gadi-challan',
+      'gate-pass-list': '/gate-pass',
+      'branch-transfer': '/transit',
+      'branch-transfer-list': '/transit',
+      'fleet-status': '/fleet/status',
+      'vehicle-tracking': '/track',
+      'to-pay-report': '/outstanding',
+      'customer-ledger': '/ledger',
+      'freight-calculator': '/rates',
+      'user-management': '/admin/users',
+      backup: '/admin/backup',
+      'stationery-stock': '/admin/stationery-stock',
+      settings: '/admin/settings',
+      'branch-portal': '/branch-portal',
+      'branch-payments/summary': '/branch-payments/summary',
+      'accounts/tds-register': '/accounts/tds-register',
+      'admin/database': '/admin/database'
+    }
+    if (globalAliases[path]) return globalAliases[path]
     return path === 'dashboard'
       ? '/dashboard'
-      : path === 'freight-calculator' ? '/rates' : `/${path}`
+      : `/${path}`
   }
   const activeBranch = branchSession?.branch
   const selectedBranch = branches.find((item) => String(item.id) === String(selectedBranchId))
@@ -275,12 +422,12 @@ export default function TMSDashboard({
           <label className="sr-only" htmlFor="dashboard-branch">Select branch</label>
           <select
             id="dashboard-branch"
-            value={showAllBranchesSelector && isMainAdmin ? selectedBranchId : activeBranch?.id || ''}
+            value={showAllBranchesSelector && isAdmin ? selectedBranchId : activeBranch?.id || ''}
             onChange={(event) => setSelectedBranchId(event.target.value)}
-            disabled={!showAllBranchesSelector || !isMainAdmin}
+            disabled={!showAllBranchesSelector || !isAdmin}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:text-slate-700"
           >
-            {showAllBranchesSelector && isMainAdmin ? (
+            {showAllBranchesSelector && isAdmin ? (
               <>
                 <option value="all">All branches</option>
                 {branches.map((item) => (
@@ -309,7 +456,7 @@ export default function TMSDashboard({
 
       <nav aria-label="Main navigation" className="border-b border-slate-200 bg-white">
         <div className="flex flex-wrap items-center gap-1 px-3 py-2">
-          {navigation.map((category) => (
+          {menuItems.map((category) => (
             <div key={category.label} className="relative">
               <button
                 type="button"
@@ -321,7 +468,16 @@ export default function TMSDashboard({
               </button>
               {activeMenu === category.label && (
                 <div className="absolute left-0 top-full z-20 mt-1 min-w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
-                  {category.items.map((item) => (
+                  {category.items.filter((item) => !item.adminOnly || isAdmin).map((item) => item.action === 'refresh' ? (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => { setRefreshKey((key) => key + 1); setActiveMenu('') }}
+                      className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      {item.label}
+                    </button>
+                  ) : (
                     <Link
                       key={item.label}
                       to={branchPath(item.path)}
@@ -351,30 +507,30 @@ export default function TMSDashboard({
             <h1 id="quick-actions-title" className="text-lg font-bold text-slate-900">Quick Actions</h1>
           </div>
           <div className="flex flex-wrap gap-3">
-            {quickActions.map(({ label, path, icon: Icon, color }) => (
-              <Link
+            {quickActions.map(({ label, path, icon: Icon, color, adminOnly }) => (
+              !adminOnly || isAdmin ? <Link
                 key={label}
                 to={branchPath(path)}
                 className={`flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors ${color}`}
               >
                 <Icon className="h-4 w-4" />+ {label}
-              </Link>
+              </Link> : null
             ))}
           </div>
         </section>
 
         <section aria-label="Dashboard statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <Link to={branchPath('bookings/list?filter=today')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Today&apos;s Booking</p>
             <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(getStat('today_lr', 'todaysBooking'))} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
             <p className="mt-2 text-sm text-slate-600">Today&apos;s Revenue <strong className="text-slate-900">{money(getStat('today_revenue'))}</strong></p>
-          </article>
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          </Link>
+          <Link to={branchPath('bookings/list?filter=month')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">This Month&apos;s Booking</p>
             <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(getStat('month_lr', 'monthlyBooking'))} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
             <p className="mt-2 text-sm text-slate-600">Month&apos;s Revenue <strong className="text-slate-900">{money(getStat('month_revenue'))}</strong></p>
-          </article>
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          </Link>
+          <Link to={branchPath('billing/pending')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pending Amount</p>
             <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(getStat('pending_amount', 'pendingAmount'))}</p>
             <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs text-slate-600">
@@ -383,8 +539,8 @@ export default function TMSDashboard({
               <span>Money Receipts <strong>{number(getStat('total_mr'))}</strong></span>
               <span>Gadi Challans <strong>{number(getStat('total_gadi_challan'))}</strong></span>
             </div>
-          </article>
-          <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          </Link>
+          <Link to={branchPath('fleet/status')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Fleet &amp; Network Status</p>
             <div className="mt-3 space-y-2 text-sm text-slate-700">
               <p>Active Vehicles <strong>{number(getStat('active_vehicles'))}</strong></p>
@@ -392,7 +548,7 @@ export default function TMSDashboard({
               <p>Branches <strong>{number(isBranchDashboard ? 1 : getStat('total_branches'))}</strong></p>
               <p>Pending POD <strong>{number(getStat('pending_pod'))}</strong> Deliveries</p>
             </div>
-          </article>
+          </Link>
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

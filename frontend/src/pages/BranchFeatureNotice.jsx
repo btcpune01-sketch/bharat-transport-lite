@@ -14,10 +14,10 @@ export default function BranchFeatureNotice({ title }) {
       <p className="text-sm font-bold uppercase tracking-wider text-amber-700">Branch module</p>
       <h1 className="mt-2 text-2xl font-extrabold text-slate-900">{title}</h1>
       <p className="mt-3 text-slate-600">
-        This module is not yet available in the current branch-enabled system. It has not been enabled because its data is not currently stored with branch-level access controls.
+        Module Coming Soon. This section is not configured for branch access yet.
       </p>
       <p className="mt-4 text-sm text-slate-500">
-        Contact {branch?.branch_name || branchSlug} management to request access once branch-level records are configured.
+        Contact {branch?.branch_name || branchSlug} management for access details. Existing branch data has not been changed.
       </p>
     </section>
   )
