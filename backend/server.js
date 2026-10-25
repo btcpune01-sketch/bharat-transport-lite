@@ -881,7 +881,6 @@ function authMiddleware(req, res, next) {
       return res.status(403).json({ error: 'Only admin can view branch credentials.' });
     }
 
-    registerStationeryRoutes(app, { pool, authMiddleware });
     if (!databaseUrl) {
       if (req.method === 'GET') return sendLocalStorageModeResponse(req, res);
       if (/^\/api\/(consignments|bills|gadi-challan|gate-pass|mr|eway-bills)(\/|$)/.test(req.path)) {
@@ -905,6 +904,8 @@ function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 }
+
+registerStationeryRoutes(app, { pool, authMiddleware });
 
 function getBranchPaymentsScope(req, res) {
   const role = String(req.user?.role || '').toLowerCase();
@@ -1243,7 +1244,15 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH}`)
     ];
 
-    const results = await Promise.all(queries);
+    const settledResults = await Promise.allSettled(queries);
+    const failedQueries = settledResults
+      .map((result, index) => ({ result, index }))
+      .filter(({ result }) => result.status === 'rejected');
+    for (const { result, index } of failedQueries) {
+      console.error(`Dashboard stats query ${index + 1} failed:`, result.reason?.message || result.reason);
+    }
+    if (failedQueries.length === queries.length) throw failedQueries[0].result.reason;
+    const results = settledResults.map((result) => result.status === 'fulfilled' ? result.value : null);
     const get = (idx, field = 'count') => {
       const row = results[idx]?.rows?.[0];
       if (!row) return 0;
@@ -1256,7 +1265,8 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       pending_bills: get(6), total_mr: get(7), total_parties: get(8), total_customers: get(9), total_revenue: get(10, 'total'),
       pending_amount: get(11, 'total'), pending_pod: get(12), active_drivers: get(13), active_vehicles: get(14),
       open_claims: get(15), today_expenses: get(16, 'total'), total_branches: get(17), today_revenue: get(18, 'total'),
-      month_revenue: get(19, 'total'), total_gadi_challan: get(20), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin
+      month_revenue: get(19, 'total'), total_gadi_challan: get(20), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin,
+      partial: failedQueries.length > 0
     });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
