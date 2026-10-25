@@ -36,6 +36,56 @@ const emptyBranchAddForm = {
   date: new Date().toISOString().slice(0, 10)
 }
 
+const normalizeBranchOverview = (responseData) => {
+  const overview = responseData?.data ?? responseData
+  const branches = Array.isArray(overview)
+    ? overview
+    : Array.isArray(overview?.branches)
+      ? overview.branches
+      : Array.isArray(overview?.branchStocks)
+        ? overview.branchStocks
+        : null
+
+  if (!branches) throw new Error('The server returned invalid branch stock data.')
+
+  return {
+    branches: branches.map((branch, index) => {
+      const branchStock = branch.stocks
+      const stockByType = Array.isArray(branchStock)
+        ? new Map(branchStock.map((item) => [item.book_type || item.bookType, item]))
+        : null
+      const stockItems = branchStockTypes.map((book) => {
+        const legacyKey = {
+          bilty_book: 'biltyBook',
+          bill_book: 'billBook',
+          mr_book: 'mrBook',
+          challan_book: 'gadiChallan'
+        }[book.key]
+        const item = stockByType?.get(book.key) || branch[legacyKey] || {}
+        return {
+          book_type: book.key,
+          label: book.label,
+          unit: book.unit,
+          total_assigned: Number(item.total_assigned ?? item.totalAssigned) || 0,
+          used: Number(item.used) || 0,
+          remaining: Number(item.remaining) || 0,
+          master_available: Number(item.master_available ?? item.masterAvailable) || 0
+        }
+      })
+      return {
+        ...branch,
+        branch_id: branch.branch_id ?? branch.id ?? branch._id ?? branch.url_slug ?? branch.branchSlug ?? index,
+        branch_name: branch.branch_name ?? branch.branchName ?? branch.name ?? branch.branchSlug ?? branch.url_slug ?? branch.branch ?? 'Unknown branch',
+        branch_code: branch.branch_code ?? branch.branchCode ?? branch.code,
+        url_slug: branch.url_slug ?? branch.branchSlug ?? branch.slug,
+        stocks: stockItems
+      }
+    }),
+    masterStock: Array.isArray(overview?.masterStock) ? overview.masterStock : [],
+    history: Array.isArray(overview?.history) ? overview.history : []
+  }
+}
+
 export default function StockManagement() {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
@@ -155,8 +205,8 @@ export default function StockManagement() {
         if (stockResult.status === 'rejected') throw stockResult.reason
         applyDocumentStock(stockResult.value.data?.data)
         if (branchMasterResult.status === 'fulfilled') {
-          const overview = branchMasterResult.value.data?.data
-          if (Array.isArray(overview?.masterStock)) {
+          const overview = normalizeBranchOverview(branchMasterResult.value.data)
+          if (Array.isArray(overview.masterStock)) {
             const masterByType = new Map(overview.masterStock.map((item) => [item.book_type, item]))
             setStock((current) => current.map((item) => {
               if (item.category !== 'stationery') return item
@@ -170,13 +220,7 @@ export default function StockManagement() {
                 currentStock: Number(master.available) || 0
               }
             }))
-            if (Array.isArray(overview.branches)) {
-              setBranchOverview({
-                branches: overview.branches,
-                masterStock: overview.masterStock,
-                history: Array.isArray(overview.history) ? overview.history : []
-              })
-            }
+            setBranchOverview(overview)
           }
         } else {
           console.error('Unable to load company stationery master stock:', branchMasterResult.reason)
@@ -217,18 +261,11 @@ export default function StockManagement() {
       api.get('/stationery-stock/requests')
     ])
       .then(([response, requestsResponse]) => {
-        const data = response.data?.data
-        if (!Array.isArray(data?.branches) || !Array.isArray(data?.masterStock)) {
-          throw new Error('The server returned an invalid branch stock overview.')
-        }
+        const data = normalizeBranchOverview(response.data)
         const requests = requestsResponse.data?.data
         if (!Array.isArray(requests)) throw new Error('The server returned invalid stationery requests.')
         if (active) {
-          setBranchOverview({
-            branches: data.branches,
-            masterStock: data.masterStock,
-            history: Array.isArray(data.history) ? data.history : []
-          })
+          setBranchOverview(data)
           setBranchRequests(requests)
         }
       })
@@ -379,7 +416,7 @@ export default function StockManagement() {
   const documentItems = filteredStock.filter(s => s.category === 'document')
   const stationeryItems = filteredStock.filter(s => s.category === 'stationery')
 
-  const branchHasLowStock = (branch) => branch.stocks.some((item) =>
+  const branchHasLowStock = (branch) => (Array.isArray(branch.stocks) ? branch.stocks : []).some((item) =>
     Number(item.remaining) < 5
   )
   const filteredBranches = branchOverview.branches.filter((branch) =>
@@ -387,9 +424,9 @@ export default function StockManagement() {
   )
   const branchSummary = useMemo(() => {
     const used = branchOverview.branches.reduce((sum, branch) =>
-      sum + branch.stocks.reduce((branchSum, item) => branchSum + Number(item.used || 0), 0), 0)
+      sum + (Array.isArray(branch.stocks) ? branch.stocks : []).reduce((branchSum, item) => branchSum + Number(item.used || 0), 0), 0)
     const assigned = branchOverview.branches.reduce((sum, branch) =>
-      sum + branch.stocks.reduce((branchSum, item) => branchSum + Number(item.total_assigned || 0), 0), 0)
+      sum + (Array.isArray(branch.stocks) ? branch.stocks : []).reduce((branchSum, item) => branchSum + Number(item.total_assigned || 0), 0), 0)
     return {
       branches: branchOverview.branches.length,
       assigned,
@@ -397,6 +434,7 @@ export default function StockManagement() {
       low: branchOverview.branches.filter(branchHasLowStock).length
     }
   }, [branchOverview.branches])
+  const branchCount = branchOverview.branches.length
   const selectedMasterStock = branchOverview.masterStock.find((item) => item.book_type === branchAddForm.bookType)
   const availableMasterStock = Number(selectedMasterStock?.available) || 0
   const allocationQuantity = Number(branchAddForm.quantity) || 0
@@ -668,7 +706,7 @@ export default function StockManagement() {
             <button onClick={() => setActiveTab('history')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'history' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📜 History ({history.length})</button>
             {user.role === 'admin' && (
               <button onClick={() => setActiveTab('branch-stock')} className={`relative px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'branch-stock' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>
-                🏢 Branch Stock ({branchOverview.branches.length})
+                🏢 Branch Stock ({branchCount})
                 {branchOverview.branches.some(branchHasLowStock) && <span aria-label="Branch stock is low" className="absolute right-3 top-2 h-2 w-2 rounded-full bg-red-600" />}
               </button>
             )}
@@ -879,7 +917,7 @@ export default function StockManagement() {
                             </button>
                           </header>
                           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            {branch.stocks.map((item) => {
+                            {(Array.isArray(branch.stocks) ? branch.stocks : []).map((item) => {
                               const total = Number(item.total_assigned) || 0
                               const remaining = Number(item.remaining) || 0
                               const used = Number(item.used) || 0
@@ -928,9 +966,16 @@ export default function StockManagement() {
                         </article>
                       ))}
                     </div>
+                  ) : branchCount ? (
+                    <p className="py-8 text-center text-gray-500">No branches match this search.</p>
                   ) : (
-                    <p className="py-8 text-center text-gray-500">No matching branches found.</p>
+                    <div className="rounded-lg border-2 border-dashed border-slate-300 p-8 text-center text-slate-600">
+                      No branches were returned by the stock API. Check the branch configuration and try again.
+                    </div>
                   )}
+                  <p className="mt-4 text-center text-xs text-slate-500">
+                    API Status: {branchCount} {branchCount === 1 ? 'branch' : 'branches'} loaded
+                  </p>
                 </section>
 
                 <section ref={branchHistoryRef} className="scroll-mt-4 rounded-2xl bg-white shadow-lg">
