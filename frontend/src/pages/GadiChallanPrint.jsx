@@ -9,8 +9,8 @@ const COMPANY = {
   gst: "08CMRPP0955N1Z5",
   pan: "CMRPP0955N",
   address: "Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan - 331023",
-  phone: "+91 9680264231",
-  email: "bharattrsnportcompany@gmail.com",
+  phone: "+91 9680264231, 6375717265",
+  email: "btcpune01@gmail.com",
 }
 
 export default function GadiChallanPrint() {

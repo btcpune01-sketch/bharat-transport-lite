@@ -197,8 +197,8 @@ const BillPrint = () => {
           <h1 style={{margin: 0, fontSize: '28px', color: '#d32f2f', fontWeight: '900'}}>BHARAT TRANSPORT COMPANY</h1>
           <p style={{margin: '2px 0', fontSize: '11px', color: '#333', fontWeight: '600'}}>Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan - 331023</p>
           <div style={{fontSize: '12px', fontWeight: 'bold', color: '#0d1b3e', paddingBottom: '8px', marginBottom: '12px', borderBottom: '3px solid #000', display: 'flex', justifyContent: 'center', gap: '30px'}}>
-            <span>Mobile: +91 9680264231</span>
-            <span>Email: bharattrsnportcompany@gmail.com</span>
+            <span>Mobile: +91 9680264231, 6375717265</span>
+            <span>Email: btcpune01@gmail.com</span>
           </div>
         </div>
 
