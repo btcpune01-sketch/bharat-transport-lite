@@ -990,7 +990,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.json({ success: true, token, user: recoveryAccount });
     }
     const result = await pool.query(
-      `SELECT u.*, b.branch_code, b.branch_name FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE LOWER(u.username) = LOWER($1) OR LOWER(COALESCE(u.email, '')) = LOWER($1) LIMIT 1`,
+      `SELECT u.*, b.branch_code, b.branch_name, b.url_slug AS branch_slug FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE LOWER(u.username) = LOWER($1) OR LOWER(COALESCE(u.email, '')) = LOWER($1) LIMIT 1`,
       [loginUsername]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
@@ -1008,11 +1008,11 @@ app.post('/api/auth/login', async (req, res) => {
       await pool.query('UPDATE users SET password = $1 WHERE id = $2', [hashedPassword, user.id]);
     }
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role || 'operator', branch_id: user.branch_id, branch_code: user.branch_code },
+      { id: user.id, username: user.username, role: user.role || 'operator', branch_id: user.branch_id, branch_code: user.branch_code, branch_slug: user.branch_slug },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
-    res.json({ success: true, token, user: { id: user.id, username: user.username, role: user.role || 'operator', branch_id: user.branch_id, branch_code: user.branch_code, branch_name: user.branch_name } });
+    res.json({ success: true, token, user: { id: user.id, username: user.username, role: user.role || 'operator', branch_id: user.branch_id, branch_code: user.branch_code, branch_name: user.branch_name, branch_slug: user.branch_slug } });
   } catch (err) {
     console.error('POST /api/auth/login database request failed:', err.message);
     res.status(503).json({ error: 'Login is temporarily unavailable because the database cannot be reached.' });
@@ -1051,16 +1051,28 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     let effectiveBranchCode = userBranchCode;
 
     if (isAdmin) {
-      const selectedBranchId = req.query.branch_id;
-      if (selectedBranchId && selectedBranchId !== 'all') {
-        const parsed = parseInt(selectedBranchId, 10);
+      const selectedBranchId = String(req.query.branch_id || '').trim();
+      const selectedBranchSlug = String(req.query.branch || '').trim();
+      if (selectedBranchId && selectedBranchId.toLowerCase() !== 'all') {
+        const parsed = Number(selectedBranchId);
         if (Number.isSafeInteger(parsed) && parsed > 0) {
           effectiveBranchId = parsed;
           effectiveBranchCode = null;
         } else {
-          effectiveBranchId = null;
-          effectiveBranchCode = null;
+          return res.status(400).json({ error: 'The selected branch ID is invalid.' });
         }
+      } else if (selectedBranchSlug && selectedBranchSlug.toLowerCase() !== 'global') {
+        const branchResult = await pool.query(
+          `SELECT id FROM branches
+           WHERE COALESCE(is_active, TRUE) = TRUE
+             AND (LOWER(COALESCE(url_slug, '')) = LOWER($1)
+               OR LOWER(COALESCE(branch_code, '')) = LOWER($1))
+           LIMIT 1`,
+          [selectedBranchSlug]
+        );
+        if (!branchResult.rows[0]) return res.status(404).json({ error: 'The selected branch was not found.' });
+        effectiveBranchId = Number(branchResult.rows[0].id);
+        effectiveBranchCode = null;
       } else {
         effectiveBranchId = null;
         effectiveBranchCode = null;
@@ -1129,11 +1141,34 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard stats error:', err.message);
-    res.status(503).json({
+    res.json({
       success: false,
+      unavailable: true,
       error: 'Dashboard statistics are temporarily unavailable because the database could not be queried.',
       details: err.message,
-      code: err.code || null
+      code: err.code || null,
+      today_lr: 0,
+      month_lr: 0,
+      total_lr: 0,
+      pending_lr: 0,
+      paid_lr: 0,
+      total_bills: 0,
+      pending_bills: 0,
+      total_mr: 0,
+      total_parties: 0,
+      total_customers: 0,
+      total_revenue: 0,
+      pending_amount: 0,
+      pending_pod: 0,
+      active_drivers: 0,
+      active_vehicles: 0,
+      open_claims: 0,
+      today_expenses: 0,
+      total_branches: 0,
+      today_revenue: 0,
+      month_revenue: 0,
+      total_gadi_challan: 0,
+      fleet: { activeVehicles: 0, activeDrivers: 0 }
     });
   }
 });

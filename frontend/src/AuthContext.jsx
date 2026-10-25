@@ -31,6 +31,8 @@ export const AuthProvider = ({ children }) => {
     const response = await authAPI.login(username, password)
     const { token, user } = response.data || {}
     if (!token || !user) throw new Error('The server returned an incomplete sign-in response.')
+    localStorage.removeItem('branch_token')
+    localStorage.removeItem('branch_session')
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(user))
     setCurrentUser(user)
@@ -40,6 +42,8 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('branch_token')
+    localStorage.removeItem('branch_session')
     setCurrentUser(null)
   }
 

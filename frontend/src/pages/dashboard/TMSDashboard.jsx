@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import {
-  Activity, ArrowDownToLine, Calculator, ChevronDown, FilePlus2,
-  Receipt, Search, Truck, Wallet
+  Activity, ArrowDownToLine, Bell, Calculator, ChevronDown, FilePlus2,
+  LogOut, Receipt, Search, Truck, Wallet
 } from 'lucide-react'
 import api, { branchAPI, dashboardAPI } from '../../api'
 import { useAuth } from '../../AuthContext'
@@ -183,29 +183,30 @@ function getData(response) {
   return response?.data?.data || response?.data || {}
 }
 
-export default function TMSDashboard({
-  branch,
-  isMainAdmin = false,
-  showAllBranchesSelector = false
-}) {
-  const { currentUser } = useAuth()
+export default function TMSDashboard({ branch }) {
+  const { currentUser, logout } = useAuth()
   const routeParams = useParams()
+  const navigate = useNavigate()
   const branchSlug = branch && branch !== 'global'
     ? branch
     : routeParams.branchSlug || routeParams.branchCode || ''
   const isBranchDashboard = Boolean(branchSlug && branchSlug !== 'global')
+  const isAdminUser = currentUser?.role === 'admin'
+  const canAdminViewBranch = isBranchDashboard && isAdminUser
   const [stats, setStats] = useState(null)
   const [stock, setStock] = useState([])
   const [branches, setBranches] = useState([])
-  const [selectedBranchId, setSelectedBranchId] = useState('all')
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
   const [loading, setLoading] = useState(true)
   const [trackNumber, setTrackNumber] = useState('')
-  const [trackMessage, setTrackMessage] = useState('')
+  const [trackResult, setTrackResult] = useState(null)
+  const [trackError, setTrackError] = useState('')
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [branchSession, setBranchSession] = useState(null)
-  const isAdmin = isMainAdmin && currentUser?.role === 'admin' && !isBranchDashboard
+  const isAdmin = isAdminUser && !isBranchDashboard
   const menuItems = [
     ...navigation,
     ...(isAdmin ? [administrationMenus.admin] : isBranchDashboard ? [administrationMenus.branch] : [])
@@ -219,7 +220,18 @@ export default function TMSDashboard({
     try {
       const session = JSON.parse(localStorage.getItem('branch_session') || 'null')
       if (!session?.token || session.branch?.url_slug !== branchSlug) {
-        setBranchSession(false)
+        if (currentUser?.role !== 'admin' && currentUser?.branch_slug === branchSlug) {
+          setBranchSession({
+            token: localStorage.getItem('token'),
+            branch: {
+              id: currentUser.branch_id,
+              url_slug: currentUser.branch_slug,
+              branch_name: currentUser.branch_name
+            }
+          })
+        } else {
+          setBranchSession(false)
+        }
         return
       }
       setBranchSession(session)
@@ -227,32 +239,50 @@ export default function TMSDashboard({
       console.error('Unable to read the saved branch session:', error)
       setBranchSession(false)
     }
-  }, [branchSlug, isBranchDashboard])
+  }, [branchSlug, currentUser, isBranchDashboard])
+
+  useEffect(() => {
+    if (!isAdminUser) return
+    let active = true
+    branchAPI.getAll()
+      .then((response) => {
+        if (!active) return
+        const data = getData(response)
+        setBranches(Array.isArray(data) ? data : [])
+      })
+      .catch((error) => {
+        console.error('Unable to load branches for dashboard navigation:', error)
+        if (active) setBranches([])
+      })
+    return () => { active = false }
+  }, [isAdminUser])
+
+  const activeBranch = branchSession?.branch
+    || branches.find((item) => item.url_slug === branchSlug)
 
   useEffect(() => {
     if (isBranchDashboard && branchSession === null) return
-    if (isBranchDashboard && !branchSession) return
+    if (isBranchDashboard && !branchSession && !canAdminViewBranch) return
+    if (canAdminViewBranch && !activeBranch) {
+      setLoading(false)
+      return
+    }
 
     let active = true
     setLoading(true)
     setStatsUnavailable(false)
     const statsBranchSlug = isBranchDashboard ? branchSlug : undefined
-    const statsBranchId = isBranchDashboard
-      ? branchSession?.branch?.id
-      : selectedBranchId !== 'all' ? selectedBranchId : undefined
+    const statsBranchId = isBranchDashboard ? activeBranch?.id : undefined
     const query = {}
     if (statsBranchSlug) query.branch = statsBranchSlug
     if (statsBranchId) query.branch_id = statsBranchId
 
-    const requests = [
+    Promise.allSettled([
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
       api.get('/stock', { params: query })
-    ]
-    if (showAllBranchesSelector && isAdmin) requests.push(branchAPI.getAll())
-
-    Promise.allSettled(requests).then((results) => {
+    ]).then((results) => {
       if (!active) return
-      const [statsResult, stockResult, branchesResult] = results
+      const [statsResult, stockResult] = results
       if (statsResult.status === 'fulfilled' && statsResult.value.data?.success !== false) {
         setStats(getData(statsResult.value))
         setStatsUnavailable(false)
@@ -266,21 +296,17 @@ export default function TMSDashboard({
       } else {
         setStock([])
       }
-      if (branchesResult?.status === 'fulfilled') {
-        const data = getData(branchesResult.value)
-        setBranches(Array.isArray(data) ? data : [])
-      }
     }).finally(() => {
       if (active) setLoading(false)
     })
 
     return () => { active = false }
   }, [
-    branchSlug, branchSession, isBranchDashboard, isAdmin,
-    selectedBranchId, showAllBranchesSelector, refreshKey
+    branchSlug, branchSession, isBranchDashboard, canAdminViewBranch,
+    activeBranch, refreshKey
   ])
 
-  if (isBranchDashboard && branchSession === false) {
+  if (isBranchDashboard && branchSession === false && !canAdminViewBranch) {
     return <Navigate to={`/branch-login/${encodeURIComponent(branchSlug)}`} replace />
   }
 
@@ -357,26 +383,29 @@ export default function TMSDashboard({
       ? '/dashboard'
       : `/${path}`
   }
-  const activeBranch = branchSession?.branch
-  const selectedBranch = branches.find((item) => String(item.id) === String(selectedBranchId))
-  const title = activeBranch?.branch_name
-    || (isBranchDashboard ? branchLabel(branchSlug) : selectedBranch?.branch_name || 'All branches')
+  const title = isBranchDashboard
+    ? branchLabel(branchSlug).toUpperCase()
+    : isAdmin ? 'ADMIN' : currentUser?.branch_name || currentUser?.username || 'Dashboard'
 
   async function handleTrack(event) {
     event.preventDefault()
     if (!trackNumber.trim()) return
-    setTrackMessage('')
+    setTrackError('')
+    setTrackResult(null)
     try {
       const response = await api.get('/consignments/track', {
-        params: {
-          lr_no: trackNumber.trim(),
-          ...(isBranchDashboard ? { branch: branchSlug, branch_id: activeBranch?.id } : {})
-        }
+        params: { lr_no: trackNumber.trim() }
       })
-      setTrackMessage(response.data?.error || 'Tracking details loaded.')
+      setTrackResult(response.data)
     } catch (error) {
-      setTrackMessage(error.response?.data?.error || 'Unable to track this bilty.')
+      setTrackError(error.response?.data?.error || 'Unable to track this bilty.')
     }
+  }
+
+  async function handleLogout() {
+    await logout()
+    sessionStorage.clear()
+    navigate('/login', { replace: true })
   }
 
   function stockBalance(stationery) {
@@ -398,11 +427,13 @@ export default function TMSDashboard({
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-800">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white p-3">
+      <header className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white p-3">
         <div className="flex items-center gap-2">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-700 text-sm font-extrabold text-white">BTC</div>
           <strong className="text-sm font-bold text-slate-900">{title}</strong>
-          <span className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-600">TMS 6.0 Live</span>
+          <span className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-600">
+            TMS 6.0 Live{isAdmin && !isBranchDashboard ? ' - Global' : ''}
+          </span>
           <span className="text-xs font-semibold text-green-600">● System Online</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -419,39 +450,117 @@ export default function TMSDashboard({
               <Search className="mr-1 inline h-4 w-4" />Track
             </button>
           </form>
-          <label className="sr-only" htmlFor="dashboard-branch">Select branch</label>
-          <select
-            id="dashboard-branch"
-            value={showAllBranchesSelector && isAdmin ? selectedBranchId : activeBranch?.id || ''}
-            onChange={(event) => setSelectedBranchId(event.target.value)}
-            disabled={!showAllBranchesSelector || !isAdmin}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:text-slate-700"
-          >
-            {showAllBranchesSelector && isAdmin ? (
-              <>
-                <option value="all">All branches</option>
+          {isAdmin && !isBranchDashboard && (
+            <>
+              <label className="sr-only" htmlFor="dashboard-branch">Switch to branch dashboard</label>
+              <select
+                id="dashboard-branch"
+                value=""
+                onChange={(event) => {
+                  if (event.target.value) navigate(`/branch/${encodeURIComponent(event.target.value)}/dashboard`)
+                }}
+                className="max-w-48 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select Branch</option>
                 {branches.map((item) => (
-                  <option key={item.id} value={item.id}>{item.branch_name || item.branch_code}</option>
+                  <option key={item.id} value={item.url_slug}>{item.branch_name || item.branch_code}</option>
                 ))}
-              </>
-            ) : (
-              <option value={activeBranch?.id || ''}>{title}</option>
+              </select>
+            </>
+          )}
+          {isBranchDashboard && isAdminUser && (
+            <button
+              type="button"
+              onClick={() => navigate('/admin/dashboard')}
+              className="rounded-md border border-slate-300 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+            >
+              Back to Admin
+            </button>
+          )}
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Notifications"
+              aria-expanded={showNotifications}
+              onClick={() => { setShowNotifications((open) => !open); setShowProfileMenu(false) }}
+              className="rounded-md p-2 text-slate-600 hover:bg-slate-100"
+            >
+              <Bell className="h-5 w-5" />
+            </button>
+            {showNotifications && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-lg">
+                <strong className="text-slate-800">Notifications</strong>
+                <p className="mt-2 text-slate-500">No notification feed is configured.</p>
+              </div>
             )}
-          </select>
-          <button type="button" className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
-            Admin Branch
-          </button>
-          <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">AD</span>
-            <span className="hidden text-xs font-semibold text-slate-700 sm:inline">Admin</span>
+          </div>
+          <div className="relative flex items-center gap-2 border-l border-slate-200 pl-3">
+            <button
+              type="button"
+              aria-expanded={showProfileMenu}
+              onClick={() => { setShowProfileMenu((open) => !open); setShowNotifications(false) }}
+              className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-slate-100"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                {(currentUser?.username || (isAdminUser ? 'Admin' : title)).slice(0, 2).toUpperCase()}
+              </span>
+              <span className="hidden text-xs font-semibold capitalize text-slate-700 sm:inline">
+                {isAdminUser ? 'Admin' : currentUser?.username || title}
+              </span>
+            </button>
+            {showProfileMenu && (
+              <div className="absolute right-0 top-full z-20 mt-2 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => navigate(isAdminUser ? '/admin/users' : branchPath('user-management'))}
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-blue-50"
+                >
+                  Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(isAdminUser ? '/admin/settings' : branchPath('settings'))}
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-blue-50"
+                >
+                  Settings
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+                >
+                  <LogOut className="h-4 w-4" />Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      {trackMessage && (
-        <p role="status" className="border-b border-blue-100 bg-blue-50 px-4 py-2 text-sm text-blue-800">
-          {trackMessage}
-        </p>
+      {trackError && (
+        <div role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-800">
+          {trackError}
+        </div>
+      )}
+      {trackResult && (
+        <div role="dialog" aria-modal="true" aria-labelledby="tracking-result-title" className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
+          <section className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="tracking-result-title" className="text-lg font-bold text-slate-900">Tracking details</h2>
+                <p className="mt-1 text-sm text-slate-500">LR / Bilty {trackResult.lr_no}</p>
+              </div>
+              <button type="button" aria-label="Close tracking details" onClick={() => setTrackResult(null)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100">×</button>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <dt className="text-slate-500">Status</dt><dd className="font-semibold text-slate-900">{trackResult.status || 'Unknown'}</dd>
+              <dt className="text-slate-500">From</dt><dd className="text-slate-900">{trackResult.from_name || '—'}</dd>
+              <dt className="text-slate-500">To</dt><dd className="text-slate-900">{trackResult.to_name || '—'}</dd>
+              <dt className="text-slate-500">Consignee</dt><dd className="text-slate-900">{trackResult.consignee_name || '—'}</dd>
+              <dt className="text-slate-500">POD Status</dt><dd className="text-slate-900">{trackResult.pod_status || '—'}</dd>
+            </dl>
+          </section>
+        </div>
       )}
 
       <nav aria-label="Main navigation" className="border-b border-slate-200 bg-white">

@@ -12,8 +12,12 @@ function getActiveBranchSession() {
   try {
     const session = JSON.parse(localStorage.getItem('branch_session') || 'null')
     const slug = decodeURIComponent(match[1])
-    if (!session?.token || session.branch?.url_slug !== slug) return null
-    return { ...session, slug }
+    if (session?.token && session.branch?.url_slug === slug) return { ...session, slug }
+    const user = JSON.parse(localStorage.getItem('user') || 'null')
+    if (user?.role !== 'admin' && user?.branch_slug === slug && user?.branch_id) {
+      return { token: localStorage.getItem('token'), branch: user, slug }
+    }
+    return null
   } catch (error) {
     console.error('Unable to read the saved branch session:', error)
     return null
@@ -160,7 +164,7 @@ function normalizeDashboardParams(params = {}) {
     const branchId = Number.parseInt(digits, 10)
     normalized.branch_id = Number.isSafeInteger(branchId) && branchId > 0
       ? branchId
-      : normalized.branch ? 1 : undefined
+      : undefined
   } else if (normalized.branch_id === 'all') {
     delete normalized.branch_id
   }

@@ -426,13 +426,20 @@ test('TEST 5 - Branch Payment save, list, and summary', async ({ page }) => {
 })
 
 test('TMS dashboard shows role-specific administration and branch user tools', async ({ page }) => {
+  const dashboardRequests = []
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/^\/api/, '')
+    if (path === '/dashboard/stats') {
+      dashboardRequests.push({
+        branch: url.searchParams.get('branch'),
+        branchId: url.searchParams.get('branch_id')
+      })
+    }
     const response = path === '/dashboard/stats'
       ? { success: true, today_lr: 0, month_lr: 0, total_branches: 1 }
       : path === '/branches'
-        ? { data: [{ id: 1, branch_name: 'Ahmedabad' }] }
+        ? { data: [{ id: 1, branch_name: 'Ahmedabad', url_slug: 'ahmedabad' }] }
         : path === '/branch/users'
           ? { data: [{ id: 1, username: 'branch-operator', full_name: 'Branch Operator', role: 'operator', is_active: true }] }
           : path === '/stock' ? { data: [] } : { data: [] }
@@ -444,7 +451,17 @@ test('TMS dashboard shows role-specific administration and branch user tools', a
     localStorage.setItem('user', JSON.stringify({ id: 1, username: 'admin', role: 'admin' }))
   })
   await page.goto('/#/admin/dashboard')
+  await expect(page.getByText('ADMIN', { exact: true })).toBeVisible()
+  await expect(page.getByText('TMS 6.0 Live - Global')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
+  await page.getByLabel('Switch to branch dashboard').selectOption('ahmedabad')
+  await expect(page).toHaveURL(/#\/branch\/ahmedabad\/dashboard$/)
+  await expect(page.getByText('AHMEDABAD', { exact: true })).toBeVisible()
+  await expect.poll(() => dashboardRequests.some((request) =>
+    request.branch === 'ahmedabad' && request.branchId === '1'
+  )).toBe(true)
+  await page.getByRole('button', { name: 'Back to Admin' }).click()
+  await expect(page).toHaveURL(/#\/admin\/dashboard$/)
   await page.getByRole('button', { name: 'Administration' }).click()
   await expect(page.getByRole('link', { name: 'Branch Management' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Global User Management' })).toBeVisible()
@@ -469,4 +486,12 @@ test('TMS dashboard shows role-specific administration and branch user tools', a
   await expect(page).toHaveURL(/#\/branch\/ahmedabad\/user-management$/)
   await expect(page.getByRole('heading', { name: 'Branch User Management' })).toBeVisible()
   await expect(page.getByText('branch-operator')).toBeVisible()
+  await page.goto('/#/branch/ahmedabad/dashboard')
+  await page.getByRole('button', { name: 'Notifications' }).click()
+  await expect(page.getByText('No notification feed is configured.')).toBeVisible()
+  await page.locator('header button[aria-expanded]').last().click()
+  await expect(page.getByRole('button', { name: 'Profile' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible()
+  await page.getByRole('button', { name: 'Logout' }).click()
+  await expect(page).toHaveURL(/#\/login$/)
 })

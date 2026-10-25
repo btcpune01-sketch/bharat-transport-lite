@@ -33,8 +33,10 @@ export default function Login() {
       setIsLoggingIn(true)
 
       await new Promise((resolve) => window.setTimeout(resolve, 1500))
-      await login(email, password)
-      navigate('/dashboard')
+      const user = await login(email, password)
+      if (user.role === 'admin') navigate('/admin/dashboard')
+      else if (user.branch_slug) navigate(`/branch/${encodeURIComponent(user.branch_slug)}/dashboard`)
+      else navigate('/dashboard')
     } catch (err) {
       console.error('Sign-in request failed', {
         status: err.response?.status ?? null,
