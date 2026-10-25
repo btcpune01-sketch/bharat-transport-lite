@@ -1244,15 +1244,10 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH}`)
     ];
 
-    const settledResults = await Promise.allSettled(queries);
-    const failedQueries = settledResults
-      .map((result, index) => ({ result, index }))
-      .filter(({ result }) => result.status === 'rejected');
-    for (const { result, index } of failedQueries) {
-      console.error(`Dashboard stats query ${index + 1} failed:`, result.reason?.message || result.reason);
-    }
-    if (failedQueries.length === queries.length) throw failedQueries[0].result.reason;
-    const results = settledResults.map((result) => result.status === 'fulfilled' ? result.value : null);
+    const results = await Promise.all(queries.map((query, index) => query.catch((error) => {
+      console.error(`Dashboard stats query ${index + 1} failed:`, error.message);
+      throw error;
+    })));
     const get = (idx, field = 'count') => {
       const row = results[idx]?.rows?.[0];
       if (!row) return 0;
@@ -1265,39 +1260,16 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       pending_bills: get(6), total_mr: get(7), total_parties: get(8), total_customers: get(9), total_revenue: get(10, 'total'),
       pending_amount: get(11, 'total'), pending_pod: get(12), active_drivers: get(13), active_vehicles: get(14),
       open_claims: get(15), today_expenses: get(16, 'total'), total_branches: get(17), today_revenue: get(18, 'total'),
-      month_revenue: get(19, 'total'), total_gadi_challan: get(20), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin,
-      partial: failedQueries.length > 0
+      month_revenue: get(19, 'total'), total_gadi_challan: get(20), user_role: userRole, user_branch: userBranchCode, is_admin: isAdmin
     });
   } catch (err) {
-    console.error('Dashboard stats error:', err.message);
-    res.json({
+    console.error('Dashboard stats error:', err);
+    res.status(500).json({
       success: false,
       unavailable: true,
       error: 'Dashboard statistics are temporarily unavailable because the database could not be queried.',
       details: err.message,
-      code: err.code || null,
-      today_lr: 0,
-      month_lr: 0,
-      total_lr: 0,
-      pending_lr: 0,
-      paid_lr: 0,
-      total_bills: 0,
-      pending_bills: 0,
-      total_mr: 0,
-      total_parties: 0,
-      total_customers: 0,
-      total_revenue: 0,
-      pending_amount: 0,
-      pending_pod: 0,
-      active_drivers: 0,
-      active_vehicles: 0,
-      open_claims: 0,
-      today_expenses: 0,
-      total_branches: 0,
-      today_revenue: 0,
-      month_revenue: 0,
-      total_gadi_challan: 0,
-      fleet: { activeVehicles: 0, activeDrivers: 0 }
+      code: err.code || null
     });
   }
 });

@@ -227,7 +227,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
       return res.json({ data: { branches, masterStock, history: historyResult.rows } })
     } catch (error) {
       console.error('Branch stationery overview failed:', error.message)
-      return res.status(500).json({ error: 'Unable to load branch stationery stock.' })
+      return res.status(500).json({ error: 'Unable to load branch stationery stock.', details: error.message, code: error.code || null })
     }
   })
 
@@ -265,7 +265,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
       })
     } catch (error) {
       console.error('Branch stationery lookup failed:', error.message)
-      return res.status(500).json({ error: 'Unable to load branch stationery stock.' })
+      return res.status(500).json({ error: 'Unable to load branch stationery stock.', details: error.message, code: error.code || null })
     }
   })
 
@@ -313,7 +313,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
       return res.json({ data: result.rows })
     } catch (error) {
       console.error('Branch stationery history failed:', error.message)
-      return res.status(500).json({ error: 'Unable to load branch stationery history.' })
+      return res.status(500).json({ error: 'Unable to load branch stationery history.', details: error.message, code: error.code || null })
     }
   })
 
@@ -421,7 +421,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
       })
     } catch (error) {
       console.error('Stationery stock lookup failed:', error.message)
-      return res.status(500).json({ error: 'Unable to load stationery stock.' })
+      return res.status(500).json({ error: 'Unable to load stationery stock.', details: error.message, code: error.code || null })
     }
   })
 
@@ -558,7 +558,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         try { await client.query('ROLLBACK') } catch (rollbackError) { console.error('Branch self-update rollback failed:', rollbackError.message) }
       }
       console.error('Branch stationery self-update failed:', error.message)
-      return res.status(500).json({ error: 'Unable to update branch stationery stock.' })
+      return res.status(500).json({ error: 'Unable to update branch stationery stock.', details: error.message, code: error.code || null })
     } finally {
       client?.release()
     }
@@ -619,7 +619,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         try { await client.query('ROLLBACK') } catch (rollbackError) { console.error('Master stationery addition rollback failed:', rollbackError.message) }
       }
       console.error('Stationery stock add failed:', error.message)
-      return res.status(500).json({ error: 'Unable to add stationery to main stock.' })
+      return res.status(500).json({ error: 'Unable to add stationery to main stock.', details: error.message, code: error.code || null })
     } finally {
       client?.release()
     }
@@ -650,7 +650,10 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         try { await client.query('ROLLBACK') } catch (rollbackError) { console.error('Stationery distribution rollback failed:', rollbackError.message) }
       }
       console.error('Stationery distribution failed:', error.message)
-      return res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to distribute stationery stock.' })
+      return res.status(error.status || 500).json({
+        error: error.status ? error.message : 'Unable to distribute stationery stock.',
+        ...(!error.status && { details: error.message, code: error.code || null })
+      })
     } finally {
       client?.release()
     }
@@ -743,7 +746,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         const available = match ? match[1] : '0'
         return res.status(400).json({ error: `Master stock only ${available} left, cannot allocate ${quantity}.` })
       }
-      return res.status(500).json({ error: 'Unable to add stock to this branch.' })
+      return res.status(500).json({ error: 'Unable to add stock to this branch.', details: error.message, code: error.code || null })
     } finally {
       client?.release()
     }
@@ -788,7 +791,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         try { await client.query('ROLLBACK') } catch (rollbackError) { console.error('Stationery request rollback failed:', rollbackError.message) }
       }
       console.error('Stationery request creation failed:', error.message)
-      return res.status(500).json({ error: 'Unable to save the stationery request.' })
+      return res.status(500).json({ error: 'Unable to save the stationery request.', details: error.message, code: error.code || null })
     } finally {
       client?.release()
     }
@@ -809,7 +812,7 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
       return res.json({ data: result.rows })
     } catch (error) {
       console.error('Stationery request lookup failed:', error.message)
-      return res.status(500).json({ error: 'Unable to load stationery requests.' })
+      return res.status(500).json({ error: 'Unable to load stationery requests.', details: error.message, code: error.code || null })
     }
   })
 
@@ -853,7 +856,10 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
         try { await client.query('ROLLBACK') } catch (rollbackError) { console.error('Stationery request rollback failed:', rollbackError.message) }
       }
       console.error('Stationery request review failed:', error.message)
-      return res.status(error.status || 500).json({ error: error.status ? error.message : 'Unable to review the stationery request.' })
+      return res.status(error.status || 500).json({
+        error: error.status ? error.message : 'Unable to review the stationery request.',
+        ...(!error.status && { details: error.message, code: error.code || null })
+      })
     } finally {
       client?.release()
     }
