@@ -388,8 +388,9 @@ export default function BillEntry({ branchMode = false }) {
         navigate('/bill/new')
         return
       }
+      const newSerial = getLocalDocumentNumber('bill', 'BTC/BILL/') // ✅ Auto Serial Number
       setBillData({
-        invNo: '',
+        invNo: newSerial, // ✅ Auto-fill serial number immediately
         billDate: formatDateForInput(new Date()),
         partyName: '', partyGst: '', fromAddr: '', toAddr: '', vehNo: '', subtotal: 0,
         gstAmt: 0, grandtotal: 0, balance: 0, amountWords: '',
@@ -562,7 +563,19 @@ export default function BillEntry({ branchMode = false }) {
         .history-header { font-weight: 900; background: var(--primary); color: white; padding: 10px; border-radius: 5px; }
         .row-remove { border: none; background: #b91c1c; color: #fff; border-radius: 3px; font-size: 8px; margin-top: 2px; padding: 2px 4px; cursor: pointer; }
         @media print {
-          .no-print, #historyModal, .bilty-import-section { display: none!important; }
+          /* ✅ Hide react-hot-toast and any saved locally popups during print */
+          .react-hot-toast, 
+          [class*="toast"], 
+          [class*="Toastify"],
+          .no-print, 
+          #historyModal, 
+          .bilty-import-section { 
+            display: none !important; 
+            visibility: hidden !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
           .row-remove { display: none!important; }
           body { background: white; } 
           .invoice-wrapper { margin: 0; box-shadow: none; width: 100%; padding: 5mm; } 
