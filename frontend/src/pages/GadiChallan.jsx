@@ -212,6 +212,29 @@ export default function GadiChallan() {
     setShowForm(true)
   }
 
+  const handleDelete = async (id) => {
+    if (!window.confirm('क्या आप वाकई इस Gadi Challan को delete करना चाहते हैं?')) {
+      return
+    }
+    try {
+      const token = localStorage.getItem('token')
+      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const res = await fetch(`${apiUrl}/gadi-challan/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      if (res.ok) {
+        toast.success('Gadi Challan deleted successfully!')
+        fetchData()
+      } else {
+        throw new Error('Failed to delete')
+      }
+    } catch (err) {
+      console.error('Delete error:', err)
+      toast.error('Error deleting Gadi Challan')
+    }
+  }
+
   const formatCurrency = (amount) => {
     return '' + parseFloat(amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })
   }
@@ -258,7 +281,7 @@ export default function GadiChallan() {
             <form onSubmit={handleSubmit}>
               <div className="bg-lime-50 border-2 border-lime-300 rounded-xl p-4 mb-6">
                 <h3 className="font-bold text-lime-800 mb-3 flex items-center gap-2">
-                  🔗 Select Bilty / LR (Auto-Fill Details)
+                   Select Bilty / LR (Auto-Fill Details)
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -348,7 +371,7 @@ export default function GadiChallan() {
               </div>
 
               <div className="bg-gray-50 rounded-xl p-4 mb-6">
-                <h3 className="font-bold text-gray-800 mb-3">🤝 Broker / Agent Details</h3>
+                <h3 className="font-bold text-gray-800 mb-3"> Broker / Agent Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Broker Name</label>
@@ -423,7 +446,7 @@ export default function GadiChallan() {
         ) : (
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="p-6 border-b flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-800">📋 Recent Gadi Challans</h2>
+              <h2 className="text-xl font-bold text-gray-800"> Recent Gadi Challans</h2>
               <div className="text-sm text-gray-500">Total: {challans.length}</div>
             </div>
 
@@ -461,7 +484,6 @@ export default function GadiChallan() {
                         <td className="p-4 text-right font-bold">{formatCurrency(c.freight_amount)}</td>
                         <td className="p-4 text-right">{formatCurrency(c.advance_paid)}</td>
                         <td className="p-4 text-right font-bold text-lime-700">{formatCurrency(c.balance_due)}</td>
-                        {/* ✅ FIXED: Added View, Print, and Edit buttons */}
                         <td className="p-4 text-center space-y-1">
                           <button onClick={() => navigate(`/gadi-challan-print/${c.localDraftId || c.id}`)} className="block w-full text-center px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold hover:bg-blue-200 mb-1">
                             👁️ View
@@ -471,6 +493,9 @@ export default function GadiChallan() {
                           </button>
                           <button onClick={() => handleEdit(c)} disabled={Boolean(c.localDraftId)} className="block w-full text-center px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold hover:bg-yellow-200 disabled:opacity-50">
                             ✏️ Edit
+                          </button>
+                          <button onClick={() => handleDelete(c.id)} className="block w-full text-center px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200">
+                            ️ Delete
                           </button>
                         </td>
                       </tr>
