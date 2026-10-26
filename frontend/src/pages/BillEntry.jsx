@@ -347,11 +347,32 @@ export default function BillEntry({ branchMode = false }) {
       const response = id
         ? await api.put(`/bills/${id}`, payload)
         : await api.post('/bills', payload)
+        
+      // ✅ FIX 1: Local save hone par history mein bhi daal dein
       if (response.data?.local) {
-        saveLocalDraft('bill', { ...payload, bill_no: payload.bill_no || billData.invNo })
+        const localBill = { 
+          ...payload, 
+          bill_no: payload.bill_no || billData.invNo,
+          id: `local_${Date.now()}`,
+          bill_date: payload.bill_date,
+          party_name: payload.party_name,
+          grand_total: payload.grand_total,
+          net_balance: payload.balance_due
+        }
+        saveLocalDraft('bill', localBill)
+        
+        try {
+          const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
+          const nextHistory = [localBill, ...localHistory.filter(bill => bill.bill_no !== localBill.bill_no)]
+          localStorage.setItem('btc_history', JSON.stringify(nextHistory))
+        } catch (e) {
+          console.error('Local history update failed:', e)
+        }
+
         toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
         return
       }
+      
       const savedBill = response.data
       try {
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
@@ -366,9 +387,28 @@ export default function BillEntry({ branchMode = false }) {
       toast.success(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
       navigate(`/bills/${savedBill.id}/print`)
     } catch (err) {
+      // ✅ FIX 2: Database unavailable error par bhi history mein daal dein
       if (isDatabaseUnavailable(err)) {
         try {
-          saveLocalDraft('bill', { ...billData, bill_no: billData.invNo })
+          const localBill = { 
+            ...billData, 
+            bill_no: billData.invNo,
+            id: `local_${Date.now()}`,
+            bill_date: billData.billDate,
+            party_name: billData.partyName,
+            grand_total: calculate(billData).grandtotal,
+            net_balance: calculate(billData).balance
+          }
+          saveLocalDraft('bill', localBill)
+          
+          try {
+            const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
+            const nextHistory = [localBill, ...localHistory.filter(bill => bill.bill_no !== localBill.bill_no)]
+            localStorage.setItem('btc_history', JSON.stringify(nextHistory))
+          } catch (e) {
+            console.error('Local history update failed:', e)
+          }
+          
           toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
         } catch (storageError) {
           console.error('Unable to store the bill as a local draft:', storageError)
