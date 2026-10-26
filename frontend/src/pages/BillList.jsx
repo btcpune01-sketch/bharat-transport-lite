@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
+import { getAllBills, deleteBill as deleteBillFromStorage } from '../utils/billStorage'
 
 export default function BillList() {
   const [bills, setBills] = useState([])
@@ -20,43 +21,39 @@ export default function BillList() {
       let serverBills = []
       let localBills = []
 
-      // 1. Server से data लाओ
-      try {
-        const res = await api.get('/bills')
-        serverBills = res.data?.data || res.data || []
-        if (!Array.isArray(serverBills)) serverBills = []
-      } catch (err) {
-        console.warn('Server से bills नहीं मिले, local data check कर रहे हैं:', err)
+      // 1. Server से data लाओ (अगर token है)
+      const token = localStorage.getItem('token')
+      if (token) {
+        try {
+          const res = await api.get('/bills')
+          serverBills = res.data?.data || res.data || []
+          if (!Array.isArray(serverBills)) serverBills = []
+        } catch (err) {
+          console.warn('Server से bills नहीं मिले:', err)
+        }
       }
 
-      // 2. Local Storage से data लाओ
+      // 2. सभी local storage layers से data लाओ
       try {
-        const stored = localStorage.getItem('btc_history')
-        if (stored) {
-          localBills = JSON.parse(stored)
-          if (!Array.isArray(localBills)) localBills = []
-        }
+        localBills = await getAllBills()
       } catch (err) {
         console.error('Local data पढ़ने में error:', err)
       }
 
-      // 3. दोनों data को merge करो (Duplicates हटाओ)
+      // 3. दोनों data को merge करो
       const combinedMap = new Map()
       
-      // पहले local bills डालो
       localBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
       })
 
-      // फिर server bills डालो (ये local को override करेंगे)
       serverBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
       })
 
       const finalBills = Array.from(combinedMap.values())
-
       setBills(finalBills)
       setLoadError(serverBills.length === 0 && finalBills.length > 0 ? 'Showing locally saved bills' : '')
       
@@ -70,20 +67,23 @@ export default function BillList() {
 
   const deleteBill = async (bill) => {
     if (!window.confirm(`Delete bill ${bill.bill_no || ''}?`)) return
+    
     try {
-      // Server से delete करो (अगर server bill है)
-      if (!String(bill.id).startsWith('local_')) {
-        await api.delete(`/bills/${bill.id}`)
+      // Server से delete करो (अगर token है और server bill है)
+      const token = localStorage.getItem('token')
+      if (token && !String(bill.id).startsWith('local_')) {
+        try {
+          await api.delete(`/bills/${bill.id}`)
+        } catch (err) {
+          console.warn('Server delete failed:', err)
+        }
       }
       
-      // Local से भी हटाओ
-      const current = JSON.parse(localStorage.getItem('btc_history') || '[]')
-      const updated = current.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no)
-      localStorage.setItem('btc_history', JSON.stringify(updated))
-      
-      setBills(currentBills => currentBills.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no))
+      // सभी local storage layers से हटाओ
+      const updated = await deleteBillFromStorage(bill.id)
+      setBills(updated)
     } catch (err) {
-      window.alert(err.response?.data?.error || 'Unable to delete this bill.')
+      window.alert('Unable to delete this bill.')
     }
   }
 
