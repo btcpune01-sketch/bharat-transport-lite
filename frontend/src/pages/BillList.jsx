@@ -29,7 +29,7 @@ export default function BillList() {
         console.warn('Server से bills नहीं मिले, local data check कर रहे हैं:', err)
       }
 
-      // 2. Local Storage (पुराना/saved) से data लाओ
+      // 2. Local Storage से data लाओ (आपके 3 bills यहाँ हैं!)
       try {
         const stored = localStorage.getItem('btc_history')
         if (stored) {
@@ -40,16 +40,14 @@ export default function BillList() {
         console.error('Local data पढ़ने में error:', err)
       }
 
-      // 3. दोनों data को merge करो (Duplicates हटाने के लिए)
+      // 3. दोनों data को merge करो
       const combinedMap = new Map()
       
-      // पहले local bills डालो
       localBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
       })
 
-      // फिर server bills डालो (ये local को override करेंगे अगर same हो)
       serverBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
@@ -57,27 +55,24 @@ export default function BillList() {
 
       const finalBills = Array.from(combinedMap.values())
 
-      // 4. Screen पर set करो
       setBills(finalBills)
-      setLoadError(serverBills.length === 0 && finalBills.length > 0 ? 'Showing locally saved bills (Server sync pending)' : '')
+      setLoadError(serverBills.length === 0 && finalBills.length > 0 ? 'Showing locally saved bills' : '')
       
     } catch (err) {
       console.error('Bill list load failed:', err)
-      setLoadError('Unable to load bills. Please check your connection.')
+      setLoadError('Unable to load bills.')
     } finally {
       setLoading(false)
     }
   }
 
   const deleteBill = async (bill) => {
-    if (!window.confirm(`Delete bill ${bill.bill_no || ''}? This cannot be undone.`)) return
+    if (!window.confirm(`Delete bill ${bill.bill_no || ''}?`)) return
     try {
       await api.delete(`/bills/${bill.id}`)
-      // Local से भी हटाओ
       const current = JSON.parse(localStorage.getItem('btc_history') || '[]')
       const updated = current.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no)
       localStorage.setItem('btc_history', JSON.stringify(updated))
-      
       setBills(currentBills => currentBills.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no))
     } catch (err) {
       window.alert(err.response?.data?.error || 'Unable to delete this bill.')
@@ -137,19 +132,11 @@ export default function BillList() {
               ) : (
                 filtered.map(bill => (
                   <tr key={bill.id || bill.bill_no} className="border-b hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-red-700" style={{ wordBreak: 'break-word' }}>
-                      {bill.bill_no || 'N/A'}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-red-700">{bill.bill_no || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm">{bill.bill_date ? formatDate(bill.bill_date) : '-'}</td>
-                    <td className="px-4 py-3 text-sm" style={{ wordBreak: 'break-word', whiteSpace: 'normal' }}>
-                      {bill.party_name || 'N/A'}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium">
-                      ₹{Number(bill.grand_total || bill.grandtotal || 0).toLocaleString('en-IN')}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-red-600">
-                      ₹{Number(bill.net_balance || bill.balance_due || bill.balance || 0).toLocaleString('en-IN')}
-                    </td>
+                    <td className="px-4 py-3 text-sm">{bill.party_name || 'N/A'}</td>
+                    <td className="px-4 py-3 text-right font-medium">₹{Number(bill.grand_total || bill.grandtotal || 0).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3 text-right font-medium text-red-600">₹{Number(bill.net_balance || bill.balance_due || bill.balance || 0).toLocaleString('en-IN')}</td>
                     <td className="px-4 py-3 text-center">
                       <Link to={`/bill-edit/${bill.id}`} className="ml-2 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 text-sm font-medium inline-block">Edit</Link>
                       <Link to={`/bill-print/${bill.id}`} className="ml-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium inline-block">Print</Link>
