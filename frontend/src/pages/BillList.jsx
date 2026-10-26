@@ -71,11 +71,16 @@ export default function BillList() {
   const deleteBill = async (bill) => {
     if (!window.confirm(`Delete bill ${bill.bill_no || ''}?`)) return
     try {
-      await api.delete(`/bills/${bill.id}`)
+      // Server से delete करो (अगर server bill है)
+      if (!String(bill.id).startsWith('local_')) {
+        await api.delete(`/bills/${bill.id}`)
+      }
+      
       // Local से भी हटाओ
       const current = JSON.parse(localStorage.getItem('btc_history') || '[]')
       const updated = current.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no)
       localStorage.setItem('btc_history', JSON.stringify(updated))
+      
       setBills(currentBills => currentBills.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no))
     } catch (err) {
       window.alert(err.response?.data?.error || 'Unable to delete this bill.')
@@ -141,7 +146,7 @@ export default function BillList() {
                     <td className="px-4 py-3 text-right font-medium">₹{Number(bill.grand_total || bill.grandtotal || 0).toLocaleString('en-IN')}</td>
                     <td className="px-4 py-3 text-right font-medium text-red-600">₹{Number(bill.net_balance || bill.balance_due || bill.balance || 0).toLocaleString('en-IN')}</td>
                     <td className="px-4 py-3 text-center">
-                      <Link to={`/bill-edit/${bill.id}`} className="ml-2 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 text-sm font-medium inline-block">Edit</Link>
+                      <Link to={`/bill-entry?id=${bill.id}`} className="ml-2 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 text-sm font-medium inline-block">Edit</Link>
                       <Link to={`/bill-print/${bill.id}`} className="ml-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium inline-block">Print</Link>
                       <button type="button" onClick={() => deleteBill(bill)} className="ml-2 bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-sm font-medium">Delete</button>
                     </td>
