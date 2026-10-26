@@ -4,7 +4,7 @@ import api from '../api'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
 import toast from 'react-hot-toast'
-import { getNextSerialNumber } from '../utils/billSerial'
+import { getNextSerialNumber, updateBillSerial } from '../utils/billSerial'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
@@ -361,6 +361,13 @@ export default function BillEntry({ branchMode = false }) {
         }
         saveLocalDraft('bill', localBill)
         
+        // ✅ Serial number update करें
+        try {
+          updateBillSerial(localBill.bill_no)
+        } catch (e) {
+          console.error('Could not update local bill serial:', e)
+        }
+        
         try {
           const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
           const nextHistory = [localBill, ...localHistory.filter(bill => bill.bill_no !== localBill.bill_no)]
@@ -374,6 +381,14 @@ export default function BillEntry({ branchMode = false }) {
       }
       
       const savedBill = response.data
+      
+      // ✅ Serial number auto-update करें
+      try {
+        updateBillSerial(savedBill.bill_no || billData.invNo)
+      } catch (e) {
+        console.error('Could not update bill serial:', e)
+      }
+      
       try {
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
         if (!Array.isArray(localHistory)) throw new Error('Saved bill history is not a list.')
@@ -400,6 +415,13 @@ export default function BillEntry({ branchMode = false }) {
             net_balance: calculate(billData).balance
           }
           saveLocalDraft('bill', localBill)
+          
+          // ✅ Serial number update करें
+          try {
+            updateBillSerial(localBill.bill_no)
+          } catch (e) {
+            console.error('Could not update local bill serial:', e)
+          }
           
           try {
             const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
