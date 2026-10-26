@@ -58,6 +58,7 @@ export default function BillEntry({ branchMode = false }) {
   const fetchNextBillNo = async () => {
     try {
       const nextSerial = await getNextSerialNumber()
+      console.log('✅ New serial generated:', nextSerial)
       setBillData(prev => ({ ...prev, invNo: nextSerial }))
     } catch (error) {
       console.warn('Unable to query the next bill number; using a local fallback:', error)
@@ -292,6 +293,7 @@ export default function BillEntry({ branchMode = false }) {
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
         localStorage.setItem('btc_history', JSON.stringify([localBill, ...localHistory.filter(bill => bill.bill_no !== localBill.bill_no)]))
         toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        await fetchNextBillNo() // अगला serial number लाओ
         return
       }
       
@@ -303,6 +305,7 @@ export default function BillEntry({ branchMode = false }) {
       
       await fetchHistory()
       toast.success(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
+      await fetchNextBillNo() // अगला serial number लाओ
       navigate(`/bills/${savedBill.id}/print`)
     } catch (err) {
       if (isDatabaseUnavailable(err)) {
@@ -312,6 +315,7 @@ export default function BillEntry({ branchMode = false }) {
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
         localStorage.setItem('btc_history', JSON.stringify([localBill, ...localHistory.filter(bill => bill.bill_no !== localBill.bill_no)]))
         toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+        await fetchNextBillNo() // अगला serial number लाओ
       } else {
         toast.error(err.response?.data?.error || err.message || 'Failed to save bill')
       }
@@ -322,7 +326,7 @@ export default function BillEntry({ branchMode = false }) {
 
   const newBill = () => {
     if (window.confirm("Generate New Bill?")) {
-      if (id) { navigate('/bill/new'); return }
+      if (id) { navigate('/bill-entry'); return }
       setBillData({
         invNo: 'Loading...', billDate: formatDateForInput(new Date()), partyName: '', partyGst: '', fromAddr: '', toAddr: '', vehNo: '',
         advInput: 0, advCash: '', advChq: '', advUpi: '', gstPer: 0, remarks: '',
@@ -330,7 +334,7 @@ export default function BillEntry({ branchMode = false }) {
       })
       setLrSearch('')
       setAddedBilts([])
-      fetchNextBillNo()
+      fetchNextBillNo() // नया serial number लाओ
     }
   }
 
