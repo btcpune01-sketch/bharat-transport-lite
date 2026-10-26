@@ -62,7 +62,7 @@ export const getNextSerialNumber = async () => {
 
     const nextNum = lastNum + 1
     saveSerial(nextNum)
-    return `BTC-${nextNum}`
+    return `BTC-${nextNum}` // हमेशा BTC-XXXX format return करेगा
     
   } catch (error) {
     console.warn('Server unavailable, using local serial:', error)
