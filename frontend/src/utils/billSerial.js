@@ -1,25 +1,15 @@
 import api from '../api'
 
-const getInvoicePrefix = (date = new Date()) => {
-  const year = date.getFullYear()
-  const financialYearStart = date.getMonth() >= 3 ? year : year - 1
-  const financialYear = `${String(financialYearStart).slice(-2)}-${String(financialYearStart + 1).slice(-2)}`
-  return `BTC/${financialYear}/`
-}
-
-// Get last serial from localStorage (BTC-XXXX format)
+// BTC-XXXX format के लिए localStorage से last serial लाओ
 const getLastLocalSerial = () => {
   try {
-    // Check for BTC-XXXX format in localStorage
     const stored = localStorage.getItem('btc_last_bill_serial')
     if (stored) {
       const match = stored.match(/BTC[-/](\d+)/)
-      if (match) {
-        return parseInt(match[1])
-      }
+      if (match) return parseInt(match[1])
     }
     
-    // Also check existing bills in localStorage
+    // Existing bills से highest number ढूंढो
     const bills = JSON.parse(localStorage.getItem('btc_history') || '[]')
     if (bills.length > 0) {
       let maxNum = 0
@@ -34,14 +24,14 @@ const getLastLocalSerial = () => {
       if (maxNum > 0) return maxNum
     }
     
-    return 1139 // Default starting point if nothing found
+    return 1139 // Default starting point
   } catch (error) {
     console.error('Error getting last local serial:', error)
     return 1139
   }
 }
 
-// Save serial to localStorage
+// Serial number localStorage में save करो
 const saveSerial = (num) => {
   try {
     localStorage.setItem('btc_last_bill_serial', `BTC-${num}`)
@@ -50,12 +40,13 @@ const saveSerial = (num) => {
   }
 }
 
+// अगला serial number generate करो
 export const getNextSerialNumber = async () => {
   try {
     const response = await api.get('/bills/last-serial')
     
     if (response.data?.fallback) {
-      throw new Error('Server could not query bill numbers')
+      throw new Error('Server fallback')
     }
 
     const rawLastNum = response.data?.lastSerial ?? response.data?.last_serial
@@ -65,28 +56,26 @@ export const getNextSerialNumber = async () => {
       ? Number(rawLastNum)
       : NaN
 
-    if (!Number.isSafeInteger(lastNum) || lastNum < 0 || lastNum === Number.MAX_SAFE_INTEGER) {
-      throw new Error('Invalid bill serial number from server')
+    if (!Number.isSafeInteger(lastNum) || lastNum < 0) {
+      throw new Error('Invalid serial from server')
     }
 
     const nextNum = lastNum + 1
-    saveSerial(nextNum) // Save to localStorage as backup
-    return getInvoicePrefix() + nextNum.toString().padStart(3, '0')
+    saveSerial(nextNum)
+    return `BTC-${nextNum}`
     
   } catch (error) {
-    console.warn('Unable to query the next bill number from server; using local fallback:', error)
+    console.warn('Server unavailable, using local serial:', error)
     
-    // Use local serial number (BTC-XXXX format)
     const lastLocalNum = getLastLocalSerial()
     const nextNum = lastLocalNum + 1
     saveSerial(nextNum)
     
-    // Return in BTC-XXXX format
     return `BTC-${nextNum}`
   }
 }
 
-// Function to manually update serial (can be called after saving a bill)
+// Bill save होने के बाद serial update करो
 export const updateBillSerial = (billNo) => {
   try {
     const match = billNo.match(/BTC[-/](\d+)/)
