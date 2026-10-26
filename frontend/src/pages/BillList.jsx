@@ -29,7 +29,7 @@ export default function BillList() {
         console.warn('Server से bills नहीं मिले, local data check कर रहे हैं:', err)
       }
 
-      // 2. Local Storage से data लाओ (आपके 3 bills यहाँ हैं!)
+      // 2. Local Storage से data लाओ
       try {
         const stored = localStorage.getItem('btc_history')
         if (stored) {
@@ -40,14 +40,16 @@ export default function BillList() {
         console.error('Local data पढ़ने में error:', err)
       }
 
-      // 3. दोनों data को merge करो
+      // 3. दोनों data को merge करो (Duplicates हटाओ)
       const combinedMap = new Map()
       
+      // पहले local bills डालो
       localBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
       })
 
+      // फिर server bills डालो (ये local को override करेंगे)
       serverBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
@@ -70,6 +72,7 @@ export default function BillList() {
     if (!window.confirm(`Delete bill ${bill.bill_no || ''}?`)) return
     try {
       await api.delete(`/bills/${bill.id}`)
+      // Local से भी हटाओ
       const current = JSON.parse(localStorage.getItem('btc_history') || '[]')
       const updated = current.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no)
       localStorage.setItem('btc_history', JSON.stringify(updated))
