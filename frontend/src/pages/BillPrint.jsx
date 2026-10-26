@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
 
 const BillPrint = () => {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [bills, setBills] = useState([])
   const [selectedBill, setSelectedBill] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -27,7 +28,7 @@ const BillPrint = () => {
     const advance = bill.adv ?? bill.advInput ?? bill.advance_received ?? 0
     return {
       ...bill,
-      id: bill.id || bill._id,
+      id: bill.id || bill._id || `local_${Date.now()}`,
       invNo: bill.invNo || bill.bill_no || bill.billNo,
       date: formatDate(bill.date || bill.bill_date || bill.billDate),
       partyName: bill.partyName || bill.party_name,
@@ -65,17 +66,56 @@ const BillPrint = () => {
 
     const fetchBills = async () => {
       try {
-        const res = await api.get('/bills')
-        const data = res.data?.data || res.data?.bills || res.data || []
-        const rows = Array.isArray(data) ? data.map(normalizeBill) : []
+        let serverData = []
+        try {
+          const res = await api.get('/bills')
+          serverData = res.data?.data || res.data?.bills || res.data || []
+        } catch (err) {
+          console.warn('Server fetch failed, falling back to local storage', err)
+        }
+
+        // Local storage से bills लाओ
+        let localBills = []
+        try {
+          const stored = localStorage.getItem('btc_history')
+          if (stored) localBills = JSON.parse(stored)
+        } catch (err) {
+          console.error('Error reading local storage', err)
+        }
+
+        // दोनों को merge करो (Duplicates हटाओ)
+        const combinedMap = new Map()
+        localBills.forEach(bill => {
+          const key = bill.id || bill.bill_no
+          if (key) combinedMap.set(key, bill)
+        })
+        
+        const serverArray = Array.isArray(serverData) ? serverData : []
+        serverArray.forEach(bill => {
+          const key = bill.id || bill.bill_no
+          if (key) combinedMap.set(key, bill)
+        })
+
+        const rows = Array.from(combinedMap.values()).map(normalizeBill)
         if (!active) return
         setBills(rows)
 
         if (id) {
-          const selected = rows.find(bill => String(bill.id) === String(id))
+          // Combined list में ढूंढो
+          let selected = rows.find(bill => String(bill.id) === String(id) || String(bill.invNo) === String(id))
+          
           if (selected) {
-            const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
-            if (active) setSelectedBill(normalizeBill(detail.data))
+            if (String(selected.id).startsWith('local_')) {
+              if (active) setSelectedBill(selected)
+            } else {
+              try {
+                const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
+                if (active) setSelectedBill(normalizeBill(detail.data))
+              } catch (err) {
+                console.warn('Could not fetch bill details from server, using local data', err)
+                if (active) setSelectedBill(selected)
+              }
+            }
           }
         }
       } catch (err) {
@@ -91,11 +131,17 @@ const BillPrint = () => {
 
   const handlePrint = async (bill) => {
     try {
-      const detail = bill.id ? await api.get(`/bills/${encodeURIComponent(bill.id)}`) : null
+      // अगर local bill है, तो server call मत करो
+      const detail = (bill.id && !String(bill.id).startsWith('local_')) 
+        ? await api.get(`/bills/${encodeURIComponent(bill.id)}`).catch(() => null) 
+        : null
+      
       setSelectedBill(normalizeBill(detail?.data || bill))
       setTimeout(() => window.print(), 500)
     } catch (err) {
       console.error('Error loading bill for printing:', err)
+      setSelectedBill(normalizeBill(bill))
+      setTimeout(() => window.print(), 500)
     }
   }
 
@@ -130,7 +176,7 @@ const BillPrint = () => {
       <div style={{padding: '20px', maxWidth: '1200px', margin: '0 auto'}}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
           <h2 style={{color: '#0d1b3e', borderBottom: '3px solid #d32f2f', paddingBottom: '10px'}}>📋 Select a Bill to Print</h2>
-          <button onClick={() => window.history.length > 1 ? window.history.back() : window.location.assign('#/bills')} style={{padding: '8px 12px', background: '#666', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>← Back</button>
+          <button onClick={() => navigate('/bills')} style={{padding: '8px 12px', background: '#666', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>← Back to List</button>
         </div>
         {bills.length === 0 ? (
           <p style={{textAlign: 'center', padding: '40px', color: '#666'}}>No bills found. Create a bill first.</p>
@@ -147,7 +193,7 @@ const BillPrint = () => {
             </thead>
             <tbody>
               {bills.map((bill) => (
-                <tr key={bill._id || bill.id} style={{borderBottom: '1px solid #ddd'}}>
+                <tr key={bill.id} style={{borderBottom: '1px solid #ddd'}}>
                   <td style={{padding: '10px', border: '1px solid #ddd', fontWeight: 'bold'}}>{bill.invNo || bill.billNo}</td>
                   <td style={{padding: '10px', border: '1px solid #ddd'}}>{formatDate(bill.date)}</td>
                   <td style={{padding: '10px', border: '1px solid #ddd'}}>{bill.partyName}</td>
@@ -182,7 +228,7 @@ const BillPrint = () => {
           <option value="both">BOTH</option>
         </select>
         <button onClick={() => setSelectedBill(null)} style={{padding: '8px 12px', background: '#666', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>← Back to List</button>
-        <button onClick={() => window.print()} style={{padding: '8px 12px', background: '#d32f2f', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>️ Print</button>
+        <button onClick={() => window.print()} style={{padding: '8px 12px', background: '#d32f2f', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>🖨️ Print</button>
       </div>
 
       {(printOption === 'both' ? ['original', 'duplicate'] : [printOption]).map((copy, copyIndex, copies) => (
