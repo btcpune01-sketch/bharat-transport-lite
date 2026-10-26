@@ -319,6 +319,7 @@ export default function TMSDashboard({ branch }) {
         'freight-calculator': 'rate-master',
         'party/new': 'party-entry',
         'mr/create': 'money-receipt/create',
+        'money-receipt': 'mr',
         'party-master': 'party-master',
         vehicle: 'vehicle',
         'accounts/tds-register': 'accounts',
