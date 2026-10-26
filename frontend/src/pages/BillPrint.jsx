@@ -22,7 +22,6 @@ const BillPrint = () => {
         console.error('Error reading bill payment details:', err)
       }
     }
-
     const grandTotal = bill.grandtotal ?? bill.grand_total ?? bill.totalAmt ?? bill.total_amount ?? 0
     const advance = bill.adv ?? bill.advInput ?? bill.advance_received ?? 0
     return {
@@ -60,42 +59,94 @@ const BillPrint = () => {
     }
   }
 
+  const getLocalBills = () => {
+    try {
+      const keys = ['btc_bills', 'bills', 'localBills', 'offline_bills', 'offlineBills']
+      for (const k of keys) {
+        const val = localStorage.getItem(k)
+        if (val) {
+          const parsed = JSON.parse(val)
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed
+        }
+      }
+      if (id) {
+        const direct = localStorage.getItem(id) || localStorage.getItem(`bill_${id}`) || localStorage.getItem(`btc_${id}`)
+        if (direct) return [JSON.parse(direct)]
+      }
+    } catch (e) { console.error('Local bill read error', e) }
+    return []
+  }
+
   useEffect(() => {
     let active = true
-
     const fetchBills = async () => {
       try {
+        // FIX: If ID is local_, load from localStorage directly
+        if (id && String(id).startsWith('local_')) {
+          const localData = getLocalBills()
+          let found = localData.find(b => String(b.id || b._id) === String(id))
+          if (!found && localData.length === 1) found = localData[0]
+          if (found) {
+            if (active) {
+              setSelectedBill(normalizeBill(found))
+              setBills([normalizeBill(found)])
+            }
+            return
+          }
+        }
+
         const res = await api.get('/bills')
         const data = res.data?.data || res.data?.bills || res.data || []
         const rows = Array.isArray(data) ? data.map(normalizeBill) : []
+        const localRows = getLocalBills().map(normalizeBill)
+        const allRows = [...rows, ...localRows]
+
         if (!active) return
-        setBills(rows)
+        setBills(allRows)
 
         if (id) {
-          const selected = rows.find(bill => String(bill.id) === String(id))
+          const selected = allRows.find(bill => String(bill.id) === String(id))
           if (selected) {
-            const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
-            if (active) setSelectedBill(normalizeBill(detail.data))
+            if (String(id).startsWith('local_')) {
+              if (active) setSelectedBill(selected)
+            } else {
+              try {
+                const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
+                if (active) setSelectedBill(normalizeBill(detail.data?.data || detail.data))
+              } catch {
+                if (active) setSelectedBill(selected)
+              }
+            }
           }
         }
       } catch (err) {
         console.error('Error fetching bills:', err)
+        const localRows = getLocalBills().map(normalizeBill)
+        if (active && localRows.length > 0) {
+          setBills(localRows)
+          const selected = localRows.find(b => String(b.id) === String(id))
+          if (selected) setSelectedBill(selected)
+        }
       } finally {
         if (active) setLoading(false)
       }
     }
-
     fetchBills()
     return () => { active = false }
   }, [id])
 
   const handlePrint = async (bill) => {
     try {
-      const detail = bill.id ? await api.get(`/bills/${encodeURIComponent(bill.id)}`) : null
-      setSelectedBill(normalizeBill(detail?.data || bill))
+      if (String(bill.id).startsWith('local_')) {
+        setSelectedBill(normalizeBill(bill))
+      } else {
+        const detail = bill.id ? await api.get(`/bills/${encodeURIComponent(bill.id)}`) : null
+        setSelectedBill(normalizeBill(detail?.data?.data || detail?.data || bill))
+      }
       setTimeout(() => window.print(), 500)
     } catch (err) {
-      console.error('Error loading bill for printing:', err)
+      setSelectedBill(normalizeBill(bill))
+      setTimeout(() => window.print(), 500)
     }
   }
 
@@ -335,14 +386,6 @@ const BillPrint = () => {
             </div>
           </div>
         </div>
-
-        {bill.remarks && (
-          <div style={{marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '8px'}}>
-            <label style={{fontSize: '10px', fontWeight: '900', color: '#0d1b3e', textTransform: 'uppercase'}}>REMARKS / NOTES:</label>
-            <div style={{fontSize: '12px', fontWeight: '600', padding: '5px 0'}}>{bill.remarks}</div>
-          </div>
-        )}
-
         <div className="mt-8 pt-6 border-t-2 border-gray-800 grid grid-cols-2 gap-4 text-center text-sm">
           <div>
             <div className="h-16"></div>
@@ -352,12 +395,10 @@ const BillPrint = () => {
             <div className="font-bold">For BHARAT TRANSPORT COMPANY</div>
             <div className="h-12 flex items-center justify-center text-[10px] text-gray-500">[Stamp Image Here]</div>
             <div className="border-t border-black pt-2 font-bold mt-2">Authorized Signatory</div>
-            <div className="text-xs mt-1">BHARAT TRANSPORT COMPANY</div>
           </div>
         </div>
       </div>
       ))}
-
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -369,5 +410,4 @@ const BillPrint = () => {
     </>
   )
 }
-
 export default BillPrint
