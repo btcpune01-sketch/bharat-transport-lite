@@ -20,16 +20,16 @@ export default function BillList() {
       let serverBills = []
       let localBills = []
 
-      // 1. Server se data lao
+      // 1. Server से data लाओ
       try {
         const res = await api.get('/bills')
         serverBills = res.data?.data || res.data || []
         if (!Array.isArray(serverBills)) serverBills = []
       } catch (err) {
-        console.warn('Server se bills nahi mile, local data check kar rahe hain:', err)
+        console.warn('Server से bills नहीं मिले, local data check कर रहे हैं:', err)
       }
 
-      // 2. Local Storage (Purana/Saved) se data lao
+      // 2. Local Storage (पुराना/saved) से data लाओ
       try {
         const stored = localStorage.getItem('btc_history')
         if (stored) {
@@ -37,19 +37,19 @@ export default function BillList() {
           if (!Array.isArray(localBills)) localBills = []
         }
       } catch (err) {
-        console.error('Local data padhne mein error:', err)
+        console.error('Local data पढ़ने में error:', err)
       }
 
-      // 3. Dono data ko merge karo (Duplicates hatane ke liye bill_no ya id ke basis par)
+      // 3. दोनों data को merge करो (Duplicates हटाने के लिए)
       const combinedMap = new Map()
       
-      // Pehle local bills daalo
+      // पहले local bills डालो
       localBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
       })
 
-      // Phir server bills daalo (ye local ko override karenge agar same ho, jo ki sahi hai)
+      // फिर server bills डालो (ये local को override करेंगे अगर same हो)
       serverBills.forEach(bill => {
         const key = bill.bill_no || bill.id
         if (key) combinedMap.set(key, bill)
@@ -57,7 +57,7 @@ export default function BillList() {
 
       const finalBills = Array.from(combinedMap.values())
 
-      // 4. Screen par set karo
+      // 4. Screen पर set करो
       setBills(finalBills)
       setLoadError(serverBills.length === 0 && finalBills.length > 0 ? 'Showing locally saved bills (Server sync pending)' : '')
       
@@ -73,7 +73,7 @@ export default function BillList() {
     if (!window.confirm(`Delete bill ${bill.bill_no || ''}? This cannot be undone.`)) return
     try {
       await api.delete(`/bills/${bill.id}`)
-      // Local se bhi hatao
+      // Local से भी हटाओ
       const current = JSON.parse(localStorage.getItem('btc_history') || '[]')
       const updated = current.filter(item => item.id !== bill.id && item.bill_no !== bill.bill_no)
       localStorage.setItem('btc_history', JSON.stringify(updated))
