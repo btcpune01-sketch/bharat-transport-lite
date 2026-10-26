@@ -179,6 +179,8 @@ const BiltyPrint = () => {
           <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--primary-color, #000)' }}>BHARAT TRANSPORT COMPANY</h1>
           <p className="text-xs font-bold m-1">Head Office: Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan 331023</p>
           <p className="text-xs font-bold m-1">GST NO: 08CMRPP0955N1Z5 | PAN NO: CMRPP0955N</p>
+          {/* यहाँ नया मोबाइल नंबर और ईमेल जोड़ा गया है */}
+          <p className="text-xs font-bold m-1" style={{ color: '#d32f2f' }}>Mobile: +91 9680264231, 6375717265 | Email: btcpune01@gmail.com</p>
         </div>
 
         <div className="text-center my-2">
