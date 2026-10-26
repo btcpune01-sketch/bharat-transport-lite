@@ -1,36 +1,5 @@
 import api from '../api'
 
-// BTC-XXXX format के लिए localStorage से last serial लाओ
-const getLastLocalSerial = () => {
-  try {
-    const stored = localStorage.getItem('btc_last_bill_serial')
-    if (stored) {
-      const match = stored.match(/BTC[-/](\d+)/)
-      if (match) return parseInt(match[1])
-    }
-    
-    // Existing bills से highest number ढूंढो
-    const bills = JSON.parse(localStorage.getItem('btc_history') || '[]')
-    if (bills.length > 0) {
-      let maxNum = 0
-      bills.forEach(bill => {
-        const billNo = bill.bill_no || bill.invNo || ''
-        const match = billNo.match(/BTC[-/](\d+)/)
-        if (match) {
-          const num = parseInt(match[1])
-          if (num > maxNum) maxNum = num
-        }
-      })
-      if (maxNum > 0) return maxNum
-    }
-    
-    return 1139 // Default starting point
-  } catch (error) {
-    console.error('Error getting last local serial:', error)
-    return 1139
-  }
-}
-
 // Serial number localStorage में save करो
 const saveSerial = (num) => {
   try {
@@ -40,10 +9,38 @@ const saveSerial = (num) => {
   }
 }
 
+// Last serial number ढूंढो (हमेशा 1139 से कम नहीं होगा)
+const getLastLocalSerial = () => {
+  try {
+    const stored = localStorage.getItem('btc_last_bill_serial')
+    if (stored) {
+      const match = stored.match(/BTC[-/](\d+)/)
+      if (match) {
+        const num = parseInt(match[1])
+        return num >= 1139 ? num : 1139
+      }
+    }
+    return 1139 // Default starting point
+  } catch (error) {
+    return 1139
+  }
+}
+
 // अगला serial number generate करो
 export const getNextSerialNumber = async () => {
+  // पहले local serial check करो (ताकि server slow होने पर भी तुरंत number मिले)
+  const lastLocalNum = getLastLocalSerial()
+  const localNextNum = lastLocalNum + 1
+  
   try {
-    const response = await api.get('/bills/last-serial')
+    // Server से try करो (3 second timeout के साथ)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    const response = await api.get('/bills/last-serial', {
+      signal: controller.signal
+    })
+    clearTimeout(timeoutId)
     
     if (response.data?.fallback) {
       throw new Error('Server fallback')
@@ -60,18 +57,16 @@ export const getNextSerialNumber = async () => {
       throw new Error('Invalid serial from server')
     }
 
-    const nextNum = lastNum + 1
+    // जो भी number बड़ा हो (server या local), उसे use करो
+    const nextNum = Math.max(lastNum + 1, localNextNum)
     saveSerial(nextNum)
-    return `BTC-${nextNum}` // हमेशा BTC-XXXX format return करेगा
+    return `BTC-${nextNum}`
     
   } catch (error) {
-    console.warn('Server unavailable, using local serial:', error)
-    
-    const lastLocalNum = getLastLocalSerial()
-    const nextNum = lastLocalNum + 1
-    saveSerial(nextNum)
-    
-    return `BTC-${nextNum}`
+    // Server fail हो तो local use करो
+    console.warn('Using local serial:', error.message)
+    saveSerial(localNextNum)
+    return `BTC-${localNextNum}`
   }
 }
 
