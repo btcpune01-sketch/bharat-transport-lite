@@ -292,7 +292,7 @@ export default function BillEntry({ branchMode = false }) {
         saveLocalDraft('bill', localBill)
         updateBillSerial(localBill.bill_no)
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
-        localStorage.setItem('btc_history', JSON.stringify([localBill, ...localHistory.filter(bill => bill.bill_no !== localBill.bill_no)]))
+        await addBill(localBill)
         toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
         await fetchNextBillNo() // अगला serial number लाओ
         return
