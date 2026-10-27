@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { getNextSerialNumber, updateBillSerial } from '../utils/billSerial'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
-import { addBill } from '../utils/billStorage'
+import { addBill, exportAllData } from '../utils/billStorage'
 
 export default function BillEntry({ branchMode = false }) {
   const navigate = useNavigate()
