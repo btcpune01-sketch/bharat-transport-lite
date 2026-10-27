@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
-import { getAllBills, deleteBill as deleteBillFromStorage } from '../utils/billStorage'
+import { getAllBills, deleteBillFromStorage } from '../utils/billStorage'
 
 export default function BillList() {
   const [bills, setBills] = useState([])
@@ -33,14 +33,14 @@ export default function BillList() {
         }
       }
 
-      // 2. सभी local storage layers से data लाओ
+      // 2. Local storage से data लाओ (हमेशा safe)
       try {
         localBills = await getAllBills()
       } catch (err) {
         console.error('Local data पढ़ने में error:', err)
       }
 
-      // 3. दोनों data को merge करो
+      // 3. दोनों data को merge करो (duplicates हटाओ)
       const combinedMap = new Map()
       
       localBills.forEach(bill => {
@@ -69,7 +69,7 @@ export default function BillList() {
     if (!window.confirm(`Delete bill ${bill.bill_no || ''}?`)) return
     
     try {
-      // Server से delete करो (अगर token है और server bill है)
+      // Server से delete करो (अगर token है)
       const token = localStorage.getItem('token')
       if (token && !String(bill.id).startsWith('local_')) {
         try {
@@ -79,7 +79,7 @@ export default function BillList() {
         }
       }
       
-      // सभी local storage layers से हटाओ
+      // Local storage से हटाओ
       const updated = await deleteBillFromStorage(bill.id)
       setBills(updated)
     } catch (err) {
