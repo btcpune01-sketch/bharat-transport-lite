@@ -1790,12 +1790,14 @@ result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted,
 } else {
 result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${listCond.sql ? `AND ${listCond.sql}` : ''} ORDER BY id DESC LIMIT 500`, listCond.params);
 }
-} else {
-if (search) {
-result = await pool.query(`SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $2 ORDER BY (lr_no = $3) DESC, id DESC LIMIT 100`, [userBranchId, `%${search}%`, search]);
-} else {
-result = await pool.query('SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500', [userBranchId]);
-}
+ } else {
+  // ✅ FIX: branch_id OR branch_code dono check karein
+  const branchCodeForQuery = req.user.branch_code || null;
+  if (search) {
+    result = await pool.query(`SELECT * FROM consignments WHERE (branch_id = $1 OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($4)))) AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $2 ORDER BY (lr_no = $3) DESC, id DESC LIMIT 100`, [userBranchId, `%${search}%`, search, branchCodeForQuery]);
+  } else {
+    result = await pool.query(`SELECT * FROM consignments WHERE (branch_id = $1 OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($2)))) AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500`, [userBranchId, branchCodeForQuery]);
+  }
 }
 res.json({ data: result.rows, total: result.rows.length });
 } catch (err) {
