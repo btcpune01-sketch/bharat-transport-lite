@@ -666,6 +666,18 @@ async function runMigrations() {
   await addColumnIfNotExists('consignments', 'third_party_address', 'TEXT');
   await addColumnIfNotExists('consignments', 'third_party_gstin', 'TEXT');
   await addColumnIfNotExists('consignments', 'bill_to_party', 'TEXT');
+  // ✅ FIX: Remove global UNIQUE constraint from lr_no to allow branch-wise duplicates
+await pool.query(`
+  ALTER TABLE consignments 
+  DROP CONSTRAINT IF EXISTS consignments_lr_no_key
+`).catch(err => console.log('Constraint already removed or not found'));
+
+await pool.query(`
+  ALTER TABLE consignments 
+  DROP CONSTRAINT IF EXISTS consignments_lr_no_unique
+`).catch(err => console.log('Constraint already removed or not found'));
+
+console.log('✅ Removed UNIQUE constraint from lr_no - now branch-wise duplicates allowed');
 
   await pool.query(`
     UPDATE consignments c
