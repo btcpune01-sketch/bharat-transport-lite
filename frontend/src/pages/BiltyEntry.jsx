@@ -1,4 +1,4 @@
-// FINAL - All Sections Fixed + LR Editable - Print Format NOT Changed
+// FINAL - All Sections Fixed + LR Editable + Branch Wise Separate Data
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { biltyAPI, customerAPI } from '../api'
@@ -181,7 +181,9 @@ export default function BiltyEntry({ branchMode = false }) {
   const generateLRNo = async () => {
     setNumberLoading(true); setNumberError(false)
     try {
-      const response = await biltyAPI.getNextNumber()
+      // ✅ FIX: Branch-wise LR number generation
+      const params = branchMode && branchCode ? { branch_code: branchCode } : {}
+      const response = await biltyAPI.getNextNumber(params)
       const nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
       if (!nextLrNo) throw new Error('invalid')
       setFormData(prev => ({ ...prev, lr_no: nextLrNo }))
@@ -207,7 +209,13 @@ export default function BiltyEntry({ branchMode = false }) {
     if (!/^[A-Za-z0-9/-]+$/.test(normalizedLrNo)) { setLrError('Only letters, numbers, -, / allowed'); return false }
     const requestId = ++lrCheckRequest.current; setLrChecking(true)
     try {
-      const response = await biltyAPI.getAll({ lrNumber: normalizedLrNo })
+      // ✅ FIX: Branch-wise LR number validation (Admin checks all, Branch checks only theirs)
+      const params = { lrNumber: normalizedLrNo }
+      if (branchMode && branchCode) {
+        params.branch_code = branchCode
+      }
+      
+      const response = await biltyAPI.getAll(params)
       const consignments = Array.isArray(response.data)
         ? response.data
         : Array.isArray(response.data?.data)
@@ -266,15 +274,16 @@ export default function BiltyEntry({ branchMode = false }) {
   }
 
   const handleCustomerSelect = (type, customerId) => {
-    const customer = customers.find(c => c.id === parseInt(customerId))
+    // ✅ FIX: Robust customer selection and customer code mapping
+    const customer = customers.find(c => String(c.id) === String(customerId))
     if (customer) {
       setFormData(prev => ({
         ...prev,
-        [`${type}_name`]: customer.customer_name || customer.name,
+        [`${type}_name`]: customer.customer_name || customer.name || '',
         [`${type}_address`]: customer.address || '',
         [`${type}_mobile`]: customer.mobile || '',
         [`${type}_gst`]: customer.gst_no || '',
-        [`customer_code_${type}`]: customer.customer_code || ''
+        [`customer_code_${type}`]: customer.customer_code || customer.code || ''
       }))
     }
   }
@@ -309,6 +318,7 @@ export default function BiltyEntry({ branchMode = false }) {
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
       const payload = {
         ...payloadData,
+        // ✅ FIX: Ensure branch_code is strictly attached for branch users
         ...(branchMode ? { branch_code: branchCode } : {}),
         actual_weight: formData.actual_weight ?? formData.act_wt ?? 0,
         charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0,
@@ -326,6 +336,7 @@ export default function BiltyEntry({ branchMode = false }) {
       payload.eway_valid_upto = payload.eway_valid_upto || null
       if (mrActive) { payload.mr_active = true; payload.mr_date = payload.mr_date || null }
       else { for (const field of Object.keys(payload)) { if (field.startsWith('mr_')) delete payload[field] } }
+      
       if (id) {
         const response = await biltyAPI.update(id, payload)
         if (response.data?.local) {
@@ -339,7 +350,7 @@ export default function BiltyEntry({ branchMode = false }) {
         const response = await biltyAPI.create(payload)
         if (response.data?.local) {
           const draft = saveLocalDraft('bilty', payload)
-          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          toast('Saved locally, will sync when server is online', { icon: '💾', duration:7000 })
           navigate(`/bilty-print/${draft.localDraftId}`)
           return
         }
@@ -378,8 +389,10 @@ export default function BiltyEntry({ branchMode = false }) {
         : formData.bill_to_party === 'PAID' ? 'Paid' : ''
   const loadTypeOptions = [{ value: 'Full Load', label: 'Full Load' }, { value: 'Part Load', label: 'Part Load' }]
   const insuranceOptions = [{ value: 'Not Insured', label: 'Not Insured' }, { value: 'Insured', label: 'Insured' }]
-  const consignorOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: c.customer_name || c.name }))]
-  const consigneeOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: c.customer_name || c.name }))]
+  
+  // ✅ FIX: Ensure options are safely mapped even if customers array is temporarily empty
+  const consignorOptions = [{ value: '', label: 'Select Party' }, ...(Array.isArray(customers) ? customers.map(c => ({ value: c.id, label: c.customer_name || c.name })) : [])]
+  const consigneeOptions = [{ value: '', label: 'Select Party' }, ...(Array.isArray(customers) ? customers.map(c => ({ value: c.id, label: c.customer_name || c.name })) : [])]
 
   return (
     <div className="min-h-screen p-6 w-full bg-[#eef2f7]">
@@ -391,177 +404,187 @@ export default function BiltyEntry({ branchMode = false }) {
 
         <form onSubmit={handleSubmit} className="eye-comfort-form bg-white border border-[#d1d9e6] shadow-sm rounded-xl p-6 space-y-6">
           
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">📋 Section 1: Header Info</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📋 Section 1: Header Info</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-gray-300 text-sm font-medium mb-1">LR Number / Bilty Number *</label>
+                <label className="block text-[#1e293b] text-sm font-medium mb-1">LR Number / Bilty Number *</label>
                 <div className="flex gap-2 items-center">
-                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} required placeholder={numberLoading ? "Generating..." : "BTC-00012"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-white/10 border-white/20 text-white'}`} style={isLrEditable ? {background:'#ffffff', color:'#000000'} : {}} />
+                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} required placeholder={numberLoading ? "Generating..." : "BTC-00012"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-gray-100 border-gray-300 text-gray-700'}`} />
                   <button type="button" onClick={() => setIsLrEditable(!isLrEditable)} className={`shrink-0 px-4 py-2 rounded-lg font-bold transition-all ${isLrEditable ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}>{isLrEditable ? '🔒 Lock' : '✏️ Edit'}</button>
                 </div>
                 {numberError && <button type="button" onClick={generateLRNo} className="mt-2 px-3 py-1 bg-yellow-500 text-black rounded text-sm">Retry Generate</button>}
-                {lrChecking && <p className="mt-1 text-sm text-yellow-300 animate-pulse">Checking LR number...</p>}
-                {lrError && <p className="mt-1 text-sm text-red-400 font-bold">⚠️ {lrError}</p>}
-                {!isLrEditable && !lrError && <p className="mt-1 text-xs text-gray-400">Auto generated hai. Change karna hai to Edit dabao.</p>}
-                {isLrEditable && !lrError && <p className="mt-1 text-xs text-green-400">✓ Ab khud ka number type kar sakte ho</p>}
+                {lrChecking && <p className="mt-1 text-sm text-yellow-600 animate-pulse">Checking LR number...</p>}
+                {lrError && <p className="mt-1 text-sm text-red-600 font-bold">⚠️ {lrError}</p>}
+                {!isLrEditable && !lrError && <p className="mt-1 text-xs text-gray-500">Auto generated hai. Change karna hai to Edit dabao.</p>}
+                {isLrEditable && !lrError && <p className="mt-1 text-xs text-green-600">✓ Ab khud ka number type kar sakte ho</p>}
               </div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">LR Date *</label><input type="date" name="lr_date" value={formData.lr_date} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">LR Date *</label><input type="date" name="lr_date" value={formData.lr_date} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               {branchMode ? (
                 <div>
-                  <label className="block text-gray-300 text-sm font-medium mb-1">Branch *</label>
-                  <input value={branchCode} readOnly required aria-readonly="true" className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-2 font-semibold text-white" />
+                  <label className="block text-[#1e293b] text-sm font-medium mb-1">Branch *</label>
+                  <input value={branchCode} readOnly required aria-readonly="true" className="w-full rounded-lg border border-[#c2cddf] bg-gray-100 px-4 py-2 font-semibold text-[#0f172a]" />
                 </div>
               ) : (
                 <div><CreatableBranchSelect label="Branch" value={formData.branch_code} onChange={(branch) => handleBranchSelect('branch', branch)} required /></div>
               )}
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">From Name / Origin *</label><input type="text" name="from_name" value={formData.from_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              
+              {/* ✅ FIX: Load Type moved to Section 1 */}
+              <div><CustomSelect label="Load Type" name="load_type" value={formData.load_type} onChange={handleChange} options={loadTypeOptions} /></div>
+              
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">From Name / Origin *</label><input type="text" name="from_name" value={formData.from_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div><CreatableBranchSelect label="To Code" value={formData.to_code} onChange={(branch) => handleBranchSelect('to', branch)} required /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">To Name *</label><input type="text" name="to_name" value={formData.to_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">To Name *</label><input type="text" name="to_name" value={formData.to_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div><CustomSelect label="Delivery Type" name="delivery_type" value={formData.delivery_type} onChange={handleChange} options={deliveryOptions} required /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Unloading Party Mobile</label><input type="text" name="unloading_party_mobile" value={formData.unloading_party_mobile} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div className="md:col-span-2"><label className="block text-gray-300 text-sm font-medium mb-1">Delivery Godown Address</label><input type="text" name="delivery_godown_address" value={formData.delivery_godown_address} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div className="md:col-span-3"><label className="block text-gray-300 text-sm font-medium mb-1">Pickup Address</label><input type="text" name="pickup_address" value={formData.pickup_address} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Unloading Party Mobile</label><input type="text" name="unloading_party_mobile" value={formData.unloading_party_mobile} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div className="md:col-span-2"><label className="block text-[#1e293b] text-sm font-medium mb-1">Delivery Godown Address</label><input type="text" name="delivery_godown_address" value={formData.delivery_godown_address} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div className="md:col-span-3"><label className="block text-[#1e293b] text-sm font-medium mb-1">Pickup Address</label><input type="text" name="pickup_address" value={formData.pickup_address} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4"> Section 2: Consignor (भेजने वाला)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><CustomSelect label="Select Party" name="consignor_select" value="" onChange={(e) => handleCustomerSelect('consignor', e.target.value)} options={consignorOptions} /></div></div>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">👤 Section 2: Consignor (भेजने वाला)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div><CustomSelect label="Select Party" name="consignor_select" value="" onChange={(e) => handleCustomerSelect('consignor', e.target.value)} options={consignorOptions} /></div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignor Name *</label><input type="text" name="consignor_name" value={formData.consignor_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignor Mobile *</label><input type="text" name="consignor_mobile" value={formData.consignor_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div className="md:col-span-2"><label className="block text-gray-300 text-sm font-medium mb-1">Consignor Address *</label><textarea name="consignor_address" value={formData.consignor_address} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignor GST</label><input type="text" name="consignor_gst" value={formData.consignor_gst} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Customer Code</label><input type="text" name="customer_code_consignor" value={formData.customer_code_consignor} readOnly className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor Name *</label><input type="text" name="consignor_name" value={formData.consignor_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor Mobile *</label><input type="text" name="consignor_mobile" value={formData.consignor_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div className="md:col-span-2"><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor Address *</label><textarea name="consignor_address" value={formData.consignor_address} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor GST</label><input type="text" name="consignor_gst" value={formData.consignor_gst} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Customer Code</label><input type="text" name="customer_code_consignor" value={formData.customer_code_consignor} readOnly className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-semibold" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4"> Section 3: Consignee (लेने वाला)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><CustomSelect label="Select Party" name="consignee_select" value="" onChange={(e) => handleCustomerSelect('consignee', e.target.value)} options={consigneeOptions} /></div></div>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📥 Section 3: Consignee (लेने वाला)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div><CustomSelect label="Select Party" name="consignee_select" value="" onChange={(e) => handleCustomerSelect('consignee', e.target.value)} options={consigneeOptions} /></div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignee Name *</label><input type="text" name="consignee_name" value={formData.consignee_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignee Mobile *</label><input type="text" name="consignee_mobile" value={formData.consignee_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div className="md:col-span-2"><label className="block text-gray-300 text-sm font-medium mb-1">Consignee Address *</label><textarea name="consignee_address" value={formData.consignee_address} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignee GST</label><input type="text" name="consignee_gst" value={formData.consignee_gst} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Customer Code</label><input type="text" name="customer_code_consignee" value={formData.customer_code_consignee} readOnly className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignee Name *</label><input type="text" name="consignee_name" value={formData.consignee_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignee Mobile *</label><input type="10" name="consignee_mobile" value={formData.consignee_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div className="md:col-span-2"><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignee Address *</label><textarea name="consignee_address" value={formData.consignee_address} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignee GST</label><input type="text" name="consignee_gst" value={formData.consignee_gst} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Customer Code</label><input type="text" name="customer_code_consignee" value={formData.customer_code_consignee} readOnly className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-semibold" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">📄 Section 4: Invoice Details</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📄 Section 4: Invoice Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Invoice No</label><input type="text" name="invoice_no" value={formData.invoice_no} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Invoice Date</label><input type="date" name="invoice_date" value={formData.invoice_date} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Purchase Order No</label><input type="text" name="po_no" value={formData.po_no} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">PO Date</label><input type="date" name="po_date" value={formData.po_date} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Invoice No</label><input type="text" name="invoice_no" value={formData.invoice_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Invoice Date</label><input type="date" name="invoice_date" value={formData.invoice_date} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Purchase Order No</label><input type="text" name="po_no" value={formData.po_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">PO Date</label><input type="date" name="po_date" value={formData.po_date} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4"> Section 5: Vehicle & Driver</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">🚚 Section 5: Vehicle & Driver</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Lorry No (Vehicle No)</label><input type="text" name="vehicle_no" value={formData.vehicle_no} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Driver Name</label><input type="text" name="driver_name" value={formData.driver_name} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Driver Mobile</label><input type="text" name="driver_mobile" value={formData.driver_mobile} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Lorry No (Vehicle No)</label><input type="text" name="vehicle_no" value={formData.vehicle_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Driver Name</label><input type="text" name="driver_name" value={formData.driver_name} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Driver Mobile</label><input type="text" name="driver_mobile" value={formData.driver_mobile} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">🛡️ Section 6: Insurance</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">🛡️ Section 6: Insurance</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div><CustomSelect label="Insurance Status" name="insurance_status" value={formData.insurance_status} onChange={handleChange} options={insuranceOptions} /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Insurance Company</label><input type="text" name="insurance_company" value={formData.insurance_company} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Policy No</label><input type="text" name="insurance_policy_no" value={formData.insurance_policy_no} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Insurance Date</label><input type="date" name="insurance_date" value={formData.insurance_date} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Insurance Amount (₹)</label><input type="number" name="insurance_amount" value={formData.insurance_amount} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Insurance Company</label><input type="text" name="insurance_company" value={formData.insurance_company} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Policy No</label><input type="text" name="insurance_policy_no" value={formData.insurance_policy_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Insurance Date</label><input type="date" name="insurance_date" value={formData.insurance_date} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Insurance Amount (₹)</label><input type="number" name="insurance_amount" value={formData.insurance_amount} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">📦 Section 7: Package Details</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📦 Section 7: Package Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">No of Packages *</label><input type="number" name="no_of_packages" value={formData.no_of_packages} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Method of Packing</label><input type="text" name="method_of_packing" value={formData.method_of_packing} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">HSN Code</label><input type="text" name="hsn_code" value={formData.hsn_code} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Distance (Kms)</label><input type="number" name="distance" value={formData.distance} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div className="md:col-span-2"><label className="block text-gray-300 text-sm font-medium mb-1">Description (Said to Contain) *</label><textarea name="description" value={formData.description} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Actual Weight (Kg) *</label><input type="number" name="actual_weight" value={formData.actual_weight} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Charged Weight (Kg) *</label><input type="number" name="charged_weight" value={formData.charged_weight} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Rate *</label><input type="number" name="rate" value={formData.rate} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">No of Packages *</label><input type="number" name="no_of_packages" value={formData.no_of_packages} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Method of Packing</label><input type="text" name="method_of_packing" value={formData.method_of_packing} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">HSN Code</label><input type="text" name="hsn_code" value={formData.hsn_code} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Distance (Kms)</label><input type="number" name="distance" value={formData.distance} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div className="md:col-span-2"><label className="block text-[#1e293b] text-sm font-medium mb-1">Description (Said to Contain) *</label><textarea name="description" value={formData.description} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Actual Weight (Kg) *</label><input type="number" name="actual_weight" value={formData.actual_weight} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Charged Weight (Kg) *</label><input type="number" name="charged_weight" value={formData.charged_weight} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Rate *</label><input type="number" name="rate" value={formData.rate} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">📐 Section 8: Dimensions</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📐 Section 8: Dimensions</h3>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Length</label><input type="number" name="length" value={formData.length} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Width</label><input type="number" name="width" value={formData.width} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Height</label><input type="number" name="height" value={formData.height} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">No of Pkgs (dimension)</label><input type="number" name="no_of_pkgs_dimension" value={formData.no_of_pkgs_dimension} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Total CFT/CMT (Auto)</label><input type="number" value={formData.total_cft_cmt} readOnly className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white font-bold" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Length</label><input type="number" name="length" value={formData.length} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Width</label><input type="number" name="width" value={formData.width} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Height</label><input type="number" name="height" value={formData.height} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">No of Pkgs (dimension)</label><input type="number" name="no_of_pkgs_dimension" value={formData.no_of_pkgs_dimension} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Total CFT/CMT (Auto)</label><input type="number" value={formData.total_cft_cmt} readOnly className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-bold" /></div>
             </div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
+          <div className="border-b border-gray-200 pb-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-white">🏷️ Section 9: Private Marks / MR</h3>
-              <label className="flex items-center gap-2 text-white font-bold"><input type="checkbox" checked={mrActive} onChange={(e) => setMrActive(e.target.checked)} />Enable MR</label>
+              <h3 className="text-xl font-bold text-[#0f172a]">🏷️ Section 9: Private Marks / MR</h3>
+              <label className="flex items-center gap-2 text-[#0f172a] font-bold"><input type="checkbox" checked={mrActive} onChange={(e) => setMrActive(e.target.checked)} className="w-4 h-4" />Enable MR</label>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div className="md:col-span-2"><label className="block text-gray-300 text-sm font-medium mb-1">Private Marks</label><textarea name="private_marks" value={formData.private_marks} onChange={handleChange} rows="2" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              {mrActive && (<><div><label className="block text-gray-300 text-sm font-medium mb-1">M.R. No</label><input type="text" name="mr_no" value={formData.mr_no} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div><div><label className="block text-gray-300 text-sm font-medium mb-1">M.R. Date</label><input type="date" name="mr_date" value={formData.mr_date} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div><div><label className="block text-gray-300 text-sm font-medium mb-1">M.R. Amount</label><input type="number" name="mr_amount" value={formData.mr_amount} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div></>)}
-              <div><CustomSelect label="Load Type" name="load_type" value={formData.load_type} onChange={handleChange} options={loadTypeOptions} /></div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="md:col-span-2"><label className="block text-[#1e293b] text-sm font-medium mb-1">Private Marks</label><textarea name="private_marks" value={formData.private_marks} onChange={handleChange} rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              {mrActive && (<>
+                <div><label className="block text-[#1e293b] text-sm font-medium mb-1">M.R. No</label><input type="text" name="mr_no" value={formData.mr_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+                <div><label className="block text-[#1e293b] text-sm font-medium mb-1">M.R. Date</label><input type="date" name="mr_date" value={formData.mr_date} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+                <div><label className="block text-[#1e293b] text-sm font-medium mb-1">M.R. Amount</label><input type="number" name="mr_amount" value={formData.mr_amount} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              </>)}
+              {/* ✅ FIX: Load Type removed from here, moved to Section 1 */}
             </div>
           </div>
 
-          {/* FIXED SECTION 10 - FULL 12 CHARGES */}
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">💰 Section 10: Charges (Auto + Manual) - FULL</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">💰 Section 10: Charges (Auto + Manual)</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">FREIGHT (Editable)</label><input type="number" name="freight" value={formData.freight} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">A.O.C. Amount</label><input type="number" name="aoc_amount" value={formData.aoc_amount} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">EOV Charges</label><input type="number" name="eov_charges" value={formData.eov_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Cover Charges</label><input type="number" name="cover_charges" value={formData.cover_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Material Mgmt Ch</label><input type="number" name="material_mgmt_ch" value={formData.material_mgmt_ch} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Collection Charges</label><input type="number" name="collection_charges" value={formData.collection_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Door Dly Charges</label><input type="number" name="door_dly_charges" value={formData.door_dly_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Pass/CC Attach Ch</label><input type="number" name="pass_cc_charges" value={formData.pass_cc_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Enroute Charges</label><input type="number" name="enroute_charges" value={formData.enroute_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Statistical Charges</label><input type="number" name="statistical_charges" value={formData.statistical_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Misc. Charges</label><input type="number" name="misc_charges" value={formData.misc_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">FREIGHT (Editable)</label><input type="number" name="freight" value={formData.freight} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">A.O.C. Amount</label><input type="number" name="aoc_amount" value={formData.aoc_amount} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">EOV Charges</label><input type="number" name="eov_charges" value={formData.eov_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Cover Charges</label><input type="number" name="cover_charges" value={formData.cover_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Material Mgmt Ch</label><input type="number" name="material_mgmt_ch" value={formData.material_mgmt_ch} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Collection Charges</label><input type="number" name="collection_charges" value={formData.collection_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Door Dly Charges</label><input type="number" name="door_dly_charges" value={formData.door_dly_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Pass/CC Attach Ch</label><input type="number" name="pass_cc_charges" value={formData.pass_cc_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Enroute Charges</label><input type="number" name="enroute_charges" value={formData.enroute_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Statistical Charges</label><input type="number" name="statistical_charges" value={formData.statistical_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Misc. Charges</label><input type="number" name="misc_charges" value={formData.misc_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
-            <div className="mt-4 text-right"><span className="text-gray-300 text-lg">Grand Total: </span><span className="text-3xl font-bold text-green-400">₹{formData.grand_total}</span></div>
+            <div className="mt-4 text-right"><span className="text-[#1e293b] text-lg font-medium">Grand Total: </span><span className="text-3xl font-bold text-green-600">₹{formData.grand_total}</span></div>
           </div>
 
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">📋 Section 11: E-Way Bill</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📋 Section 11: E-Way Bill</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">E-Way Bill No</label><input type="text" name="eway_bill_no" value={formData.eway_bill_no} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Valid Upto</label><input type="date" name="eway_valid_upto" value={formData.eway_valid_upto} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">E-Way Bill No</label><input type="text" name="eway_bill_no" value={formData.eway_bill_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Valid Upto</label><input type="date" name="eway_valid_upto" value={formData.eway_valid_upto} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
             </div>
           </div>
 
-          {/* FIXED SECTION 12 - BILL TO PARTY WITH DROPDOWN */}
-          <div className="border-b border-white/10 pb-6">
-            <h3 className="text-xl font-bold text-white mb-4">💵 Section 12: Booking Details - BILL TO PARTY FIXED</h3>
+          <div className="border-b border-gray-200 pb-6">
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4">💵 Section 12: Booking Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Declared Value of Goods</label><input type="number" name="declared_value" value={formData.declared_value} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Basis of Booking</label><input type="text" name="basis_of_booking" value={formData.basis_of_booking} onChange={handleChange} placeholder="(1) To Pay (2) To Be (3) Paid" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Declared Value of Goods</label><input type="number" name="declared_value" value={formData.declared_value} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Basis of Booking</label><input type="text" name="basis_of_booking" value={formData.basis_of_booking} onChange={handleChange} placeholder="(1) To Pay (2) To Be (3) Paid" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div><CustomSelect label="Billed at with M/s" name="bill_to_party" value={formData.bill_to_party} onChange={(e) => setFormData(prev => ({ ...prev, bill_to_party: e.target.value, billed_at_type: e.target.value, gst_through: e.target.value }))} options={billedAtOptions} /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Company Name (Auto from Bill To)</label><input type="text" value={billedAtName} readOnly placeholder="Bill To Party select karo" className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white font-bold" /></div>
+              <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Company Name (Auto from Bill To)</label><input type="text" value={billedAtName} readOnly placeholder="Bill To Party select karo" className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-bold" /></div>
               <div className="md:col-span-2"><CustomSelect label="GST Through" name="gst_through" value={formData.gst_through} onChange={(e) => setFormData(prev => ({ ...prev, gst_through: e.target.value, billed_at_type: e.target.value === 'B.T.C.' ? '' : e.target.value, bill_to_party: e.target.value === 'B.T.C.' ? '' : e.target.value }))} options={gstOptions} /></div>
               
               {formData.bill_to_party === 'THIRD PARTY' && (
                 <>
-                  <div><label className="block text-gray-300 text-sm font-medium mb-1">Third Party Name *</label><input type="text" name="third_party_name" value={formData.third_party_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-green-400 rounded-lg text-white ring-1 ring-green-400" placeholder="Third Party ka naam likho" /></div>
-                  <div><label className="block text-gray-300 text-sm font-medium mb-1">Third Party GSTIN</label><input type="text" name="third_party_gstin" value={formData.third_party_gstin} onChange={handleChange} pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]" title="Enter valid GSTIN" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-                  <div className="md:col-span-3"><label className="block text-gray-300 text-sm font-medium mb-1">Third Party Address</label><textarea name="third_party_address" value={formData.third_party_address} onChange={handleChange} rows="2" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+                  <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Third Party Name *</label><input type="text" name="third_party_name" value={formData.third_party_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-green-400 rounded-lg text-[#0f172a] ring-1 ring-green-400" placeholder="Third Party ka naam likho" /></div>
+                  <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Third Party GSTIN</label><input type="text" name="third_party_gstin" value={formData.third_party_gstin} onChange={handleChange} pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][A-Za-z0-9]Z[A-Za-z0-9]" title="Enter valid GSTIN" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
+                  <div className="md:col-span-3"><label className="block text-[#1e293b] text-sm font-medium mb-1">Third Party Address</label><textarea name="third_party_address" value={formData.third_party_address} onChange={handleChange} rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
                 </>
               )}
 
-              <div className="md:col-span-3"><label className="block text-gray-300 text-sm font-medium mb-1">Amount in Words (Auto)</label><input type="text" value={formData.amount_in_words} readOnly className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white font-bold italic" /></div>
+              <div className="md:col-span-3"><label className="block text-[#1e293b] text-sm font-medium mb-1">Amount in Words (Auto)</label><input type="text" value={formData.amount_in_words} readOnly className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-bold italic" /></div>
             </div>
           </div>
 
