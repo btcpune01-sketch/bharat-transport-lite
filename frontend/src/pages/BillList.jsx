@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
-import { getAllBills, deleteBillFromStorage } from '../utils/billStorage'
+import { getAllBills, deleteBillFromStorage, exportAllData } from '../utils/billStorage'
 
 export default function BillList() {
   const [bills, setBills] = useState([])
