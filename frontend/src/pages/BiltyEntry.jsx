@@ -224,12 +224,11 @@ export default function BiltyEntry({ branchMode = false }) {
             
       if (!consignments) throw new Error('The server returned an invalid LR number check response')
       
-      // ✅ ULTIMATE FIX: Only flag as duplicate if it belongs to the SAME branch (or if we are admin checking all)
+      // EDIT ke time khud ko ignore karo - FINAL FIX
       const duplicate = consignments.some(item => {
         const isSameLR = String(item.lr_no || '').trim().toLowerCase() === normalizedLrNo.toLowerCase()
         const isSameBranch = branchMode ? (String(item.branch_code) === String(branchCode)) : true
         const isNotCurrentEdit = String(item.id) !== String(id || '')
-        
         return isSameLR && isSameBranch && isNotCurrentEdit
       })
       
@@ -241,10 +240,10 @@ export default function BiltyEntry({ branchMode = false }) {
     } catch (err) {
       console.error('LR No validation error:', err)
       if (requestId === lrCheckRequest.current) { 
-        setLrError('') // Clear error on network fail to allow save
+        setLrError('')
         setLrChecking(false) 
       }
-      return true // Allow save if validation fails due to network
+      return true
     }
   }
 
@@ -285,7 +284,6 @@ export default function BiltyEntry({ branchMode = false }) {
   }
 
   const handleCustomerSelect = (type, customerId) => {
-    // ✅ FIX: Robust customer selection and customer code mapping
     const customer = customers.find(c => String(c.id) === String(customerId))
     if (customer) {
       setFormData(prev => ({
@@ -437,10 +435,7 @@ export default function BiltyEntry({ branchMode = false }) {
               ) : (
                 <div><CreatableBranchSelect label="Branch" value={formData.branch_code} onChange={(branch) => handleBranchSelect('branch', branch)} required /></div>
               )}
-              
-              {/* ✅ FIX 3: Load Type moved to Section 1 */}
               <div><CustomSelect label="Load Type" name="load_type" value={formData.load_type} onChange={handleChange} options={loadTypeOptions} /></div>
-              
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">From Name / Origin *</label><input type="text" name="from_name" value={formData.from_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div><CreatableBranchSelect label="To Code" value={formData.to_code} onChange={(branch) => handleBranchSelect('to', branch)} required /></div>
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">To Name *</label><input type="text" name="to_name" value={formData.to_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
@@ -454,7 +449,6 @@ export default function BiltyEntry({ branchMode = false }) {
           <div className="border-b border-gray-200 pb-6">
             <h3 className="text-xl font-bold text-[#0f172a] mb-4">👤 Section 2: Consignor (भेजने वाला)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              {/* ✅ FIX 2: Select Party options safely mapped */}
               <div><CustomSelect label="Select Party" name="consignor_select" value="" onChange={(e) => handleCustomerSelect('consignor', e.target.value)} options={consignorOptions} /></div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -462,7 +456,6 @@ export default function BiltyEntry({ branchMode = false }) {
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor Mobile *</label><input type="tel" name="consignor_mobile" value={formData.consignor_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div className="md:col-span-2"><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor Address *</label><textarea name="consignor_address" value={formData.consignor_address} onChange={handleChange} required rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Consignor GST</label><input type="text" name="consignor_gst" value={formData.consignor_gst} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
-              {/* ✅ FIX 4: Customer Code properly mapped and displayed */}
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Customer Code</label><input type="text" name="customer_code_consignor" value={formData.customer_code_consignor} readOnly className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-semibold" /></div>
             </div>
           </div>
@@ -585,7 +578,6 @@ export default function BiltyEntry({ branchMode = false }) {
               <div><CustomSelect label="Billed at with M/s" name="bill_to_party" value={formData.bill_to_party} onChange={(e) => setFormData(prev => ({ ...prev, bill_to_party: e.target.value, billed_at_type: e.target.value, gst_through: e.target.value }))} options={billedAtOptions} /></div>
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Company Name (Auto from Bill To)</label><input type="text" value={billedAtName} readOnly placeholder="Bill To Party select karo" className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-bold" /></div>
               <div className="md:col-span-2"><CustomSelect label="GST Through" name="gst_through" value={formData.gst_through} onChange={(e) => setFormData(prev => ({ ...prev, gst_through: e.target.value, billed_at_type: e.target.value === 'B.T.C.' ? '' : e.target.value, bill_to_party: e.target.value === 'B.T.C.' ? '' : e.target.value }))} options={gstOptions} /></div>
-              
               {formData.bill_to_party === 'THIRD PARTY' && (
                 <>
                   <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Third Party Name *</label><input type="text" name="third_party_name" value={formData.third_party_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white border border-green-400 rounded-lg text-[#0f172a] ring-1 ring-green-400" placeholder="Third Party ka naam likho" /></div>
@@ -593,7 +585,6 @@ export default function BiltyEntry({ branchMode = false }) {
                   <div className="md:col-span-3"><label className="block text-[#1e293b] text-sm font-medium mb-1">Third Party Address</label><textarea name="third_party_address" value={formData.third_party_address} onChange={handleChange} rows="2" className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
                 </>
               )}
-
               <div className="md:col-span-3"><label className="block text-[#1e293b] text-sm font-medium mb-1">Amount in Words (Auto)</label><input type="text" value={formData.amount_in_words} readOnly className="w-full px-4 py-2 bg-gray-100 border border-[#c2cddf] rounded-lg text-[#0f172a] font-bold italic" /></div>
             </div>
           </div>
