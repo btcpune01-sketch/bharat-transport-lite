@@ -1,4 +1,4 @@
-// FINAL - Duplicate Bilty Allowed + Branch Wise Separation
+// FINAL - Edit Button Working + No Duplicate Error + Auto Serial
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { biltyAPI, customerAPI } from '../api'
@@ -189,7 +189,7 @@ export default function BiltyEntry({ branchMode = false }) {
       if (response.data?.fallback) {
         setNumberError(true)
         setIsLrEditable(true)
-        toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '⚠️' })
+        toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '️' })
       } else {
         setIsLrEditable(false)
       }
@@ -198,21 +198,18 @@ export default function BiltyEntry({ branchMode = false }) {
       setFormData(prev => ({ ...prev, lr_no: getLocalLrNumber() }))
       setIsLrEditable(true)
       setNumberError(true)
-      toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '⚠️' })
+      toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '️' })
     } finally { setNumberLoading(false) }
   }
 
-  // ✅ FIX: Validation को हमेशा true return करने दें - कोई duplicate check नहीं
+  // ✅ FIX: No validation - always return true
   const validateLRNo = async (lrNo) => {
-    // हमेशा true return करें - कोई validation नहीं
     setLrError('')
     return true
   }
 
   useEffect(() => {
-    if (!isLrEditable || !formData.lr_no.trim()) return
-    const timeout = setTimeout(() => validateLRNo(formData.lr_no), 600)
-    return () => clearTimeout(timeout)
+    // Don't auto-validate when LR number changes
   }, [formData.lr_no, isLrEditable])
 
   const handleChange = (e) => {
@@ -272,9 +269,7 @@ export default function BiltyEntry({ branchMode = false }) {
     if (!formData.consignor_name || !formData.consignee_name) { toast.error('Consignor और Consignee का नाम required है'); return }
     if (!formData.lr_no) { toast.error('LR number is still generating. Please retry.'); return }
     
-    // ✅ FIX: Validation को bypass करें - हमेशा allow करें
-    // if (!numberError && !await validateLRNo(formData.lr_no)) { toast.error(lrError || 'Please check LR number'); return }
-    
+    // ✅ FIX: No validation check - allow any number
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) {
       toast.error('Enter a valid GSTIN for the Third Party')
@@ -323,7 +318,7 @@ export default function BiltyEntry({ branchMode = false }) {
         const response = await biltyAPI.create(payload)
         if (response.data?.local) {
           const draft = saveLocalDraft('bilty', payload)
-          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          toast('Saved locally, will sync when server is online', { icon: '', duration: 7000 })
           navigate(`/bilty-print/${draft.localDraftId}`)
           return
         }
@@ -334,13 +329,13 @@ export default function BiltyEntry({ branchMode = false }) {
     } catch (err) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (errorMsg.toLowerCase().includes('already exists') || errorMsg.toLowerCase().includes('duplicate')) {
-        // ✅ FIX: Duplicate error को ignore करें और save करें
+        // ✅ FIX: Ignore duplicate error and save anyway
         toast.warning('Bilty saved with duplicate number', { icon: '⚠️', duration: 5000 })
         navigate('/consignments')
       } else if (isDatabaseUnavailable(err)) {
         try {
           const draft = saveLocalDraft('bilty', { ...formData, lr_no: formData.lr_no })
-          toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
+          toast('Saved locally, will sync when server is online', { icon: '', duration: 7000 })
           navigate(`/bilty-print/${draft.localDraftId}`)
         } catch (storageError) {
           console.error('Unable to store the Bilty as a local draft:', storageError)
@@ -384,8 +379,23 @@ export default function BiltyEntry({ branchMode = false }) {
               <div>
                 <label className="block text-[#1e293b] text-sm font-medium mb-1">LR Number / Bilty Number *</label>
                 <div className="flex gap-2 items-center">
-                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} required placeholder={numberLoading ? "Generating..." : "BTC-00012"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-gray-100 border-gray-300 text-gray-700'}`} />
-                  <button type="button" onClick={() => setIsLrEditable(!isLrEditable)} className={`shrink-0 px-4 py-2 rounded-lg font-bold transition-all ${isLrEditable ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}>{isLrEditable ? '🔒 Lock' : '✏️ Edit'}</button>
+                  <input 
+                    type="text" 
+                    name="lr_no" 
+                    value={formData.lr_no} 
+                    onChange={handleChange} 
+                    disabled={!isLrEditable} 
+                    required 
+                    placeholder={numberLoading ? "Generating..." : "BTC-00012"} 
+                    className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-gray-100 border-gray-300 text-gray-700'}`} 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => setIsLrEditable(!isLrEditable)} 
+                    className={`shrink-0 px-4 py-2 rounded-lg font-bold transition-all ${isLrEditable ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}
+                  >
+                    {isLrEditable ? '🔒 Lock' : '✏️ Edit'}
+                  </button>
                 </div>
                 {numberError && <button type="button" onClick={generateLRNo} className="mt-2 px-3 py-1 bg-yellow-500 text-black rounded text-sm">Retry Generate</button>}
                 {lrChecking && <p className="mt-1 text-sm text-yellow-600 animate-pulse">Checking LR number...</p>}
@@ -444,7 +454,7 @@ export default function BiltyEntry({ branchMode = false }) {
           </div>
 
           <div className="border-b border-gray-200 pb-6">
-            <h3 className="text-xl font-bold text-[#0f172a] mb-4">📄 Section 4: Invoice Details</h3>
+            <h3 className="text-xl font-bold text-[#0f172a] mb-4"> Section 4: Invoice Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Invoice No</label><input type="text" name="invoice_no" value={formData.invoice_no} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
               <div><label className="block text-[#1e293b] text-sm font-medium mb-1">Invoice Date</label><input type="date" name="invoice_date" value={formData.invoice_date} onChange={handleChange} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a]" /></div>
