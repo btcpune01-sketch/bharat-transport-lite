@@ -330,7 +330,7 @@ export default function BiltyEntry({ branchMode = false }) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (errorMsg.toLowerCase().includes('already exists') || errorMsg.toLowerCase().includes('duplicate')) {
         // ✅ FIX: Ignore duplicate error and save anyway
-        toast.warning('Bilty saved with duplicate number', { icon: '⚠️', duration: 5000 })
+       toast('Bilty saved with duplicate number', { icon: '⚠️', duration: 5000 })
         navigate('/consignments')
       } else if (isDatabaseUnavailable(err)) {
         try {
