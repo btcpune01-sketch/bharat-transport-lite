@@ -501,8 +501,8 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0)) {
       return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     }
-    const whereBranch = isAdmin ? '' : `WHERE branch_id = ${branchId}`;
-    const andBranch = isAdmin ? '' : `AND branch_id = ${branchId}`;
+    const whereBranch = isAdmin ? '' : `WHERE (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
+const andBranch = isAdmin ? '' : `AND (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
     const globalMasterCount = (table, condition) => isAdmin
       ? pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`)
       : Promise.resolve({ rows: [{ count: 0 }] });
