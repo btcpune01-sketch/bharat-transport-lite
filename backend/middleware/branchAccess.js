@@ -47,18 +47,6 @@ const BRANCH_RECORD_ROUTES = [
     table: 'consignments',
     column: 'id',
     key: 1
-  },
-  {
-    pattern: /^\/api\/drivers\/(\d+)$/,
-    table: 'drivers',
-    column: 'id',
-    key: 1
-  },
-  {
-    pattern: /^\/api\/vehicles\/(\d+)$/,
-    table: 'vehicles',
-    column: 'id',
-    key: 1
   }
 ]
 
@@ -66,15 +54,7 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/dashboard\/stats$/,
   /^\/api\/dashboard\/recent$/,
   /^\/api\/dashboard\/top-parties$/,
-  /^\/api\/stock$/,
-  /^\/api\/stationery-stock$/,
-  /^\/api\/stationery-stock\/request$/,
-  /^\/api\/stationery-stock\/branch$/,
-  /^\/api\/stationery-stock\/branch-history$/,
-  /^\/api\/stationery-stock\/branch-self-update$/,
-  /^\/api\/branches\/slug\/[^/]+$/,
   /^\/api\/consignments(?:\/next-number|\/\d+)?$/,
-  /^\/api\/next-(?:lr|bill|challan|gatepass|memo)$/,
   /^\/api\/pod$/,
   /^\/api\/ledger(?:\/[^/]+)?$/,
   /^\/api\/outstanding$/,
@@ -82,28 +62,16 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/claims(?:\/\d+)?$/,
   /^\/api\/commissions$/,
   /^\/api\/bills(?:\/[^/]+)?$/,
-  /^\/api\/mr(?:\/next-number|\/\d+)?$/,
-  /^\/api\/gate-pass(?:\/next-number)?$/,
-  /^\/api\/gadi-challan(?:\/next-number|\/\d+)?$/,
+  /^\/api\/mr(?:\/\d+)?$/,
+  /^\/api\/gate-pass$/,
+  /^\/api\/gadi-challan(?:\/\d+)?$/,
   /^\/api\/manifests$/,
   /^\/api\/trips(?:\/\d+)?$/,
   /^\/api\/rates(?:\/\d+)?$/,
   /^\/api\/rates\/calculate$/,
   /^\/api\/accounts\/summary$/,
   /^\/api\/accounts\/tds-register$/,
-  /^\/api\/branch\/users$/,
-  /^\/api\/parties$/,
-  /^\/api\/customers(?:\/\d+)?$/,
-  /^\/api\/drivers(?:\/\d+)?$/,
-  /^\/api\/vehicles(?:\/\d+)?$/,
-  /^\/api\/vehicles\/expiring$/,
-  /^\/api\/eway-bills(?:\/\d+)?$/,
-  /^\/api\/branch-payments(?:\/summary)?$/
-]
-
-const BRANCH_READ_ONLY_PATTERNS = [
-  /^\/api\/parties$/,
-  /^\/api\/customers(?:\/\d+)?$/
+  /^\/api\/eway-bills(?:\/\d+)?$/
 ]
 
 function getRecordRoute(path) {
@@ -131,39 +99,12 @@ function createBranchAccessMiddleware(pool) {
     if (req.headers['x-branch-slug'] && req.headers['x-branch-slug'] !== branchSlug) {
       return res.status(403).json({ error: 'This session is not authorized for the requested branch.' })
     }
-    if (req.path.startsWith('/api/branches/slug/') && req.params.slug !== branchSlug) {
-      return res.status(403).json({ error: 'This session is not authorized for the requested branch.' })
-    }
 
     if (!BRANCH_ROUTE_PATTERNS.some((pattern) => pattern.test(req.path))) {
       return res.status(403).json({ error: 'This endpoint is not available to branch staff.' })
     }
-    if (
-      req.path.startsWith('/api/stationery-stock') &&
-      !((req.method === 'GET' && [
-        '/api/stationery-stock',
-        '/api/stationery-stock/branch',
-        '/api/stationery-stock/branch-history'
-      ].includes(req.path)) ||
-        (req.method === 'POST' && [
-          '/api/stationery-stock/request',
-          '/api/stationery-stock/branch-self-update'
-        ].includes(req.path)))
-    ) {
-      return res.status(403).json({ error: 'Branch staff can only view stock and submit stationery requests.' })
-    }
-    if (req.method !== 'GET' && BRANCH_READ_ONLY_PATTERNS.some((pattern) => pattern.test(req.path))) {
-      return res.status(403).json({ error: 'Branch staff can view shared party and customer records but cannot change them.' })
-    }
 
     if (!branchIdsMatch(req.query?.branch_id, branchId) || !branchIdsMatch(req.body?.branch_id, branchId)) {
-      return res.status(403).json({ error: 'You can only access data assigned to your branch.' })
-    }
-    if (
-      (req.query?.branch && req.query.branch !== branchSlug) ||
-      (req.body?.branch && req.body.branch !== branchSlug) ||
-      (req.body?.branchSlug && String(req.body.branchSlug).toLowerCase() !== branchSlug.toLowerCase())
-    ) {
       return res.status(403).json({ error: 'You can only access data assigned to your branch.' })
     }
 
@@ -173,7 +114,7 @@ function createBranchAccessMiddleware(pool) {
          FROM branches
          WHERE id = $1 AND url_slug = $2
            AND COALESCE(is_active, TRUE) = TRUE
-           AND COALESCE(branch_login_enabled, TRUE) = TRUE`,
+           AND COALESCE(branch_login_enabled, FALSE) = TRUE`,
         [branchId, branchSlug]
       );
       const branch = branchResult.rows[0]
@@ -189,9 +130,7 @@ function createBranchAccessMiddleware(pool) {
       req.user.branch_code = branch.branch_code
       if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
         req.body.branch_id = branchId
-        if (Object.prototype.hasOwnProperty.call(req.body, 'branch_code')) {
-          req.body.branch_code = branch.branch_code
-        }
+        req.body.branch_code = branch.branch_code
       }
 
       const recordRoute = req.path === '/api/bills/last-serial' ? null : getRecordRoute(req.path)
