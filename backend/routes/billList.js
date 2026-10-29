@@ -9,22 +9,23 @@ router.get('/', async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
 
+        // Note: Table name is 'bill_book', not 'bills'
         let query = `
-            SELECT b.*, br.branch_name 
-            FROM bills b
-            LEFT JOIN branches br ON b.branch_id = br.id
+            SELECT bb.bill_no, bb.bill_date, bb.party_name, bb.grand_total, bb.status, bb.payment_status, bb.branch_code, b.branch_name 
+            FROM bill_book bb
+            LEFT JOIN branches b ON bb.branch_id = b.id
         `;
-        let countQuery = `SELECT COUNT(*) FROM bills`;
+        let countQuery = `SELECT COUNT(*) FROM bill_book`;
         let params = [];
 
         // ब्रांच यूजर हो तो सिर्फ उसकी ब्रांच के बिल दिखाएं
         if (req.user && (req.user.role === 'branch' || req.user.role === 'branch_user')) {
-            query += ` WHERE b.branch_id = $1`;
+            query += ` WHERE bb.branch_id = $1`;
             countQuery += ` WHERE branch_id = $1`;
             params = [req.user.branch_id];
         }
 
-        query += ` ORDER BY b.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        query += ` ORDER BY bb.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
         params.push(limit, offset);
 
         const result = await req.app.locals.pool.query(query, params);
