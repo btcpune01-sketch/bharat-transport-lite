@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const createBranchAuthRouter = require('./routes/branchAuth');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
+const branchAccessMiddleware = createBranchAccessMiddleware();
 
 require('dotenv').config();
 
