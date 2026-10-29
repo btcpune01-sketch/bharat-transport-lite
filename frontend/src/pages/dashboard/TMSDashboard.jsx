@@ -1,3 +1,4 @@
+import DashboardList from '../../components/DashboardList';
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -605,6 +606,8 @@ export default function TMSDashboard({ branch }) {
       </nav>
 
       <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+        <DashboardList type="bilty" />
+        <DashboardList type="bill" />
         {statsUnavailable && (
           <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             Dashboard statistics are temporarily unavailable because the database could not be queried.
