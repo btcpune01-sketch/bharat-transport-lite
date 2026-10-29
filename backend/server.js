@@ -842,7 +842,7 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
     if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0) && !branchCode) {
       return res.status(403).json({ error: 'Your account is not assigned to a branch' });
     }
-    const branchWhere = '(branch_id = $1 OR (branch_code IS NOT NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($2))))';
+    const branchWhere = isAdmin ? '1=1' : '(branch_id = $1 OR (branch_code IS NOT NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($2))))';
     const result = lrNumber
       ? isAdmin
         ? await pool.query(
