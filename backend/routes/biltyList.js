@@ -10,21 +10,20 @@ router.get('/', async (req, res) => {
         const offset = (page - 1) * limit;
 
         let query = `
-            SELECT b.*, br.branch_name 
-            FROM bilty b
-            LEFT JOIN branches br ON b.branch_id = br.id
+            SELECT c.lr_no, c.lr_date, c.consignor_name, c.consignee_name, c.grand_total, c.status, c.payment_status, c.branch_code, b.branch_name 
+            FROM consignments c
+            LEFT JOIN branches b ON c.branch_id = b.id
         `;
-        let countQuery = `SELECT COUNT(*) FROM bilty`;
+        let countQuery = `SELECT COUNT(*) FROM consignments`;
         let params = [];
 
-        // ब्रांच यूजर हो तो सिर्फ उसकी ब्रांच की बिल्टी दिखाएं
         if (req.user && (req.user.role === 'branch' || req.user.role === 'branch_user')) {
-            query += ` WHERE b.branch_id = $1`;
+            query += ` WHERE c.branch_id = $1`;
             countQuery += ` WHERE branch_id = $1`;
             params = [req.user.branch_id];
         }
 
-        query += ` ORDER BY b.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        query += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
         params.push(limit, offset);
 
         const result = await req.app.locals.pool.query(query, params);
