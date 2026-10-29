@@ -836,29 +836,57 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
   try {
     const isAdmin = String(req.user.role || '').toLowerCase() === 'admin';
     const branchId = req.user.branch_id ? parseInt(req.user.branch_id) : null;
-    const branchCode = req.user.branch_slug || req.user.branch_code || '';
+    const branchCode = req.user.branch_code || req.user.branch_slug || '';
     const search = String(req.query.search || '').trim();
     const lrNumber = String(req.query.lrNumber || '').trim();
+    
     if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0) && !branchCode) {
       return res.status(403).json({ error: 'Your account is not assigned to a branch' });
     }
-    const branchWhere = isAdmin ? '' : `AND (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
-    const result = lrNumber
-      ? isAdmin
-      ? await pool.query(
-    `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER('${lrNumber}') AND COALESCE(is_deleted, FALSE) = FALSE ${branchWhere} LIMIT 1`
-)  
-      : await pool.query(
-    `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER('${lrNumber}') ${branchWhere} AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1`
-)
-      ? search
-       ? await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE '%${search}%' ${branchWhere} ORDER BY id DESC LIMIT 100`)
-: await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchWhere} ORDER BY id DESC LIMIT 500`)
-      : search
- ? await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE '%${search}%' ${branchWhere} ORDER BY id DESC LIMIT 100`)
-: await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchWhere} ORDER BY id DESC LIMIT 500`)
+
+    // Dashboard की तरह ही simple और working filter
+    const branchFilter = isAdmin ? '' : `AND (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
+
+    let result;
+    
+    if (lrNumber) {
+      if (isAdmin) {
+        result = await pool.query(
+          'SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1',
+          [lrNumber]
+        );
+      } else {
+        result = await pool.query(
+          `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER('${lrNumber}') AND COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} LIMIT 1`
+        );
+      }
+    } else if (isAdmin) {
+      if (search) {
+        result = await pool.query(
+          'SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $1 ORDER BY id DESC LIMIT 100',
+          [`%${search}%`]
+        );
+      } else {
+        result = await pool.query(
+          'SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500'
+        );
+      }
+    } else {
+      if (search) {
+        result = await pool.query(
+          `SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE '%${search}%' ${branchFilter} ORDER BY id DESC LIMIT 100`
+        );
+      } else {
+        result = await pool.query(
+          `SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} ORDER BY id DESC LIMIT 500`
+        );
+      }
+    }
+
     res.json({ data: result.rows, total: result.rows.length });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    res.status(500).json({ error: err.message }); 
+  }
 });
 app.get('/api/consignments/:id', authMiddleware, async (req, res) => {
   try {
