@@ -842,24 +842,21 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
     if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0) && !branchCode) {
       return res.status(403).json({ error: 'Your account is not assigned to a branch' });
     }
-    const branchWhere = isAdmin ? '1=1' : `((branch_id = ${branchId}) OR (branch_code IS NOT NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}'))) OR (branch_id IN (SELECT id FROM branches WHERE UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')) OR url_slug = '${branchCode}')))`;
+    const branchWhere = isAdmin ? '' : `AND (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
     const result = lrNumber
       ? isAdmin
-        ? await pool.query(
-          'SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1',
-          [lrNumber]
-        )
-        : await pool.query(
-          `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND ${branchWhere} AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1`,
-          [lrNumber, branchId, branchCode]
-        )
-      : isAdmin
+      ? await pool.query(
+    `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER('${lrNumber}') AND COALESCE(is_deleted, FALSE) = FALSE ${branchWhere} LIMIT 1`
+)  
+      : await pool.query(
+    `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER('${lrNumber}') ${branchWhere} AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1`
+)
       ? search
-        ? await pool.query('SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $1 ORDER BY (lr_no = $2) DESC, id DESC LIMIT 100', [`%${search}%`, search])
-        : await pool.query('SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500')
+       ? await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE '%${search}%' ${branchWhere} ORDER BY id DESC LIMIT 100`)
+: await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchWhere} ORDER BY id DESC LIMIT 500`)
       : search
-        ? await pool.query(`SELECT * FROM consignments WHERE ${branchWhere} AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $3 ORDER BY (lr_no = $4) DESC, id DESC LIMIT 100`, [branchId || -1, branchCode, `%${search}%`, search])
-        : await pool.query(`SELECT * FROM consignments WHERE ${branchWhere} AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500`, [branchId, branchCode]);
+ ? await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE '%${search}%' ${branchWhere} ORDER BY id DESC LIMIT 100`)
+: await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchWhere} ORDER BY id DESC LIMIT 500`)
     res.json({ data: result.rows, total: result.rows.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
