@@ -836,7 +836,7 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
   try {
     const isAdmin = String(req.user.role || '').toLowerCase() === 'admin';
     const branchId = req.user.branch_id ? parseInt(req.user.branch_id) : null;
-    const branchCode = req.user.branch_code || req.user.branch_slug || '';
+    const branchCode = req.user.branch_slug || req.user.branch_code || '';
     const search = String(req.query.search || '').trim();
     const lrNumber = String(req.query.lrNumber || '').trim();
     if (!isAdmin && (!Number.isSafeInteger(branchId) || branchId <= 0) && !branchCode) {
