@@ -53,7 +53,7 @@ const Expenses = lazy(() => import('./pages/Expenses'))
 const BranchLayout = lazy(() => import('./components/BranchLayout'))
 const BranchFeatureNotice = lazy(() => import('./pages/BranchFeatureNotice'))
 
-// --- ALL 40 MODULES MAPPED ---
+// --- ALL MODULES MAPPED ---
 const branchPages = {
   'dashboard': TMSDashboard,
   'bilty-entry': BiltyEntry,
@@ -161,6 +161,7 @@ function PrivateRoute({ children }) {
     const branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null')
     if (branchSession?.token && branchSession.branch?.url_slug) {
       const slug = branchSession.branch.url_slug
+      // Force branch users to stay in their branch context
       if (!location.pathname.startsWith('/branch/')) {
          return <Navigate to={`/branch/${slug}/dashboard`} replace />
       }
@@ -209,6 +210,7 @@ function App() {
     <HashRouter>
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
+          {/* Public Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/admin/login" element={<Login />} />
           <Route path="/track" element={<TrackBilty />} />
@@ -223,15 +225,16 @@ function App() {
           <Route path="/branch-login" element={<Navigate to="/login" replace />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
           <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
-          <Route path="/branch/:branchSlug" element={<TMSDashboard isMainAdmin={false} />} />
 
-          {/* --- FIXED BRANCH LAYOUT ROUTES - Nested with Outlet --- */}
+          {/* ✅ FIXED: BRANCH LAYOUT ROUTES (Nested properly, no duplicate route) */}
           <Route path="/branch/:branchCode" element={<BranchLayout />}>
+            <Route index element={<TMSDashboard isMainAdmin={false} />} />
             <Route path="dashboard" element={<TMSDashboard isMainAdmin={false} />} />
             <Route path=":module" element={<BranchModuleRoute />} />
             <Route path=":module/:id" element={<BranchModuleRoute />} />
           </Route>
 
+          {/* Admin & Global Routes (Protected) */}
           <Route path="/" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
           <Route path="/dashboard" element={<PrivateRoute><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></PrivateRoute>} />
           <Route path="/admin" element={<PrivateRoute><AdminOnly><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></AdminOnly></PrivateRoute>} />
@@ -244,6 +247,8 @@ function App() {
           <Route path="/admin/audit" element={<PrivateRoute><AdminOnly><Audit /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/database" element={<PrivateRoute><AdminOnly><Backup /></AdminOnly></PrivateRoute>} />
           <Route path="/admin/all-branches" element={<PrivateRoute><AdminOnly><TMSDashboard branch="global" isMainAdmin showAllBranchesSelector /></AdminOnly></PrivateRoute>} />
+          
+          {/* Global Admin/Operator Routes */}
           <Route path="/bookings/list" element={<PrivateRoute><Consignments /></PrivateRoute>} />
           <Route path="/billing/pending" element={<PrivateRoute><Outstanding /></PrivateRoute>} />
           <Route path="/fleet/status" element={<PrivateRoute><Vehicles /></PrivateRoute>} />
@@ -299,6 +304,7 @@ function App() {
           <Route path="/commissions" element={<PrivateRoute><Commissions /></PrivateRoute>} />
           <Route path="/expenses" element={<PrivateRoute><Expenses /></PrivateRoute>} />
 
+          {/* 404 Fallback */}
           <Route path="*" element={
             <div style={{padding:'50px',textAlign:'center', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
               <div>
