@@ -43,7 +43,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
   max: 20,
 });
-const branchAccessMiddleware = createBranchAccessMiddleware(pool);
 
 app.use('/api/branch-login', createBranchAuthRouter(pool));
 app.use('/api/bilty-list', authMiddleware, biltyListRouter);
