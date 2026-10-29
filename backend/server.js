@@ -846,6 +846,10 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
 
     // Dashboard की तरह ही simple और working filter
     const branchFilter = isAdmin ? '' : `AND (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
+    console.log('=== CONSIGNMENTS DEBUG ===');
+console.log('Branch ID:', branchId, 'Type:', typeof branchId);
+console.log('Branch Code:', branchCode);
+console.log('Branch Filter:', branchFilter);
 
     let result;
     
@@ -882,6 +886,12 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
         );
       }
     }
+    console.log('Query Result:', result.rows.length, 'rows');
+if (result.rows.length > 0) {
+  console.log('First row branch_id:', result.rows[0].branch_id);
+  console.log('First row branch_code:', result.rows[0].branch_code);
+}
+console.log('=== END DEBUG ===');
 
     res.json({ data: result.rows, total: result.rows.length });
   } catch (err) { 
