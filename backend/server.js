@@ -6,6 +6,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const createBranchAuthRouter = require('./routes/branchAuth');
+const biltyListRouter = require('./routes/biltyList');
+const billListRouter = require('./routes/billList');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 const branchAccessMiddleware = createBranchAccessMiddleware();
 
@@ -44,6 +46,8 @@ const pool = new Pool({
 const branchAccessMiddleware = createBranchAccessMiddleware(pool);
 
 app.use('/api/branch-login', createBranchAuthRouter(pool));
+app.use('/api/bilty-list', authMiddleware, biltyListRouter);
+app.use('/api/bill-list', authMiddleware, billListRouter);
 
 // ==========================================
 // SAFE MIGRATION
