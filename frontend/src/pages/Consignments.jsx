@@ -33,7 +33,11 @@ const Consignments = () => {
   const fetchConsignments = async () => {
     try {
       setLoading(true);
+      setError('');
+      
       const token = localStorage.getItem('token');
+      console.log('🔑 Token:', token ? 'Present' : 'Missing');
+      console.log('📡 Fetching consignments...');
 
       if (!token && !localStorage.getItem('branch_session')) {
         setError('Please login first');
@@ -42,11 +46,26 @@ const Consignments = () => {
       }
 
       const response = await api.get('/consignments');
-      const dataArray = response.data?.data || response.data || [];
+      console.log(' API Response:', response);
+      console.log(' Response.data:', response.data);
+      
+      // Handle different response formats
+      let dataArray = [];
+      if (response.data && response.data.data) {
+        dataArray = response.data.data;
+      } else if (Array.isArray(response.data)) {
+        dataArray = response.data;
+      } else if (response.data && Array.isArray(response.data.rows)) {
+        dataArray = response.data.rows;
+      }
+      
+      console.log('📊 Parsed data array:', dataArray);
+      console.log('📊 Data length:', dataArray.length);
+      
       setConsignments(Array.isArray(dataArray) ? dataArray : []);
-      setError('');
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.error('❌ Fetch error:', err);
+      console.error('❌ Error response:', err.response);
       setError(err.response?.data?.error || err.message || 'Failed to fetch consignments');
       setConsignments([]);
     } finally {
@@ -55,6 +74,7 @@ const Consignments = () => {
   };
 
   const filteredConsignments = consignments.filter(c => {
+    // Search filter
     const matchesSearch = !searchTerm ||
       c.lr_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.consignor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -62,17 +82,34 @@ const Consignments = () => {
       c.from_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.to_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
+    // Status filter
     const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
+    
+    // Date filter
     const date = String(c.lr_date || '').slice(0, 10);
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const filter = searchParams.get('filter');
-    const matchesDate = filter === 'today'
-      ? date === today
-      : filter === 'month' ? date.startsWith(today.slice(0, 7)) : true;
+    
+    let matchesDate = true;
+    if (filter === 'today') {
+      matchesDate = date === today;
+    } else if (filter === 'month') {
+      matchesDate = date.startsWith(today.slice(0, 7));
+    }
+    
+    console.log('🔍 Filtering consignment:', c.lr_no, {
+      matchesSearch,
+      matchesStatus,
+      matchesDate,
+      date,
+      filter
+    });
 
     return matchesSearch && matchesStatus && matchesDate;
   });
+
+  console.log('📋 Filtered consignments:', filteredConsignments.length);
 
   const handleDelete = async (id, lr_no) => {
     if (!window.confirm(`Delete Bilty ${lr_no}?`)) return;
@@ -228,30 +265,32 @@ const Consignments = () => {
         </div>
       </div>
 
-      {!error && <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-        <div className="bg-white shadow-md rounded-lg p-4">
-          <h3 className="text-sm text-gray-600">Total Consignments</h3>
-          <p className="text-2xl font-bold text-gray-800">{consignments.length}</p>
+      {!error && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+          <div className="bg-white shadow-md rounded-lg p-4">
+            <h3 className="text-sm text-gray-600">Total Consignments</h3>
+            <p className="text-2xl font-bold text-gray-800">{consignments.length}</p>
+          </div>
+          <div className="bg-white shadow-md rounded-lg p-4">
+            <h3 className="text-sm text-gray-600">Booked</h3>
+            <p className="text-2xl font-bold text-yellow-600">
+              {consignments.filter(c => c.status === 'Booked').length}
+            </p>
+          </div>
+          <div className="bg-white shadow-md rounded-lg p-4">
+            <h3 className="text-sm text-gray-600">In Transit</h3>
+            <p className="text-2xl font-bold text-blue-600">
+              {consignments.filter(c => c.status === 'In-Transit').length}
+            </p>
+          </div>
+          <div className="bg-white shadow-md rounded-lg p-4">
+            <h3 className="text-sm text-gray-600">Delivered</h3>
+            <p className="text-2xl font-bold text-green-600">
+              {consignments.filter(c => c.status === 'Delivered').length}
+            </p>
+          </div>
         </div>
-        <div className="bg-white shadow-md rounded-lg p-4">
-          <h3 className="text-sm text-gray-600">Booked</h3>
-          <p className="text-2xl font-bold text-yellow-600">
-            {consignments.filter(c => c.status === 'Booked').length}
-          </p>
-        </div>
-        <div className="bg-white shadow-md rounded-lg p-4">
-          <h3 className="text-sm text-gray-600">In Transit</h3>
-          <p className="text-2xl font-bold text-blue-600">
-            {consignments.filter(c => c.status === 'In-Transit').length}
-          </p>
-        </div>
-        <div className="bg-white shadow-md rounded-lg p-4">
-          <h3 className="text-sm text-gray-600">Delivered</h3>
-          <p className="text-2xl font-bold text-green-600">
-            {consignments.filter(c => c.status === 'Delivered').length}
-          </p>
-        </div>
-      </div>}
+      )}
     </div>
   );
 };
