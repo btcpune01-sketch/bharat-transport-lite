@@ -1,9 +1,6 @@
-// backend/routes/biltyList.js
 const express = require('express');
 const router = express.Router();
 
-// GET /api/bilty-list?page=1&limit=10
-// Note: authMiddleware is already applied in server.js, so req.user is available.
 router.get('/', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -21,7 +18,6 @@ router.get('/', async (req, res) => {
         let countQuery = `SELECT COUNT(*) FROM consignments`;
         let params = [];
 
-        // Data Isolation: If NOT admin, filter by branch_id strictly
         if (!isAdmin && branchId) {
             query += ` WHERE c.branch_id = $1`;
             countQuery += ` WHERE branch_id = $1`;
@@ -31,7 +27,6 @@ router.get('/', async (req, res) => {
         query += ` ORDER BY c.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
         params.push(limit, offset);
 
-        // Use req.app.locals.pool as defined in server.js
         const result = await req.app.locals.pool.query(query, params);
         const countResult = await req.app.locals.pool.query(countQuery, params.slice(0, 1));
 
