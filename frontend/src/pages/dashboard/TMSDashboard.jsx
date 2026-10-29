@@ -606,8 +606,6 @@ export default function TMSDashboard({ branch }) {
       </nav>
 
       <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
-        <DashboardList type="bilty" />
-        <DashboardList type="bill" />
         {statsUnavailable && (
           <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             Dashboard statistics are temporarily unavailable because the database could not be queried.
@@ -663,6 +661,9 @@ export default function TMSDashboard({ branch }) {
             </div>
           </Link>
         </section>
+
+        <DashboardList type="bilty" />
+        <DashboardList type="bill" />
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
