@@ -94,8 +94,6 @@ const Consignments = () => {
     let matchesDate = true;
     if (filter === 'today') {
       matchesDate = date === today;
-    } else if (filter === 'month') {
-      matchesDate = date.startsWith(today.slice(0, 7));
     }
     
     console.log('🔍 Filtering consignment:', c.lr_no, {
