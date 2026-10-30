@@ -8,6 +8,7 @@ const { body, validationResult } = require('express-validator');
 const createBranchAuthRouter = require('./routes/branchAuth');
 const biltyListRouter = require('./routes/biltyList');
 const billListRouter = require('./routes/billList');
+const registerStationeryRoutes = require('./routes/stationery');
 const createBranchAccessMiddleware = require('./middleware/branchAccess');
 const branchAccessMiddleware = createBranchAccessMiddleware();
 
@@ -48,6 +49,7 @@ app.locals.pool = pool;
 app.use('/api/branch-login', createBranchAuthRouter(pool));
 app.use('/api/bilty-list', authMiddleware, biltyListRouter);
 app.use('/api/bill-list', authMiddleware, billListRouter);
+registerStationeryRoutes(app, { pool, authMiddleware });
 
 // ==========================================
 // SAFE MIGRATION

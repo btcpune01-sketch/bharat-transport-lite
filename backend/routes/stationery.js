@@ -145,7 +145,65 @@ async function recordMasterStockAddition(client, bookType, quantity, username) {
   )
 }
 
+const STATIONERY_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS stationery_stock_batches (
+     id SERIAL PRIMARY KEY, book_type TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 0,
+     available_quantity INTEGER NOT NULL DEFAULT 0, start_no TEXT, end_no TEXT, supplier_name TEXT,
+     bill_no TEXT, source TEXT, cost NUMERIC, stock_date DATE DEFAULT CURRENT_DATE, created_by TEXT,
+     created_at TIMESTAMPTZ DEFAULT NOW())`,
+  `CREATE TABLE IF NOT EXISTS stationery_stocks (
+     id SERIAL PRIMARY KEY, branch_id INTEGER NOT NULL, book_type TEXT NOT NULL,
+     total_assigned INTEGER NOT NULL DEFAULT 0, used INTEGER NOT NULL DEFAULT 0, remaining INTEGER NOT NULL DEFAULT 0,
+     start_serial TEXT, end_serial TEXT, current_running_serial TEXT, supplier TEXT, cost NUMERIC,
+     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(),
+     UNIQUE (branch_id, book_type))`,
+  `CREATE TABLE IF NOT EXISTS stationery_stock_history (
+     id SERIAL PRIMARY KEY, branch_id INTEGER, book_type TEXT NOT NULL, action TEXT NOT NULL,
+     quantity INTEGER, remaining INTEGER, reference TEXT, performed_by TEXT, notes TEXT, source TEXT,
+     master_remaining INTEGER, start_serial TEXT, end_serial TEXT, current_running_serial TEXT, bilty_no TEXT,
+     created_at TIMESTAMPTZ DEFAULT NOW())`,
+  `CREATE TABLE IF NOT EXISTS stationery_requests (
+     id SERIAL PRIMARY KEY, branch_id INTEGER NOT NULL, book_type TEXT NOT NULL, qty INTEGER NOT NULL,
+     reason TEXT, urgency TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', requested_by TEXT,
+     reviewed_by TEXT, reviewed_at TIMESTAMPTZ, date TIMESTAMPTZ DEFAULT NOW())`,
+  `CREATE TABLE IF NOT EXISTS stock_items (
+     id SERIAL PRIMARY KEY, item_code TEXT UNIQUE, item_name TEXT, item_type TEXT, name TEXT, type TEXT,
+     unit TEXT, branch_id INTEGER, total_quantity INTEGER DEFAULT 0, used_quantity INTEGER DEFAULT 0,
+     remaining_quantity INTEGER DEFAULT 0, low_stock_limit INTEGER DEFAULT 10, is_active BOOLEAN DEFAULT TRUE,
+     created_at TIMESTAMPTZ DEFAULT NOW())`,
+  `CREATE TABLE IF NOT EXISTS stock_history (
+     id SERIAL PRIMARY KEY, stock_item_id INTEGER, action TEXT, used_by TEXT, date DATE DEFAULT CURRENT_DATE,
+     created_at TIMESTAMPTZ DEFAULT NOW())`,
+  'CREATE INDEX IF NOT EXISTS idx_stationery_history_branch ON stationery_stock_history (branch_id, created_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_stationery_batches_type ON stationery_stock_batches (book_type)'
+]
+
+let schemaReady = null
+
+function ensureStationerySchema(pool) {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      for (const sql of STATIONERY_SCHEMA) await pool.query(sql)
+    })().catch((error) => {
+      schemaReady = null
+      throw error
+    })
+  }
+  return schemaReady
+}
+
 function registerStationeryRoutes(app, { pool, authMiddleware }) {
+  app.use('/api/stationery-stock', async (req, res, next) => {
+    if (!pool) return next()
+    try {
+      await ensureStationerySchema(pool)
+      return next()
+    } catch (error) {
+      console.error('Stationery schema setup failed:', error.message)
+      return res.status(500).json({ error: 'Unable to prepare stationery stock tables.', details: error.message })
+    }
+  })
+
   app.get('/api/stationery-stock/branch-overview', authMiddleware, async (req, res) => {
     if (!pool) return res.status(503).json({ error: 'Branch stationery stock is unavailable while the database is offline.' })
     if (!isAdmin(req, res)) return
