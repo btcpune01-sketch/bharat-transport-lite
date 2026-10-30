@@ -1,29 +1,33 @@
-import { NextResponse } from 'next/server';
+// app/api/stationery-stock/route.js
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
+  });
+}
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const branch_id = searchParams.get('branch_id');
+  const branch_id = searchParams.get('branch_id') || '1';
 
-  const response = NextResponse.json({
+  const data = {
     success: true,
     data: [],
     branch_id: branch_id,
-    message: "No stock api configured yet"
+    message: "Stationery stock API working - no data yet",
+  };
+
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    },
   });
-
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-
-  return response;
-}
-
-export async function OPTIONS(request) {
-  const response = new NextResponse(null, { status: 204 });
-  
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-
-  return response;
 }
