@@ -418,6 +418,53 @@ function authMiddleware(req, res, next) {
   }
 }
 
+const isAdminUser = (req) => String(req.user?.role || '').toLowerCase() === 'admin';
+const tablesWithBranchCode = new Set(['consignments', 'bill_book']);
+
+function getUserBranchId(req) {
+  const branchId = parseInt(req.user?.branch_id, 10);
+  return Number.isSafeInteger(branchId) && branchId > 0 ? branchId : null;
+}
+
+// Branch users may only touch rows of their own branch; admin is unrestricted.
+async function ensureBranchOwnership(req, res, table, id, db = pool) {
+  if (isAdminUser(req)) return true;
+  const branchId = getUserBranchId(req);
+  if (!branchId) {
+    res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    return false;
+  }
+  const matchCode = tablesWithBranchCode.has(table) && req.user.branch_code;
+  const result = await db.query(
+    `SELECT 1 FROM ${table} WHERE id = $1 AND (branch_id = $2${matchCode ? ' OR (branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($3)))' : ''}) LIMIT 1`,
+    matchCode ? [id, branchId, req.user.branch_code] : [id, branchId]
+  );
+  if (result.rowCount === 0) {
+    res.status(404).json({ error: 'Record not found' });
+    return false;
+  }
+  return true;
+}
+
+// Pins new records to the branch user's own branch so they cannot write into another branch.
+function applyBranchOnCreate(req, data) {
+  if (isAdminUser(req)) {
+    if (!data.branch_id) data.branch_id = req.user.branch_id;
+    return data;
+  }
+  data.branch_id = req.user.branch_id;
+  return data;
+}
+
+// Branch users cannot move an existing record to another branch.
+function stripBranchOnUpdate(req, data) {
+  if (!isAdminUser(req)) {
+    delete data.branch_id;
+    delete data.branch_code;
+  }
+  return data;
+}
+
 async function logAudit(action, module, recordId, details, performedBy, branchId = null) {
   try {
     await pool.query(`INSERT INTO audit_logs (action, module, record_id, details, performed_by, branch_id) VALUES ($1,$2,$3,$4,$5,$6)`, [action, module, recordId, details, performedBy, branchId]);
@@ -846,12 +893,9 @@ app.get('/api/consignments', authMiddleware, async (req, res) => {
       return res.status(403).json({ error: 'Your account is not assigned to a branch' });
     }
 
-    // Dashboard की तरह ही simple और working filter
-    const branchFilter = isAdmin ? '' : `AND (branch_id = ${branchId} OR UPPER(TRIM(branch_code)) = UPPER(TRIM('${branchCode}')))`;
-    console.log('=== CONSIGNMENTS DEBUG ===');
-console.log('Branch ID:', branchId, 'Type:', typeof branchId);
-console.log('Branch Code:', branchCode);
-console.log('Branch Filter:', branchFilter);
+    // Branch filter uses bound parameters $2/$3; $1 is reserved for the search value.
+    const branchFilter = 'AND (branch_id = $2 OR UPPER(TRIM(branch_code)) = UPPER(TRIM($3)))';
+    const branchParams = [Number.isSafeInteger(branchId) ? branchId : null, branchCode];
 
     let result;
     
@@ -863,7 +907,8 @@ console.log('Branch Filter:', branchFilter);
         );
       } else {
         result = await pool.query(
-          `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER('${lrNumber}') AND COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} LIMIT 1`
+          `SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} LIMIT 1`,
+          [lrNumber, ...branchParams]
         );
       }
     } else if (isAdmin) {
@@ -880,20 +925,16 @@ console.log('Branch Filter:', branchFilter);
     } else {
       if (search) {
         result = await pool.query(
-          `SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE '%${search}%' ${branchFilter} ORDER BY id DESC LIMIT 100`
+          `SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $1 ${branchFilter} ORDER BY id DESC LIMIT 100`,
+          [`%${search}%`, ...branchParams]
         );
       } else {
         result = await pool.query(
-          `SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchFilter} ORDER BY id DESC LIMIT 500`
+          `SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND $1::text IS NULL ${branchFilter} ORDER BY id DESC LIMIT 500`,
+          [null, ...branchParams]
         );
       }
     }
-    console.log('Query Result:', result.rows.length, 'rows');
-if (result.rows.length > 0) {
-  console.log('First row branch_id:', result.rows[0].branch_id);
-  console.log('First row branch_code:', result.rows[0].branch_code);
-}
-console.log('=== END DEBUG ===');
 
     res.json({ data: result.rows, total: result.rows.length });
   } catch (err) { 
@@ -902,6 +943,7 @@ console.log('=== END DEBUG ===');
 });
 app.get('/api/consignments/:id', authMiddleware, async (req, res) => {
   try {
+    if (!(await ensureBranchOwnership(req, res, 'consignments', req.params.id))) return;
     const result = await pool.query('SELECT * FROM consignments WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
@@ -943,7 +985,8 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
         if (key.startsWith('mr_')) delete c[key];
       }
     }
-    if (!c.branch_id) c.branch_id = req.user.branch_id;
+    applyBranchOnCreate(req, c);
+    if (!isAdminUser(req) && req.user.branch_code) c.branch_code = req.user.branch_code;
     if (!c.branch_code && req.user.branch_code) c.branch_code = req.user.branch_code;
     if (!c.status) c.status = 'Booked';
     if (!c.payment_status) c.payment_status = c.basis_booking === 'PAID' ? 'Paid' : 'Unpaid';
@@ -987,6 +1030,8 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
 app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
   try {
     const id = req.params.id; const data = { ...req.body }; delete data.id; delete data.created_at; data.updated_at = new Date().toISOString();
+    if (!(await ensureBranchOwnership(req, res, 'consignments', id))) return;
+    stripBranchOnUpdate(req, data);
     if (data.lr_no) {
       const branchCodeCheck = data.branch_code !== undefined ? data.branch_code : (req.user?.branch_code || '');
       const existing = await pool.query(
@@ -1036,6 +1081,7 @@ app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
 });
 app.delete('/api/consignments/:id', authMiddleware, async (req, res) => {
   try {
+    if (!(await ensureBranchOwnership(req, res, 'consignments', req.params.id))) return;
     const result = await pool.query(
       'UPDATE consignments SET is_deleted = TRUE WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
       [req.params.id]
@@ -1060,8 +1106,24 @@ app.get('/api/pod', authMiddleware, async (req, res) => {
 app.post('/api/pod', authMiddleware, async (req, res) => {
   try {
     const { lr_no, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url, branch_id } = req.body;
-    const result = await pool.query(`INSERT INTO pod_records (lr_no, branch_id, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Delivered') RETURNING *`, [lr_no, branch_id || req.user.branch_id, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url]);
-    await pool.query("UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2", [delivery_date, lr_no]);
+    const isAdmin = isAdminUser(req);
+    const podBranchId = isAdmin ? (branch_id || req.user.branch_id) : req.user.branch_id;
+    if (!isAdmin) {
+      const owned = await pool.query(
+        'SELECT 1 FROM consignments WHERE lr_no = $1 AND (branch_id = $2 OR UPPER(TRIM(branch_code)) = UPPER(TRIM($3))) LIMIT 1',
+        [lr_no, getUserBranchId(req), req.user.branch_code || '']
+      );
+      if (owned.rowCount === 0) return res.status(404).json({ error: 'Bilty not found' });
+    }
+    const result = await pool.query(`INSERT INTO pod_records (lr_no, branch_id, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Delivered') RETURNING *`, [lr_no, podBranchId, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url]);
+    if (isAdmin) {
+      await pool.query("UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2", [delivery_date, lr_no]);
+    } else {
+      await pool.query(
+        "UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2 AND (branch_id = $3 OR UPPER(TRIM(branch_code)) = UPPER(TRIM($4)))",
+        [delivery_date, lr_no, getUserBranchId(req), req.user.branch_code || '']
+      );
+    }
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1188,7 +1250,7 @@ app.get('/api/expenses', authMiddleware, async (req, res) => {
 });
 app.post('/api/expenses', authMiddleware, async (req, res) => {
   try {
-    const data = { ...req.body }; if (!data.branch_id) data.branch_id = req.user.branch_id;
+    const data = applyBranchOnCreate(req, { ...req.body });
     const keys = Object.keys(data); const values = Object.values(data);
     const result = await pool.query(`INSERT INTO expenses (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     res.json(result.rows[0]);
@@ -1204,7 +1266,7 @@ app.get('/api/claims', authMiddleware, async (req, res) => {
 });
 app.post('/api/claims', authMiddleware, async (req, res) => {
   try {
-    const data = { ...req.body }; if (!data.branch_id) data.branch_id = req.user.branch_id;
+    const data = applyBranchOnCreate(req, { ...req.body });
     const keys = Object.keys(data); const values = Object.values(data);
     const result = await pool.query(`INSERT INTO claims (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     res.json(result.rows[0]);
@@ -1213,6 +1275,8 @@ app.post('/api/claims', authMiddleware, async (req, res) => {
 app.put('/api/claims/:id', authMiddleware, async (req, res) => {
   try {
     const id = req.params.id; const data = { ...req.body }; delete data.id; delete data.created_at;
+    if (!(await ensureBranchOwnership(req, res, 'claims', id))) return;
+    stripBranchOnUpdate(req, data);
     const keys = Object.keys(data); const values = Object.values(data);
     const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', '); values.push(id);
     const result = await pool.query(`UPDATE claims SET ${setClause} WHERE id = $${values.length} RETURNING *`, values);
@@ -1229,7 +1293,7 @@ app.get('/api/commissions', authMiddleware, async (req, res) => {
 });
 app.post('/api/commissions', authMiddleware, async (req, res) => {
   try {
-    const data = { ...req.body }; if (!data.branch_id) data.branch_id = req.user.branch_id;
+    const data = applyBranchOnCreate(req, { ...req.body });
     const keys = Object.keys(data); const values = Object.values(data);
     const result = await pool.query(`INSERT INTO commissions (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     res.json(result.rows[0]);
@@ -1278,6 +1342,7 @@ app.get('/api/bills/:identifier', authMiddleware, async (req, res) => {
     const result = await pool.query(query, [identifier]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
     const bill = result.rows[0];
+    if (!(await ensureBranchOwnership(req, res, 'bill_book', bill.id))) return;
     const itemsResult = await pool.query(`SELECT * FROM bill_items WHERE bill_id = $1`, [bill.id]);
     res.json({ ...bill, items: itemsResult.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1319,7 +1384,8 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
     await client.query('SELECT pg_advisory_xact_lock(260627001)');
     const bill = Object.fromEntries(Object.entries(req.body).filter(([key]) => billFields.includes(key)));
     const items = Array.isArray(req.body.items) ? req.body.items : [];
-    if (!bill.branch_id) bill.branch_id = req.user.branch_id;
+    applyBranchOnCreate(req, bill);
+    if (!isAdminUser(req) && req.user.branch_code) bill.branch_code = req.user.branch_code;
     if (!bill.bill_date) bill.bill_date = new Date().toISOString().split('T')[0];
     if (!bill.status) bill.status = 'Pending';
     if (!bill.payment_status) bill.payment_status = 'Unpaid';
@@ -1357,7 +1423,11 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Bill not found' });
     }
-    const bill = Object.fromEntries(Object.entries(req.body).filter(([key]) => billFields.includes(key) && key !== 'created_by'));
+    if (!(await ensureBranchOwnership(req, res, 'bill_book', req.params.id, client))) {
+      await client.query('ROLLBACK');
+      return;
+    }
+    const bill = stripBranchOnUpdate(req, Object.fromEntries(Object.entries(req.body).filter(([key]) => billFields.includes(key) && key !== 'created_by')));
     if (!bill.branch_id) bill.branch_id = existing.rows[0].branch_id || req.user.branch_id;
     const fields = Object.keys(bill);
     const values = Object.values(bill);
@@ -1379,6 +1449,7 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
 });
 app.delete('/api/bills/:id', authMiddleware, async (req, res) => {
   try {
+    if (!(await ensureBranchOwnership(req, res, 'bill_book', req.params.id))) return;
     const result = await pool.query('DELETE FROM bill_book WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
     res.json({ success: true, id: result.rows[0].id });
@@ -1400,6 +1471,7 @@ app.get('/api/mr', authMiddleware, async (req, res) => {
 });
 app.get('/api/mr/:id', authMiddleware, async (req, res) => {
   try {
+    if (!(await ensureBranchOwnership(req, res, 'money_receipts', req.params.id))) return;
     const result = await pool.query('SELECT * FROM money_receipts WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'MR not found' });
     res.json(result.rows[0]);
@@ -1424,6 +1496,12 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
 
     let outstanding;
     let linkedDocument;
+    const linkedTable = bilty_id ? 'consignments' : bill_id ? 'bill_book' : null;
+    if (linkedTable && !(await ensureBranchOwnership(req, res, linkedTable, bilty_id || bill_id, client))) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return;
+    }
     if (bilty_id) {
       const result = await client.query(
         `SELECT id, lr_no, COALESCE(NULLIF(grand_total, ''), '0')::NUMERIC AS grand_total, payment_status
@@ -1479,7 +1557,7 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
       );
       finalMRNo = `MR/${year}/${String(Number(lastMR.rows[0].last_serial) + 1).padStart(4, '0')}`;
     }
-    const branchId = req.body.branch_id || req.user.branch_id;
+    const branchId = isAdminUser(req) ? (req.body.branch_id || req.user.branch_id) : req.user.branch_id;
     const result = await client.query(
       `INSERT INTO money_receipts
        (mr_no, mr_date, branch_id, party_type, party_name, bilty_id, bilty_lr_no, bill_id, bill_no, amount, payment_mode, is_advance, remarks, created_by)
@@ -1528,6 +1606,10 @@ app.delete('/api/mr/:id', authMiddleware, async (req, res) => {
     if (receiptResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'MR not found.' });
+    }
+    if (!(await ensureBranchOwnership(req, res, 'money_receipts', req.params.id, client))) {
+      await client.query('ROLLBACK');
+      return;
     }
     const receipt = receiptResult.rows[0];
     await client.query('DELETE FROM money_receipts WHERE id = $1', [req.params.id]);
@@ -1705,6 +1787,7 @@ app.put('/api/customers/:id', authMiddleware, async (req, res) => {
 });
 app.delete('/api/customers/:id', authMiddleware, async (req, res) => {
   try {
+    if (!isAdminUser(req)) return res.status(403).json({ error: 'Only admin can remove shared customers.' });
     const result = await pool.query(
       'UPDATE customers SET is_active = FALSE WHERE id = $1 RETURNING id',
       [req.params.id]
@@ -1724,7 +1807,7 @@ app.get('/api/gate-pass', authMiddleware, async (req, res) => {
 app.post('/api/gate-pass', authMiddleware, async (req, res) => {
   try {
     const { lr_no, vehicle_no, driver_name, driver_mobile, material_desc, quantity, weight, valid_until, issued_by } = req.body;
-    const branchId = req.body.branch_id || req.user.branch_id;
+    const branchId = isAdminUser(req) ? (req.body.branch_id || req.user.branch_id) : req.user.branch_id;
     const year = String(new Date().getFullYear()).slice(-2);
     const result = await pool.query(`SELECT pass_no FROM gate_passes WHERE pass_no LIKE $1 ORDER BY id DESC LIMIT 1`, [`GP/${year}/%`]);
     let nextSerial = 1;
@@ -1746,6 +1829,7 @@ app.get('/api/gadi-challan', authMiddleware, async (req, res) => {
 });
 app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
   try {
+    if (!(await ensureBranchOwnership(req, res, 'gadi_challans', req.params.id))) return;
     const result = await pool.query('SELECT * FROM gadi_challans WHERE id = $1', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Challan not found' });
     res.json(result.rows[0]);
@@ -1753,7 +1837,7 @@ app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
 });
 app.post('/api/gadi-challan', authMiddleware, async (req, res) => {
   try {
-    const c = { ...req.body }; if (!c.branch_id) c.branch_id = req.user.branch_id;
+    const c = applyBranchOnCreate(req, { ...req.body });
     const year = String(new Date().getFullYear()).slice(-2);
     const result = await pool.query(`SELECT challan_no FROM gadi_challans WHERE challan_no LIKE $1 ORDER BY id DESC LIMIT 1`, [`GC/${year}/%`]);
     let nextSerial = 1;
@@ -1863,7 +1947,8 @@ app.get('/api/manifests', authMiddleware, async (req, res) => {
 app.post('/api/manifests', authMiddleware, async (req, res) => {
   try {
     const { manifest_no, manifest_date, branch_id, from_branch, to_branch, vehicle_no, driver_name, driver_mobile, lr_nos, status, remarks } = req.body;
-    const bId = branch_id || req.user.branch_id;
+    const isAdmin = isAdminUser(req);
+    const bId = isAdmin ? (branch_id || req.user.branch_id) : req.user.branch_id;
     const year = String(new Date().getFullYear()).slice(-2);
     let finalManifestNo = manifest_no;
     if (!finalManifestNo) {
@@ -1880,7 +1965,14 @@ app.post('/api/manifests', authMiddleware, async (req, res) => {
       const lrArray = lr_nos.split(',').map(lr => lr.trim());
       for (const lr_no of lrArray) {
         await pool.query(`INSERT INTO manifest_items (manifest_id, lr_no, branch_id) VALUES ($1, $2, $3)`, [manifestId, lr_no, bId]);
-        await pool.query(`UPDATE consignments SET status = 'In-Transit', lorry_no = $1, driver_name = $2 WHERE lr_no = $3`, [vehicle_no, driver_name, lr_no]);
+        if (isAdmin) {
+          await pool.query(`UPDATE consignments SET status = 'In-Transit', lorry_no = $1, driver_name = $2 WHERE lr_no = $3`, [vehicle_no, driver_name, lr_no]);
+        } else {
+          await pool.query(
+            `UPDATE consignments SET status = 'In-Transit', lorry_no = $1, driver_name = $2 WHERE lr_no = $3 AND (branch_id = $4 OR UPPER(TRIM(branch_code)) = UPPER(TRIM($5)))`,
+            [vehicle_no, driver_name, lr_no, getUserBranchId(req), req.user.branch_code || '']
+          );
+        }
       }
     }
     res.json({ success: true, data: result.rows[0] });
@@ -1926,7 +2018,7 @@ app.get('/api/trips', authMiddleware, async (req, res) => {
 });
 app.post('/api/trips', authMiddleware, async (req, res) => {
   try {
-    const t = { ...req.body }; if (!t.branch_id) t.branch_id = req.user.branch_id; if (!t.created_by) t.created_by = req.user.username;
+    const t = applyBranchOnCreate(req, { ...req.body }); if (!t.created_by) t.created_by = req.user.username;
     const year = String(new Date().getFullYear()).slice(-2);
     const result = await pool.query(`SELECT trip_no FROM trips WHERE trip_no LIKE $1 ORDER BY id DESC LIMIT 1`, [`TRP/${year}/%`]);
     let nextSerial = 1;
@@ -1942,6 +2034,8 @@ app.post('/api/trips', authMiddleware, async (req, res) => {
 app.put('/api/trips/:id', authMiddleware, async (req, res) => {
   try {
     const id = req.params.id; const data = { ...req.body }; delete data.id; delete data.created_at; data.updated_at = new Date().toISOString();
+    if (!(await ensureBranchOwnership(req, res, 'trips', id))) return;
+    stripBranchOnUpdate(req, data);
     const keys = Object.keys(data); const values = Object.values(data);
     const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', '); values.push(id);
     const result = await pool.query(`UPDATE trips SET ${setClause} WHERE id = $${values.length} RETURNING *`, values);
@@ -1962,7 +2056,7 @@ app.get('/api/rates', authMiddleware, async (req, res) => {
 });
 app.post('/api/rates', authMiddleware, async (req, res) => {
   try {
-    const r = { ...req.body }; if (!r.branch_id) r.branch_id = req.user.branch_id; if (!r.created_by) r.created_by = req.user.username;
+    const r = applyBranchOnCreate(req, { ...req.body }); if (!r.created_by) r.created_by = req.user.username;
     const keys = Object.keys(r); const values = Object.values(r);
     const row = await pool.query(`INSERT INTO rate_contracts (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     res.json(row.rows[0]);
@@ -1971,6 +2065,8 @@ app.post('/api/rates', authMiddleware, async (req, res) => {
 app.put('/api/rates/:id', authMiddleware, async (req, res) => {
   try {
     const id = req.params.id; const data = { ...req.body }; delete data.id; delete data.created_at; data.updated_at = new Date().toISOString();
+    if (!(await ensureBranchOwnership(req, res, 'rate_contracts', id))) return;
+    stripBranchOnUpdate(req, data);
     const keys = Object.keys(data); const values = Object.values(data);
     const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', '); values.push(id);
     const result = await pool.query(`UPDATE rate_contracts SET ${setClause} WHERE id = $${values.length} RETURNING *`, values);
@@ -1978,7 +2074,10 @@ app.put('/api/rates/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.delete('/api/rates/:id', authMiddleware, async (req, res) => {
-  try { await pool.query('DELETE FROM rate_contracts WHERE id = $1', [req.params.id]); res.json({ success: true }); }
+  try {
+    if (!(await ensureBranchOwnership(req, res, 'rate_contracts', req.params.id))) return;
+    await pool.query('DELETE FROM rate_contracts WHERE id = $1', [req.params.id]); res.json({ success: true });
+  }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.post('/api/rates/calculate', authMiddleware, async (req, res) => {
@@ -2050,6 +2149,7 @@ app.get('/api/eway-bills', authMiddleware, async (req, res) => {
 app.put('/api/eway-bills/:id', authMiddleware, async (req, res) => {
   try {
     const id = req.params.id; const { eway_bill_no, eway_valid_upto, transporter_id, transporter_name } = req.body;
+    if (!(await ensureBranchOwnership(req, res, 'consignments', id))) return;
     const result = await pool.query(`UPDATE consignments SET eway_bill_no = $1, eway_valid_upto = $2, transporter_id = $3, transporter_name = $4, updated_at = NOW() WHERE id = $5 RETURNING id, lr_no, eway_bill_no`, [eway_bill_no || null, eway_valid_upto || null, transporter_id || null, transporter_name || null, id]);
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2153,7 +2253,7 @@ app.post('/api/backup/import', authMiddleware, async (req, res) => {
     for (const [table, rows] of Object.entries(backupData.data)) {
       if (Array.isArray(rows) && rows.length > 0) {
         try {
-          await pool.query(`DELETE FROM ${table}`);
+          // Restore merges only: existing records are never wiped, and ON CONFLICT keeps current rows.
           const keys = Object.keys(rows[0]);
           for (const row of rows) {
             const values = keys.map(k => row[k]);
