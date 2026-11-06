@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
 
-export default function Accounts({ initialTab = 'dashboard' }) {
+export default function Accounts({ initialTab = 'dashboard', branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
   const [tdsData, setTdsData] = useState([])
@@ -11,7 +11,7 @@ export default function Accounts({ initialTab = 'dashboard' }) {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [branchMode, branchCode])
 
   useEffect(() => {
     setActiveTab(initialTab)
@@ -23,6 +23,8 @@ export default function Accounts({ initialTab = 'dashboard' }) {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
+
+      if (branchMode && branchCode) headers['X-Branch-Slug'] = branchCode
 
       const resSummary = await fetch(`${apiUrl}/accounts/summary`, { headers })
       if (resSummary.ok) {
