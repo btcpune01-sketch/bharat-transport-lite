@@ -933,6 +933,35 @@ function getBranchPaymentsScope(req, res) {
   return { branchId, isBranchUser: false };
 }
 
+app.get('/api/admin/branch-payment-status', authMiddleware, async (req, res) => {
+  if (String(req.user?.role || '').toLowerCase() !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can access branch payment status.' });
+  }
+  try {
+    await ensureBranchPaymentsSchema();
+    const result = await pool.query(
+      `SELECT b.branch_name AS "branchName",
+        COALESCE(NULLIF(BTRIM(b.branch_code), ''), b.id::TEXT) AS "branchId",
+        COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE 0 END), 0)::NUMERIC(14, 2) AS "totalSent",
+        COALESCE(SUM(CASE WHEN p.type = 'received' THEN p.amount ELSE 0 END), 0)::NUMERIC(14, 2) AS "totalReceived",
+        COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END), 0)::NUMERIC(14, 2) AS "netBalance",
+        CASE
+          WHEN ABS(COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END), 0)) <= 0.005
+            THEN 'balanced'
+          ELSE 'pending'
+        END AS status
+      FROM branches b
+      JOIN branch_payments p ON p.branch_id = b.id
+      GROUP BY b.id, b.branch_code, b.branch_name
+      ORDER BY b.branch_name`
+    );
+    return res.json({ branches: result.rows });
+  } catch (error) {
+    console.error('GET /api/admin/branch-payment-status error:', error.message);
+    return res.status(500).json({ error: 'Unable to load branch payment status.' });
+  }
+});
+
 app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
   const scope = getBranchPaymentsScope(req, res);
   if (!scope) return;
@@ -1332,6 +1361,68 @@ app.get('/api/dashboard/pending-amount', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('GET /api/dashboard/pending-amount error:', error.message);
     return res.status(503).json({ error: 'Pending amounts are temporarily unavailable.' });
+  }
+});
+
+app.get('/api/dashboard/monthly-stats', authMiddleware, async (req, res) => {
+  try {
+    let scope = resolveDashboardBranch(req);
+    if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const selectedBranch = String(req.query.branch || req.query.branch_id || '').trim();
+    if (
+      req.user.role === 'admin' &&
+      selectedBranch &&
+      !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())
+    ) {
+      const branchResult = await pool.query(
+        `SELECT id, branch_code FROM branches
+         WHERE (LOWER(COALESCE(url_slug, '')) = LOWER($1)
+           OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
+           OR id::TEXT = $1)
+           AND COALESCE(is_active, TRUE) = TRUE
+         LIMIT 1`,
+        [selectedBranch]
+      );
+      if (!branchResult.rows[0]) return res.status(404).json({ error: 'The selected branch was not found.' });
+      scope = {
+        branchId: Number(branchResult.rows[0].id),
+        branchCode: branchResult.rows[0].branch_code || null
+      };
+    }
+
+    const branch = buildBranchCondition(scope);
+    const branchFilter = branch.sql ? `AND ${branch.sql}` : '';
+    const monthlyQuery = (table, dateColumn) => pool.query(
+      `WITH months AS (
+         SELECT generate_series(
+           date_trunc('month', CURRENT_DATE) - INTERVAL '11 months',
+           date_trunc('month', CURRENT_DATE),
+           INTERVAL '1 month'
+         ) AS month_start
+       ), totals AS (
+         SELECT date_trunc('month', ${dateColumn}) AS month_start, COUNT(*)::int AS count
+         FROM ${table}
+         WHERE ${dateColumn} >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months'
+           ${branchFilter}
+         GROUP BY 1
+       )
+       SELECT TO_CHAR(months.month_start, 'Mon') AS month,
+         EXTRACT(YEAR FROM months.month_start)::int AS year,
+         TO_CHAR(months.month_start, 'YYYY-MM') AS period,
+         COALESCE(totals.count, 0)::int AS count
+       FROM months
+       LEFT JOIN totals ON totals.month_start = months.month_start
+       ORDER BY months.month_start`,
+      branch.params
+    );
+    const [billResult, biltyResult] = await Promise.all([
+      monthlyQuery('bill_book', 'created_at'),
+      monthlyQuery('consignments', 'created_at')
+    ]);
+    return res.json({ success: true, bills: billResult.rows, bilties: biltyResult.rows });
+  } catch (error) {
+    console.error('GET /api/dashboard/monthly-stats error:', error.message);
+    return res.status(503).json({ error: 'Monthly dashboard statistics are temporarily unavailable.' });
   }
 });
 
@@ -2335,24 +2426,61 @@ app.get(['/api/bills', '/api/bill-list'], authMiddleware, async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     let scope = resolveDashboardBranch(req);
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
-    const selectedBranch = String(req.query.branch || '').trim();
-    if (isAdmin && selectedBranch && !req.query.branch_id && !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())) {
+    const paginationRequested = req.query.limit !== undefined || req.query.offset !== undefined;
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const requestedOffset = Number.parseInt(req.query.offset, 10);
+    const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : paginationRequested ? 50 : null;
+    const offset = Number.isSafeInteger(requestedOffset) && requestedOffset >= 0
+      ? requestedOffset
+      : 0;
+    const search = String(req.query.search || '').trim().slice(0, 200);
+    const selectedBranch = String(req.query.branch ?? req.query.branch_id ?? '').trim();
+    if (isAdmin && selectedBranch && !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())) {
       const branchResult = await pool.query(
-        `SELECT id FROM branches
-         WHERE LOWER(COALESCE(url_slug, '')) = LOWER($1)
+        `SELECT id, branch_code FROM branches
+         WHERE (LOWER(COALESCE(url_slug, '')) = LOWER($1)
             OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
+            OR id::TEXT = $1)
+           AND COALESCE(is_active, TRUE) = TRUE
          LIMIT 1`,
         [selectedBranch]
       );
       if (!branchResult.rows[0]) return res.status(404).json({ error: 'The selected branch was not found.' });
-      scope = { branchId: Number(branchResult.rows[0].id), branchCode: null };
+      scope = {
+        branchId: Number(branchResult.rows[0].id),
+        branchCode: branchResult.rows[0].branch_code || null
+      };
     }
     const branch = buildBranchCondition(scope);
-    const result = await pool.query(
-      `SELECT * FROM bill_book ${branch.sql ? `WHERE ${branch.sql}` : ''} ORDER BY id DESC`,
-      branch.params
+    const conditions = branch.sql ? [branch.sql] : [];
+    const params = [...branch.params];
+    if (search) {
+      params.push(`%${search}%`);
+      conditions.push(`(bill_no ILIKE $${params.length} OR party_name ILIKE $${params.length})`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM bill_book ${where}`,
+      params
     );
-    res.json({ data: result.rows });
+    const total = countResult.rows[0]?.total || 0;
+    const pageParams = [...params];
+    if (paginationRequested) pageParams.push(limit, offset);
+    const result = await pool.query(
+      `SELECT * FROM bill_book ${where} ORDER BY id DESC${
+        paginationRequested ? ` LIMIT $${pageParams.length - 1} OFFSET $${pageParams.length}` : ''
+      }`,
+      pageParams
+    );
+    res.json({
+      data: result.rows,
+      total,
+      limit: limit || result.rows.length,
+      offset,
+      hasMore: paginationRequested && offset + result.rows.length < total
+    });
   } catch (err) {
     console.error('GET bill list error:', err.message);
     res.status(503).json({

@@ -7,6 +7,8 @@ import {
 import api, { branchAPI, dashboardAPI } from '../../api'
 import { useAuth } from '../../AuthContext'
 import toast from 'react-hot-toast'
+import MonthlyStatsCharts from '../../components/MonthlyStatsCharts'
+import BranchPaymentStatus from '../../components/BranchPaymentStatus'
 
 const navigation = [
   {
@@ -196,6 +198,8 @@ export default function TMSDashboard({ branch }) {
   const canClearPending = ['admin', 'manager'].includes(String(currentUser?.role || '').toLowerCase())
   const canAdminViewBranch = isBranchDashboard && isAdminUser
   const [stats, setStats] = useState(null)
+  const [monthlyStats, setMonthlyStats] = useState({ bills: [], bilties: [] })
+  const [monthlyStatsError, setMonthlyStatsError] = useState('')
   const [stock, setStock] = useState([])
   const [pendingRows, setPendingRows] = useState([])
   const [pendingError, setPendingError] = useState('')
@@ -286,10 +290,11 @@ export default function TMSDashboard({ branch }) {
     Promise.allSettled([
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
       api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query }),
-      api.get('/dashboard/pending-amount', { params: query })
+      api.get('/dashboard/pending-amount', { params: query }),
+      dashboardAPI.getMonthlyStats(statsBranchSlug, statsBranchId)
     ]).then((results) => {
       if (!active) return
-      const [statsResult, stockResult, pendingResult] = results
+      const [statsResult, stockResult, pendingResult, monthlyStatsResult] = results
       if (statsResult.status === 'fulfilled' && statsResult.value.data?.success !== false) {
         setStats(getData(statsResult.value))
         setStatsUnavailable(false)
@@ -311,6 +316,18 @@ export default function TMSDashboard({ branch }) {
         console.error('Unable to load dashboard pending amounts:', pendingResult.reason)
         setPendingRows([])
         setPendingError(pendingResult.reason?.response?.data?.error || 'Pending amounts could not be loaded.')
+      }
+      if (monthlyStatsResult.status === 'fulfilled') {
+        const data = getData(monthlyStatsResult.value)
+        setMonthlyStats({
+          bills: Array.isArray(data.bills) ? data.bills : [],
+          bilties: Array.isArray(data.bilties) ? data.bilties : []
+        })
+        setMonthlyStatsError('')
+      } else {
+        console.error('Unable to load monthly dashboard statistics:', monthlyStatsResult.reason)
+        setMonthlyStats({ bills: [], bilties: [] })
+        setMonthlyStatsError(monthlyStatsResult.reason?.response?.data?.error || 'Monthly statistics could not be loaded.')
       }
     }).finally(() => {
       if (active) setLoading(false)
@@ -696,6 +713,16 @@ export default function TMSDashboard({ branch }) {
             </div>
           </Link>
         </section>
+
+        {monthlyStatsError ? (
+          <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {monthlyStatsError}
+          </div>
+        ) : (
+          <MonthlyStatsCharts bills={monthlyStats.bills} bilties={monthlyStats.bilties} />
+        )}
+
+        {isAdmin && <BranchPaymentStatus />}
 
         <section aria-labelledby="pending-amounts-title" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center gap-2">

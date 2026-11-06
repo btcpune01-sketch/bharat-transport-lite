@@ -427,6 +427,12 @@ test('TEST 5 - Branch Payment save, list, and summary', async ({ page }) => {
 
 test('TMS dashboard shows role-specific administration and branch user tools', async ({ page }) => {
   const dashboardRequests = []
+  const monthlyCounts = Array.from({ length: 12 }, (_, index) => ({
+    month: new Date(2026, index, 1).toLocaleString('en', { month: 'short' }),
+    year: 2026,
+    period: `2026-${String(index + 1).padStart(2, '0')}`,
+    count: index + 1
+  }))
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     const path = url.pathname.replace(/^\/api/, '')
@@ -442,7 +448,17 @@ test('TMS dashboard shows role-specific administration and branch user tools', a
         ? { data: [{ id: 1, branch_name: 'Ahmedabad', url_slug: 'ahmedabad' }] }
         : path === '/branch/users'
           ? { data: [{ id: 1, username: 'branch-operator', full_name: 'Branch Operator', role: 'operator', is_active: true }] }
-          : path === '/stock' ? { data: [] } : { data: [] }
+            : path === '/dashboard/monthly-stats'
+              ? { success: true, bills: monthlyCounts, bilties: monthlyCounts }
+              : path === '/admin/branch-payment-status'
+                ? {
+                    branches: [
+                      { branchName: 'Pune Main', branchId: 'BR001', totalSent: 500000, totalReceived: 450000, netBalance: 50000, status: 'pending' },
+                      { branchName: 'Nashik', branchId: 'BR002', totalSent: 2000, totalReceived: 2000, netBalance: 0, status: 'balanced' },
+                      { branchName: 'Satara', branchId: 'BR003', totalSent: 1000, totalReceived: 750, netBalance: 250, status: 'pending' }
+                    ]
+                  }
+                : { data: [] }
     await route.fulfill({ status: 200, json: response })
   })
 
@@ -454,6 +470,24 @@ test('TMS dashboard shows role-specific administration and branch user tools', a
   await expect(page.getByText('ADMIN', { exact: true })).toBeVisible()
   await expect(page.getByText('TMS 6.0 Live - Global')).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Monthly Bill Count' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Monthly Bilty Count' })).toBeVisible()
+  await expect(page.locator('.recharts-bar-rectangles path')).toHaveCount(24)
+  await expect(page.getByRole('heading', { name: 'Branch Payment Status' })).toBeVisible()
+  const sentBalanceRow = page.getByRole('row').filter({ hasText: 'Pune Main' })
+  const settledBalanceRow = page.getByRole('row').filter({ hasText: 'Nashik' })
+  const smallBalanceRow = page.getByRole('row').filter({ hasText: 'Satara' })
+  await expect(sentBalanceRow.getByText('Pending', { exact: true })).toHaveClass(/bg-red-100/)
+  await expect(settledBalanceRow.getByText('Balanced', { exact: true })).toHaveClass(/bg-green-100/)
+  await expect(smallBalanceRow.getByText('Small pending', { exact: true })).toHaveClass(/bg-yellow-100/)
+  const branchSearch = page.getByRole('searchbox', { name: 'Search branch payment status by branch name' })
+  await branchSearch.fill('Satara')
+  await expect(page.getByRole('row').filter({ hasText: 'Satara' })).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: 'Pune Main' })).toHaveCount(0)
+  await branchSearch.fill('')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('heading', { name: 'Branch Payment Status' })).toBeVisible()
+  await page.setViewportSize({ width: 1280, height: 720 })
   await page.getByLabel('Switch to branch dashboard').selectOption('ahmedabad')
   await expect(page).toHaveURL(/#\/branch\/ahmedabad\/dashboard$/)
   await expect(page.getByText('AHMEDABAD', { exact: true })).toBeVisible()
@@ -477,9 +511,10 @@ test('TMS dashboard shows role-specific administration and branch user tools', a
   })
   await page.goto('/#/branch/ahmedabad/dashboard')
   await expect(page.getByRole('heading', { name: 'Quick Actions' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Branch Payment Status' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Administration' }).click()
   await expect(page.getByRole('link', { name: 'Branch User Management' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Stationery Stock (Branch)' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Branch Stationery Stock' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Branch Management' })).toHaveCount(0)
   await expect(page.getByRole('link', { name: 'Backup & Restore' })).toHaveCount(0)
   await page.getByRole('link', { name: 'Branch User Management' }).click()
@@ -494,4 +529,106 @@ test('TMS dashboard shows role-specific administration and branch user tools', a
   await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible()
   await page.getByRole('button', { name: 'Logout' }).click()
   await expect(page).toHaveURL(/#\/login$/)
+})
+
+test('Bill list loads old bills, searches across pages, and paginates safely', async ({ page }) => {
+  const billResponses = []
+  const consoleErrors = []
+  const makeBill = (id) => ({
+    id,
+    bill_no: `OLD-${String(id).padStart(3, '0')}`,
+    bill_date: '2024-01-15',
+    party_name: id === 52 ? 'Legacy Freight Co.' : `Party ${id}`,
+    grand_total: 1250,
+    balance_due: 250
+  })
+
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname === '/api/bills') billResponses.push(response.status())
+  })
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'playwright-admin-test-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, username: 'admin', role: 'admin' }))
+  })
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace(/^\/api/, '')
+    let response = { data: [] }
+    if (path === '/bills') {
+      const offset = Number(url.searchParams.get('offset') || 0)
+      const search = url.searchParams.get('search') || ''
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (search) {
+        response = { data: [makeBill(52)], total: 1, limit: 50, offset: 0, hasMore: false }
+      } else {
+        const ids = offset === 0 ? Array.from({ length: 50 }, (_, index) => index + 1) : [51, 52]
+        response = { data: ids.map(makeBill), total: 52, limit: 50, offset, hasMore: offset === 0 }
+      }
+    }
+    await route.fulfill({ status: 200, json: response })
+  })
+
+  await page.goto('/#/bills')
+  await expect(page.getByText('Loading...', { exact: true })).toBeVisible()
+  await expect(page.getByText(/Bill List \(52\)/)).toBeVisible()
+  await expect(page.getByRole('row')).toHaveCount(51)
+  await expect(page.getByText('OLD-001')).toBeVisible()
+  await page.getByRole('button', { name: /Load More/ }).click()
+  await expect(page.getByText('OLD-052')).toBeVisible()
+  await expect(page.getByText('Showing 52 of 52 bills')).toBeVisible()
+  await expect(page.getByRole('row')).toHaveCount(53)
+
+  await page.getByPlaceholder('Search all bills by Bill No or Party Name...').fill('Legacy Freight')
+  await expect(page.getByText('OLD-052')).toBeVisible()
+  await expect(page.getByText('Showing 1 of 1 bills')).toBeVisible()
+  await expect(page.getByText('OLD-001')).toHaveCount(0)
+  expect(billResponses.length).toBeGreaterThanOrEqual(3)
+  expect(billResponses.every((status) => status === 200)).toBe(true)
+  expect(consoleErrors).toEqual([])
+})
+
+test('Bill and branch payment empty and network-error states are clear', async ({ page }) => {
+  let billRequestFails = false
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'playwright-admin-test-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, username: 'admin', role: 'admin' }))
+  })
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url())
+    const path = url.pathname.replace(/^\/api/, '')
+    if (path === '/bills' && billRequestFails) return route.abort()
+
+    const zeroMonths = Array.from({ length: 12 }, (_, index) => ({
+      month: new Date(2026, index, 1).toLocaleString('en', { month: 'short' }),
+      year: 2026,
+      period: `2026-${String(index + 1).padStart(2, '0')}`,
+      count: 0
+    }))
+    const response = path === '/bills'
+      ? { data: [], total: 0, limit: 50, offset: 0, hasMore: false }
+      : path === '/dashboard/stats'
+        ? { success: true }
+        : path === '/dashboard/monthly-stats'
+          ? { success: true, bills: zeroMonths, bilties: zeroMonths }
+          : path === '/admin/branch-payment-status'
+            ? { branches: [] }
+            : { data: [] }
+    return route.fulfill({ status: 200, json: response })
+  })
+
+  await page.goto('/#/bills')
+  await expect(page.getByText('No bills found')).toBeVisible()
+  billRequestFails = true
+  await page.reload()
+  await expect(page.getByRole('alert')).toContainText('Bills could not be loaded')
+  await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible()
+
+  billRequestFails = false
+  await page.goto('/#/admin/dashboard')
+  await expect(page.getByText('No payment records found.')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Monthly Bill Count' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Monthly Bilty Count' })).toBeVisible()
 })

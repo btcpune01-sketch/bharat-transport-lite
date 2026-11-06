@@ -64,6 +64,7 @@ const BRANCH_RECORD_ROUTES = [
 
 const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/dashboard\/stats$/,
+  /^\/api\/dashboard\/monthly-stats$/,
   /^\/api\/dashboard\/pending-amount$/,
   /^\/api\/dashboard\/recent$/,
   /^\/api\/dashboard\/top-parties$/,

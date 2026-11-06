@@ -74,11 +74,8 @@ const BillPrint = ({ branchMode = false, branchCode }) => {
         setBills(rows)
 
         if (id) {
-          const selected = rows.find(bill => String(bill.id) === String(id))
-          if (selected) {
-            const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
-            if (active) setSelectedBill(normalizeBill(detail.data))
-          }
+          const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
+          if (active) setSelectedBill(normalizeBill(detail.data))
         }
       } catch (err) {
         console.error('Error fetching bills:', err)

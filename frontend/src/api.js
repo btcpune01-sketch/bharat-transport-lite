@@ -144,6 +144,9 @@ export const dashboardAPI = {
   getDashboardStats: (branchSlug, branchId) => api.get('/dashboard/stats', {
     params: normalizeDashboardParams({ branch: branchSlug, branch_id: branchId })
   }),
+  getMonthlyStats: (branchSlug, branchId) => api.get('/dashboard/monthly-stats', {
+    params: normalizeDashboardParams({ branch: branchSlug, branch_id: branchId })
+  }),
   getDashboardRecentActivities: (branchSlug, branchId) => api.get('/dashboard/recent', {
     params: normalizeDashboardParams({ branch: branchSlug, branch_id: branchId })
   }),
