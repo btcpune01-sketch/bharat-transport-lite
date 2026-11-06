@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
 
-export default function Commissions() {
+export default function Commissions({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -10,7 +10,7 @@ export default function Commissions() {
   const [form, setForm] = useState({ lr_no: '', agent_name: '', commission_percent: '', commission_amount: '', status: 'Pending' })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [branchMode, branchCode])
 
   const apiUrl = (import.meta.env.VITE_API_URL || '/api')
   const getHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' })
@@ -18,7 +18,8 @@ export default function Commissions() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`${apiUrl}/commissions`, { headers: getHeaders() })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/commissions${branchQuery}`, { headers: getHeaders() })
       if (res.ok) { const d = await res.json(); setData(d.data || []) }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
@@ -29,7 +30,9 @@ export default function Commissions() {
     setSaving(true)
     try {
       const res = await fetch(`${apiUrl}/commissions`, {
-        method: 'POST', headers: getHeaders(), body: JSON.stringify(form)
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ ...form, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
       })
       if (res.ok) {
         setShowForm(false)
@@ -58,7 +61,7 @@ export default function Commissions() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowForm(!showForm)} className="bg-white text-purple-700 px-4 py-2 rounded-lg font-bold hover:bg-purple-50">➕ Add Commission</button>
-            <button onClick={() => navigate('/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
           </div>
         </div>
       </div>
