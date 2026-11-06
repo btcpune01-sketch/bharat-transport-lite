@@ -177,8 +177,9 @@ export default function BranchPayments({ branchMode = false, branchCode }) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Reference</label>
+                <label htmlFor="payment-notes" className="block text-sm font-medium text-gray-700 mb-1">Notes / Reference</label>
                 <input
+                  id="payment-notes"
                   type="text"
                   className="w-full border border-gray-300 rounded-lg p-2"
                   value={formData.notes}

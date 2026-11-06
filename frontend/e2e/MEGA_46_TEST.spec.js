@@ -366,10 +366,7 @@ test('TEST 5 - Branch Payment save, list, and summary', async ({ page }) => {
       }
       response = savedPayment
     } else if (method === 'GET' && path === '/branch-payments') {
-      response = {
-        payments: savedPayment ? [savedPayment] : [],
-        total: Number(savedPayment?.amount || 0)
-      }
+      response = { data: savedPayment ? [{ ...savedPayment, branch_name: 'Pune' }] : [] }
     } else if (method === 'GET' && path === '/branch-payments/summary') {
       response = {
         summary: {
@@ -406,7 +403,7 @@ test('TEST 5 - Branch Payment save, list, and summary', async ({ page }) => {
   await page.goto('/#/branch-payments')
   await page.locator('select').first().selectOption('Pune')
   await page.locator('input[placeholder="0.00"]').fill('1500')
-  await page.locator('input[placeholder="UTR / Cheque No."]').fill('TEST-REF-01')
+  await page.getByLabel('Notes / Reference').fill('TEST-REF-01')
   page.once('dialog', async dialog => {
     expect(dialog.message()).toBe('Payment सफलतापूर्वक Save हो गई!')
     await dialog.accept()
