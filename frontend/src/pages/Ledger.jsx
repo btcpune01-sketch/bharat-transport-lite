@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
 
-export default function Ledger() {
+export default function Ledger({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [parties, setParties] = useState([])
   const [selectedParty, setSelectedParty] = useState('')
@@ -11,13 +11,19 @@ export default function Ledger() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  useEffect(() => { fetchParties() }, [])
+  useEffect(() => {
+    setSelectedParty('')
+    setLedger([])
+    setBalance(0)
+    fetchParties()
+  }, [branchMode, branchCode])
 
   const fetchParties = async () => {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/parties`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/parties${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (res.ok) { const d = await res.json(); setParties(d.data || []) }
     } catch (e) { console.error(e) }
   }
@@ -28,7 +34,8 @@ export default function Ledger() {
       setLoading(true); setError(null)
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/ledger/${code}`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/ledger/${encodeURIComponent(code)}${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Ledger fetch failed')
       const d = await res.json()
       setLedger(d.data || [])
@@ -54,7 +61,7 @@ export default function Ledger() {
             <h1 className="text-3xl font-bold">📒 Party Ledger</h1>
             <p className="text-blue-200 text-sm">Complete transaction history & balance</p>
           </div>
-          <button onClick={() => navigate('/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
+          <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
         </div>
       </div>
 
