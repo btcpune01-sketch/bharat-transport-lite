@@ -2300,7 +2300,14 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
 
 app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
   try {
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const id = req.params.id; const data = { ...req.body }; delete data.id; delete data.created_at; data.updated_at = new Date().toISOString();
+    delete data.branch_id;
+    delete data.branch_code;
     if ((!data.actual_weight || Number(data.actual_weight) === 0) && (data.act_wt ?? data.actWt) != null) data.actual_weight = data.act_wt ?? data.actWt;
     if ((!data.charged_weight || Number(data.charged_weight) === 0) && (data.chg_wt ?? data.chgWt) != null) data.charged_weight = data.chg_wt ?? data.chgWt;
     if ((!data.no_of_packages || Number(data.no_of_packages) === 0) && data.package_count != null) data.no_of_packages = data.package_count;
@@ -2319,14 +2326,24 @@ app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
     }
     const keys = Object.keys(data); const values = Object.values(data);
     const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', '); values.push(id);
-    const result = await pool.query(`UPDATE consignments SET ${setClause} WHERE id = $${values.length} RETURNING *`, values);
+    const branchCondition = branchId === null ? '' : ` AND branch_id = $${values.length + 1}`;
+    if (branchId !== null) values.push(branchId);
+    const result = await pool.query(`UPDATE consignments SET ${setClause} WHERE id = $${values.length - (branchId === null ? 0 : 1)}${branchCondition} RETURNING *`, values);
+    if (!result.rows[0]) return res.status(404).json({ error: 'Bilty not found.' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/consignments/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
-    const result = await pool.query('UPDATE consignments SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id', [req.params.id]);
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const branchCondition = branchId === null ? '' : ' AND branch_id = $2';
+    const params = branchId === null ? [req.params.id] : [req.params.id, branchId];
+    const result = await pool.query(`UPDATE consignments SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE${branchCondition} RETURNING id`, params);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Bilty not found' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2815,17 +2832,26 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
 app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, async (req, res) => {
   const client = await pool.connect();
   try {
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     await client.query('BEGIN');
-    const existing = await client.query('SELECT * FROM bill_book WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE FOR UPDATE', [req.params.id]);
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const branchParams = branchId === null ? [req.params.id] : [req.params.id, branchId];
+    const existing = await client.query(`SELECT * FROM bill_book WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition} FOR UPDATE`, branchParams);
     if (existing.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Bill not found' });
     }
     const bill = Object.fromEntries(Object.entries(req.body).filter(([key]) => billFields.includes(key) && key !== 'created_by'));
-    if (!bill.branch_id) bill.branch_id = existing.rows[0].branch_id || req.user.branch_id;
+    delete bill.branch_id;
     const fields = Object.keys(bill);
     const values = Object.values(bill);
-    const result = await client.query(`UPDATE bill_book SET ${fields.map((field, i) => `${field} = $${i + 1}`).join(', ')}, updated_at = NOW() WHERE id = $${fields.length + 1} RETURNING *`, [...values, req.params.id]);
+    const updateParams = [...values, req.params.id];
+    const updateBranchCondition = branchId === null ? '' : ` AND branch_id = $${updateParams.push(branchId)}`;
+    const result = await client.query(`UPDATE bill_book SET ${fields.map((field, i) => `${field} = $${i + 1}`).join(', ')}, updated_at = NOW() WHERE id = $${fields.length + 1}${updateBranchCondition} RETURNING *`, updateParams);
     const items = Array.isArray(req.body.items) ? req.body.items : [];
     await client.query(
       'UPDATE bill_items SET is_deleted = TRUE, deleted_at = NOW() WHERE bill_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE',
@@ -2842,9 +2868,16 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
 
 app.delete('/api/bills/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const branchCondition = branchId === null ? '' : ' AND branch_id = $2';
+    const params = branchId === null ? [req.params.id] : [req.params.id, branchId];
     const result = await pool.query(
-      'UPDATE bill_book SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
-      [req.params.id]
+      `UPDATE bill_book SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE${branchCondition} RETURNING id`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
     res.json({ success: true, id: result.rows[0].id });
@@ -2983,34 +3016,41 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
 app.delete('/api/mr/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   const client = await pool.connect();
   try {
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     await client.query('BEGIN');
-    const receiptResult = await client.query('SELECT * FROM money_receipts WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE FOR UPDATE', [req.params.id]);
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const receiptParams = branchId === null ? [req.params.id] : [req.params.id, branchId];
+    const receiptResult = await client.query(`SELECT * FROM money_receipts WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition} FOR UPDATE`, receiptParams);
     if (receiptResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'MR not found.' });
     }
     const receipt = receiptResult.rows[0];
-    await client.query('UPDATE money_receipts SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1', [req.params.id]);
+    await client.query('UPDATE money_receipts SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND branch_id IS NOT DISTINCT FROM $2', [req.params.id, receipt.branch_id]);
 
     if (receipt.bill_id) {
-      const billResult = await client.query('SELECT id, grand_total, advance_received FROM bill_book WHERE id = $1 FOR UPDATE', [receipt.bill_id]);
+      const billResult = await client.query('SELECT id, grand_total, advance_received FROM bill_book WHERE id = $1 AND branch_id IS NOT DISTINCT FROM $2 FOR UPDATE', [receipt.bill_id, receipt.branch_id]);
       if (billResult.rows.length > 0) {
         const bill = billResult.rows[0];
         const advance = Math.max((Number(bill.advance_received) || 0) - Number(receipt.amount), 0);
         const balance = Math.max((Number(bill.grand_total) || 0) - advance, 0);
-        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bill_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 1', [receipt.bill_id]);
-        await client.query(`UPDATE bill_book SET advance_received = $1, balance_due = $2, net_balance = $2, payment_status = $3, mr_no = $4, updated_at = NOW() WHERE id = $5`, [advance, balance, balance <= 0.005 ? 'Paid' : 'Unpaid', lastReceipt.rows[0]?.mr_no || null, receipt.bill_id]);
+        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bill_id = $1 AND branch_id IS NOT DISTINCT FROM $2 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 1', [receipt.bill_id, receipt.branch_id]);
+        await client.query(`UPDATE bill_book SET advance_received = $1, balance_due = $2, net_balance = $2, payment_status = $3, mr_no = $4, updated_at = NOW() WHERE id = $5 AND branch_id IS NOT DISTINCT FROM $6`, [advance, balance, balance <= 0.005 ? 'Paid' : 'Unpaid', lastReceipt.rows[0]?.mr_no || null, receipt.bill_id, receipt.branch_id]);
       }
     }
     if (receipt.bilty_id) {
-      const biltyResult = await client.query(`SELECT id, COALESCE(NULLIF(grand_total, ''), '0')::NUMERIC AS grand_total, basis_booking FROM consignments WHERE id = $1 FOR UPDATE`, [receipt.bilty_id]);
+      const biltyResult = await client.query(`SELECT id, COALESCE(NULLIF(grand_total, ''), '0')::NUMERIC AS grand_total, basis_booking FROM consignments WHERE id = $1 AND branch_id IS NOT DISTINCT FROM $2 FOR UPDATE`, [receipt.bilty_id, receipt.branch_id]);
       if (biltyResult.rows.length > 0) {
         const bilty = biltyResult.rows[0];
-        const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [receipt.bilty_id]);
-        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bilty_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 1', [receipt.bilty_id]);
+        const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1 AND branch_id IS NOT DISTINCT FROM $2 AND COALESCE(is_deleted, FALSE) = FALSE', [receipt.bilty_id, receipt.branch_id]);
+        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bilty_id = $1 AND branch_id IS NOT DISTINCT FROM $2 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 1', [receipt.bilty_id, receipt.branch_id]);
         const paidByReceipt = Number(payments.rows[0].total) >= Number(bilty.grand_total);
         const paidAtBooking = String(bilty.basis_booking || '').trim().toLowerCase() === 'paid';
-        await client.query(`UPDATE consignments SET payment_status = $1, mr_no = $2, updated_at = NOW() WHERE id = $3`, [paidByReceipt || paidAtBooking ? 'Paid' : 'Unpaid', lastReceipt.rows[0]?.mr_no || null, receipt.bilty_id]);
+        await client.query(`UPDATE consignments SET payment_status = $1, mr_no = $2, updated_at = NOW() WHERE id = $3 AND branch_id IS NOT DISTINCT FROM $4`, [paidByReceipt || paidAtBooking ? 'Paid' : 'Unpaid', lastReceipt.rows[0]?.mr_no || null, receipt.bilty_id, receipt.branch_id]);
       }
     }
     await client.query('COMMIT');
@@ -3097,6 +3137,11 @@ app.post('/api/customers', authMiddleware, async (req, res) => {
 });
 
 app.put('/api/customers/:id', authMiddleware, async (req, res) => {
+  const branchId = req.user.role === 'admin'
+    ? await resolveAdminBranchId(req, res)
+    : safeUserBranchId(req);
+  if (branchId === undefined) return;
+  if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
   const fields = {
     customer_code: req.body.customer_code, customer_name: req.body.customer_name || req.body.name, mobile: req.body.mobile || req.body.phone,
     phone: req.body.mobile || req.body.phone, whatsapp: req.body.whatsapp, email: req.body.email, address: req.body.address, city: req.body.city,
@@ -3112,7 +3157,10 @@ app.put('/api/customers/:id', authMiddleware, async (req, res) => {
   try {
     const values = updates.map(([, value]) => value);
     const assignments = updates.map(([field], index) => `${field} = $${index + 1}`);
-    const result = await pool.query(`UPDATE customers SET ${assignments.join(', ')} WHERE id = $${values.length + 1} RETURNING *`, [...values, req.params.id]);
+    const branchCondition = branchId === null ? '' : ` AND branch_id = $${values.length + 2}`;
+    const params = [...values, req.params.id];
+    if (branchId !== null) params.push(branchId);
+    const result = await pool.query(`UPDATE customers SET ${assignments.join(', ')} WHERE id = $${values.length + 1} AND COALESCE(is_deleted, FALSE) = FALSE${branchCondition} RETURNING *`, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -3122,10 +3170,17 @@ app.put('/api/customers/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/customers/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    if (branchId === 0) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const branchCondition = branchId === null ? '' : ' AND branch_id = $2';
+    const params = branchId === null ? [req.params.id] : [req.params.id, branchId];
     const result = await pool.query(
       `UPDATE customers SET is_active = FALSE, is_deleted = TRUE, deleted_at = NOW()
-       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id`,
-      [req.params.id]
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE${branchCondition} RETURNING id`,
+      params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
     res.json({ success: true });
