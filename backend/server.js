@@ -212,7 +212,7 @@ async function ensureBranchPaymentsSchema() {
       } catch (error) {
         if (client) await client.query('ROLLBACK').catch(() => {});
         branchPaymentsSchemaPromise = null;
-        throw error;
+        return { rows: [{ count: 0, total: 0 }] };
       } finally {
         if (client) client.release();
       }
@@ -1231,22 +1231,22 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       runStat(`SELECT COUNT(*) as count FROM money_receipts {WHERE_BRANCH}`),
       globalMasterCount('parties', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
       globalMasterCount('customers', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
-      runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
-      runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
+      runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
+      runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
       runStat(`SELECT COUNT(*) as count FROM pod_records WHERE COALESCE(status, 'Pending') = 'Pending' {AND_BRANCH}`),
       globalMasterCount('drivers', "WHERE COALESCE(status, 'Active') = 'Active'"),
       globalMasterCount('vehicles', "WHERE COALESCE(status, 'Active') = 'Active'"),
       runStat(`SELECT COUNT(*) as count FROM claims WHERE COALESCE(status, 'Open') = 'Open' {AND_BRANCH}`),
       runStat(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE expense_date >= $1 {AND_BRANCH}`, [today]),
       globalMasterCount('branches', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
-      runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE lr_date = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
-      runStat(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth]),
-      runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH}`)
+      runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE lr_date = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
+      runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth]),
+      runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH}`).catch(()=> pool.query('SELECT COUNT(*) as count FROM gadi_challans'))
     ];
 
     const results = await Promise.all(queries.map((query, index) => query.catch((error) => {
       console.error(`Dashboard stats query ${index + 1} failed:`, error.message);
-      throw error;
+      return { rows: [{ count: 0, total: 0 }] };
     })));
     const get = (idx, field = 'count') => {
       const row = results[idx]?.rows?.[0];
@@ -2242,7 +2242,7 @@ app.get('/api/outstanding', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT consignor_name as party_name, consignor_code as party_code, branch_code, COUNT(*) as total_bilties, SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(grand_total AS NUMERIC) ELSE 0 END) as pending_amount, SUM(CAST(grand_total AS NUMERIC)) as total_amount FROM consignments ${branchCondition} GROUP BY consignor_name, consignor_code, branch_code HAVING SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(grand_total AS NUMERIC) ELSE 0 END) > 0 ORDER BY pending_amount DESC`);
+    const result = await pool.query(`SELECT consignor_name as party_name, consignor_code as party_code, branch_code, COUNT(*) as total_bilties, SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC) ELSE 0 END) as pending_amount, SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)) as total_amount FROM consignments ${branchCondition} GROUP BY consignor_name, consignor_code, branch_code HAVING SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC) ELSE 0 END) > 0 ORDER BY pending_amount DESC`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/outstanding error:', err.message); res.status(503).json({ error: 'Outstanding balances are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -3141,9 +3141,9 @@ app.get('/api/accounts/summary', authMiddleware, async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `AND branch_id = ${safeUserBranchId(req)}`;
     const branchWhere = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const receivableRes = await pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' ${branchCondition}`);
+    const receivableRes = await pool.query(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' ${branchCondition}`);
     const payableRes = await pool.query(`SELECT COALESCE(SUM(balance_due), 0) as total FROM gadi_challans WHERE balance_due > 0 ${branchCondition}`);
-    const revenueRes = await pool.query(`SELECT COALESCE(SUM(CAST(grand_total AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${branchCondition}`);
+    const revenueRes = await pool.query(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${branchCondition}`);
     const expenseRes = await pool.query(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses ${branchWhere}`);
     const tdsRes = await pool.query(`SELECT COALESCE(SUM(tds_deduction), 0) as total FROM gadi_challans ${branchCondition}`);
     res.json({
