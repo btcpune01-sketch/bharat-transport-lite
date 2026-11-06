@@ -101,7 +101,7 @@ export const driverAPI = {
 
 export const vehicleAPI = {
   getAll: (params) => api.get('/vehicles', { params }), getOne: (id) => api.get(`/vehicles/${id}`),
-  create: (data) => api.post('/vehicles', data), update: (id, data) => api.put(`/vehicles/${id}`, data), delete: (id) => api.delete(`/vehicles/${id}`)
+  create: (data) => api.post('/vehicles', data), update: (id, data) => api.put(`/vehicles/${id}`, data), delete: (id, config) => api.delete(`/vehicles/${id}`, config)
 }
 
 export const itemAPI = {

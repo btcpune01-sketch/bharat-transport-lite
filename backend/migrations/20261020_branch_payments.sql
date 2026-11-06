@@ -10,8 +10,13 @@ CREATE TABLE IF NOT EXISTS branch_payments (
   payment_mode TEXT NOT NULL CHECK (payment_mode IN ('Cash', 'UPI', 'Bank')),
   notes TEXT,
   created_by TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at TIMESTAMPTZ
 );
+
+ALTER TABLE branch_payments ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE branch_payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS branch_ledger (
   id BIGSERIAL PRIMARY KEY,
@@ -70,6 +75,7 @@ SELECT
   NOW()
 FROM branch_payments p
 LEFT JOIN branches b ON b.id = p.branch_id
+WHERE COALESCE(p.is_deleted, FALSE) = FALSE
 GROUP BY p.branch_id
 ON CONFLICT (branch_id) DO UPDATE SET
   branch_name = EXCLUDED.branch_name,

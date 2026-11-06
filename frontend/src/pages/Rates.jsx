@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
-import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function Rates() {
   const navigate = useNavigate()
@@ -123,7 +123,7 @@ export default function Rates() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirmPermanentDelete()) return
+    if (!confirmRecordDeletion()) return
     
     try {
       const token = localStorage.getItem('token')
@@ -131,7 +131,7 @@ export default function Rates() {
       
       const res = await fetch(`${apiUrl}/rates/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}`, ...permanentDeleteHeaders }
+        headers: { 'Authorization': `Bearer ${token}`, ...recordDeletionHeaders }
       })
 
       if (res.ok) {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
-import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function MR() {
   const navigate = useNavigate()
@@ -33,20 +33,20 @@ export default function MR() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirmPermanentDelete()) return
+    if (!confirmRecordDeletion()) return
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const response = await fetch(`${apiUrl}/mr/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}`, ...permanentDeleteHeaders }
+        headers: { 'Authorization': `Bearer ${token}`, ...recordDeletionHeaders }
       })
       if (!response.ok) {
         const result = await response.json()
         throw new Error(result.error || 'Unable to delete MR.')
       }
       fetchMRs()
-      alert('MR deleted successfully')
+      alert('MR archived successfully')
     } catch (err) {
       alert('Error deleting MR: ' + err.message)
     }

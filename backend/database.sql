@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100),
     is_active BOOLEAN DEFAULT TRUE,
     last_login TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- 2. BRANCHES
@@ -40,7 +42,9 @@ CREATE TABLE IF NOT EXISTS branches (
     login_credentials JSONB,
     is_active BOOLEAN DEFAULT TRUE,
     status TEXT DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- 3. CUSTOMERS (Parties)
@@ -62,7 +66,9 @@ CREATE TABLE IF NOT EXISTS customers (
     credit_days INTEGER DEFAULT 0,
     opening_balance NUMERIC(12,2) DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- 4. VENDORS (Hired Vehicle Owners)
@@ -106,7 +112,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     vehicle_no VARCHAR(20) UNIQUE NOT NULL,
     vehicle_type VARCHAR(50),
     owner_type VARCHAR(20) DEFAULT 'hired',
-    owner_vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+    owner_vendor_id INTEGER REFERENCES vendors(id) ON DELETE RESTRICT,
     capacity_mt NUMERIC(8,2),
     rc_no VARCHAR(50),
     insurance_no VARCHAR(50),
@@ -117,7 +123,9 @@ CREATE TABLE IF NOT EXISTS vehicles (
     gps_device_id VARCHAR(50),
     is_active BOOLEAN DEFAULT TRUE,
     branch_id INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- 7. ITEMS / COMMODITY MASTER
@@ -150,7 +158,7 @@ CREATE TABLE IF NOT EXISTS routes (
 -- 9. RATE CHART (Party-wise, Route-wise)
 CREATE TABLE IF NOT EXISTS rate_chart (
     id SERIAL PRIMARY KEY,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
     from_code VARCHAR(20),
     to_code VARCHAR(20),
     item_category VARCHAR(50),
@@ -288,7 +296,9 @@ CREATE TABLE IF NOT EXISTS consignments (
     remarks TEXT,
     created_by VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- Indexes for fast search
@@ -304,7 +314,7 @@ CREATE TABLE IF NOT EXISTS bill_book (
     bill_no VARCHAR(30) UNIQUE NOT NULL,
     bill_date DATE NOT NULL,
     branch_code VARCHAR(20),
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
     party_name TEXT,
     party_gst TEXT,
     party_address TEXT,
@@ -328,13 +338,15 @@ CREATE TABLE IF NOT EXISTS bill_book (
     status VARCHAR(20) DEFAULT 'Active',
     remarks TEXT,
     created_by VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- 12. BILL ITEMS
 CREATE TABLE IF NOT EXISTS bill_items (
     id SERIAL PRIMARY KEY,
-    bill_id INTEGER REFERENCES bill_book(id) ON DELETE CASCADE,
+    bill_id INTEGER REFERENCES bill_book(id) ON DELETE RESTRICT,
     lr_no VARCHAR(30),
     invoice_no VARCHAR(50),
     from_name TEXT,
@@ -343,13 +355,15 @@ CREATE TABLE IF NOT EXISTS bill_items (
     loading NUMERIC(12,2) DEFAULT 0,
     unloading NUMERIC(12,2) DEFAULT 0,
     other_charges NUMERIC(12,2) DEFAULT 0,
-    total NUMERIC(12,2) DEFAULT 0
+    total NUMERIC(12,2) DEFAULT 0,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ
 );
 
 -- 13. BILL PAYMENTS
 CREATE TABLE IF NOT EXISTS bill_payments (
     id SERIAL PRIMARY KEY,
-    bill_id INTEGER REFERENCES bill_book(id) ON DELETE CASCADE,
+    bill_id INTEGER REFERENCES bill_book(id) ON DELETE RESTRICT,
     payment_date DATE,
     amount NUMERIC(12,2),
     payment_mode VARCHAR(30),
@@ -366,9 +380,9 @@ CREATE TABLE IF NOT EXISTS trips (
     id SERIAL PRIMARY KEY,
     trip_no VARCHAR(30) UNIQUE NOT NULL,
     trip_date DATE NOT NULL,
-    vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE SET NULL,
+    vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE RESTRICT,
     vehicle_no VARCHAR(20),
-    driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
+    driver_id INTEGER REFERENCES drivers(id) ON DELETE RESTRICT,
     driver_name VARCHAR(100),
     from_code VARCHAR(20),
     to_code VARCHAR(20),
@@ -386,15 +400,15 @@ CREATE TABLE IF NOT EXISTS trips (
 -- 15. TRIP CONSIGNMENTS (Junction Table)
 CREATE TABLE IF NOT EXISTS trip_consignments (
     id SERIAL PRIMARY KEY,
-    trip_id INTEGER REFERENCES trips(id) ON DELETE CASCADE,
-    consignment_id INTEGER REFERENCES consignments(id) ON DELETE CASCADE,
+    trip_id INTEGER REFERENCES trips(id) ON DELETE RESTRICT,
+    consignment_id INTEGER REFERENCES consignments(id) ON DELETE RESTRICT,
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 16. TRIP EXPENSES
 CREATE TABLE IF NOT EXISTS trip_expenses (
     id SERIAL PRIMARY KEY,
-    trip_id INTEGER REFERENCES trips(id) ON DELETE CASCADE,
+    trip_id INTEGER REFERENCES trips(id) ON DELETE RESTRICT,
     expense_date DATE NOT NULL,
     expense_type VARCHAR(50),
     amount NUMERIC(12,2) NOT NULL,
@@ -408,8 +422,8 @@ CREATE TABLE IF NOT EXISTS trip_expenses (
 -- 17. DRIVER ADVANCES
 CREATE TABLE IF NOT EXISTS driver_advances (
     id SERIAL PRIMARY KEY,
-    driver_id INTEGER REFERENCES drivers(id) ON DELETE SET NULL,
-    trip_id INTEGER REFERENCES trips(id) ON DELETE SET NULL,
+    driver_id INTEGER REFERENCES drivers(id) ON DELETE RESTRICT,
+    trip_id INTEGER REFERENCES trips(id) ON DELETE RESTRICT,
     advance_date DATE NOT NULL,
     amount NUMERIC(12,2) NOT NULL,
     payment_mode VARCHAR(30),
@@ -420,12 +434,12 @@ CREATE TABLE IF NOT EXISTS driver_advances (
 -- 18. VEHICLE MAINTENANCE
 CREATE TABLE IF NOT EXISTS vehicle_maintenance (
     id SERIAL PRIMARY KEY,
-    vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE CASCADE,
+    vehicle_id INTEGER REFERENCES vehicles(id) ON DELETE RESTRICT,
     maintenance_date DATE NOT NULL,
     maintenance_type VARCHAR(50),
     description TEXT,
     cost NUMERIC(12,2) DEFAULT 0,
-    vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE RESTRICT,
     next_due_date DATE,
     next_due_km NUMERIC(10,2),
     remarks TEXT,
@@ -441,7 +455,7 @@ CREATE TABLE IF NOT EXISTS payments (
     id SERIAL PRIMARY KEY,
     payment_no VARCHAR(30) UNIQUE,
     payment_date DATE NOT NULL,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
     party_name VARCHAR(200),
     amount NUMERIC(12,2) NOT NULL,
     payment_mode VARCHAR(30),
@@ -459,7 +473,7 @@ CREATE TABLE IF NOT EXISTS vendor_payments (
     id SERIAL PRIMARY KEY,
     payment_no VARCHAR(30) UNIQUE,
     payment_date DATE NOT NULL,
-    vendor_id INTEGER REFERENCES vendors(id) ON DELETE SET NULL,
+    vendor_id INTEGER REFERENCES vendors(id) ON DELETE RESTRICT,
     vendor_name VARCHAR(200),
     amount NUMERIC(12,2) NOT NULL,
     payment_mode VARCHAR(30),
@@ -475,7 +489,7 @@ CREATE TABLE IF NOT EXISTS vendor_payments (
 CREATE TABLE IF NOT EXISTS ledger (
     id SERIAL PRIMARY KEY,
     entry_date DATE NOT NULL,
-    customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
     party_name VARCHAR(200),
     entry_type VARCHAR(30),
     reference_no VARCHAR(50),
@@ -547,7 +561,7 @@ CREATE TABLE IF NOT EXISTS stock_items (
 
 CREATE TABLE IF NOT EXISTS stock_history (
     id SERIAL PRIMARY KEY,
-    stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE,
+    stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE RESTRICT,
     action TEXT NOT NULL,
     document_number TEXT,
     used_by TEXT,
@@ -578,7 +592,7 @@ ON CONFLICT (document_type) DO NOTHING;
 -- 25. STOCK TRANSACTIONS (हर IN/OUT)
 CREATE TABLE IF NOT EXISTS stock_transactions (
     id SERIAL PRIMARY KEY,
-    item_id INTEGER REFERENCES stock_items(id) ON DELETE CASCADE,
+    item_id INTEGER REFERENCES stock_items(id) ON DELETE RESTRICT,
     branch_code VARCHAR(20),
     transaction_type VARCHAR(20),
     quantity INTEGER,
@@ -595,7 +609,7 @@ CREATE TABLE IF NOT EXISTS stock_transactions (
 -- 26. STOCK ALERTS
 CREATE TABLE IF NOT EXISTS stock_alerts (
     id SERIAL PRIMARY KEY,
-    item_id INTEGER REFERENCES stock_items(id) ON DELETE CASCADE,
+    item_id INTEGER REFERENCES stock_items(id) ON DELETE RESTRICT,
     branch_code VARCHAR(20),
     current_stock INTEGER,
     alert_level VARCHAR(20),

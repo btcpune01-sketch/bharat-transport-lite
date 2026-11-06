@@ -44,7 +44,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug', 'X-Confirm-Permanent-Delete']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug', 'X-Confirm-Record-Deletion']
 }));
 
 // Handle OPTIONS preflight requests explicitly
@@ -154,9 +154,13 @@ async function ensureBranchPaymentsSchema() {
             payment_mode TEXT NOT NULL CHECK (payment_mode IN ('Cash', 'UPI', 'Bank')),
             notes TEXT,
             created_by TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMPTZ
           )
         `);
+        await client.query('ALTER TABLE branch_payments ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE');
+        await client.query('ALTER TABLE branch_payments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ');
         await client.query(`
           CREATE TABLE IF NOT EXISTS branch_ledger (
             id BIGSERIAL PRIMARY KEY,
@@ -203,6 +207,7 @@ async function ensureBranchPaymentsSchema() {
             COALESCE(SUM(CASE WHEN p.type = 'received' THEN p.amount ELSE 0 END), 0),
             COALESCE(SUM(CASE WHEN p.type = 'given' THEN p.amount ELSE -p.amount END), 0), NOW()
           FROM branch_payments p LEFT JOIN branches b ON b.id = p.branch_id
+          WHERE COALESCE(p.is_deleted, FALSE) = FALSE
           GROUP BY p.branch_id
           ON CONFLICT (branch_id) DO UPDATE SET
             branch_name = EXCLUDED.branch_name, total_given = EXCLUDED.total_given,
@@ -274,7 +279,7 @@ async function runMigrations() {
     `CREATE TABLE IF NOT EXISTS consignments (id SERIAL PRIMARY KEY, lr_no TEXT UNIQUE NOT NULL, lr_date DATE, branch_id INTEGER, branch_code TEXT, from_name TEXT, to_name TEXT, consignor_code TEXT, consignor_name TEXT, consignor_address TEXT, consignor_gst TEXT, consignee_code TEXT, consignee_name TEXT, consignee_address TEXT, consignee_gst TEXT, invoice_no TEXT, invoice_date TEXT, po_no TEXT, lorry_no TEXT, driver_name TEXT, driver_mobile TEXT, delivery_type TEXT DEFAULT 'DOOR DELIVERY', packages TEXT, no_of_packages TEXT, method_of_packing TEXT, hsn_code TEXT, actual_weight TEXT, charged_weight TEXT, material_desc TEXT, description TEXT, eway_bill_no TEXT, length TEXT, width TEXT, height TEXT, total_cft TEXT, cft_cmt TEXT, declared_value TEXT, basis_party TEXT, basis_booking TEXT DEFAULT 'TO PAY', rv_no TEXT, rv_dt TEXT, rv_am TEXT, insurance_company TEXT, policy_no TEXT, insurance_amount TEXT, freight TEXT, aoc_percent TEXT, material_mgmt_ch TEXT, material_charges TEXT, collection_charges TEXT, door_dly_charges TEXT, door_delivery TEXT, misc_charges TEXT, grand_total TEXT, status TEXT DEFAULT 'Booked', payment_status TEXT DEFAULT 'Unpaid', mr_no TEXT, pod_status TEXT DEFAULT 'Pending', pod_date DATE, pod_remarks TEXT, from_state TEXT, to_state TEXT, transporter_id TEXT, transporter_name TEXT, eway_valid_upto DATE, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS pod_records (id SERIAL PRIMARY KEY, lr_no TEXT NOT NULL, branch_id INTEGER, delivery_date DATE, delivered_by TEXT, receiver_name TEXT, receiver_signature TEXT, receiver_phone TEXT, delivery_remarks TEXT, photo_url TEXT, status TEXT DEFAULT 'Delivered', created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS bill_book (id SERIAL PRIMARY KEY, bill_no TEXT UNIQUE, bill_date DATE, branch_id INTEGER, party_name TEXT, party_code TEXT, party_gst TEXT, party_address TEXT, from_name TEXT, to_name TEXT, consignor_name TEXT, consignee_name TEXT, vehicle_no TEXT, lr_nos TEXT, amount TEXT, gst_amount TEXT, total_amount TEXT, grand_total NUMERIC DEFAULT 0, advance_received NUMERIC DEFAULT 0, balance_due NUMERIC DEFAULT 0, net_balance NUMERIC DEFAULT 0, trip_subtotal NUMERIC DEFAULT 0, gst_percent NUMERIC DEFAULT 0, invoice_no TEXT, invoice_date DATE, amount_in_words TEXT, payment_mode TEXT, payment_details TEXT, remarks TEXT, status TEXT DEFAULT 'Pending', payment_status TEXT DEFAULT 'Unpaid', mr_no TEXT, branch_code TEXT, customer_id INTEGER, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
-    `CREATE TABLE IF NOT EXISTS bill_items (id SERIAL PRIMARY KEY, bill_id INTEGER REFERENCES bill_book(id) ON DELETE CASCADE, lr_no TEXT, invoice_no TEXT, from_name TEXT, to_name TEXT, weight_mt NUMERIC DEFAULT 0, packages INTEGER DEFAULT 0, freight NUMERIC DEFAULT 0, loading NUMERIC DEFAULT 0, unloading NUMERIC DEFAULT 0, other_charges NUMERIC DEFAULT 0, total NUMERIC DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS bill_items (id SERIAL PRIMARY KEY, bill_id INTEGER REFERENCES bill_book(id) ON DELETE RESTRICT, lr_no TEXT, invoice_no TEXT, from_name TEXT, to_name TEXT, weight_mt NUMERIC DEFAULT 0, packages INTEGER DEFAULT 0, freight NUMERIC DEFAULT 0, loading NUMERIC DEFAULT 0, unloading NUMERIC DEFAULT 0, other_charges NUMERIC DEFAULT 0, total NUMERIC DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS money_receipts (id SERIAL PRIMARY KEY, mr_no TEXT UNIQUE NOT NULL, mr_date DATE NOT NULL, branch_id INTEGER, party_type TEXT NOT NULL, party_name TEXT NOT NULL, bilty_id INTEGER, bilty_lr_no TEXT, bill_id INTEGER, bill_no TEXT, amount NUMERIC NOT NULL, payment_mode TEXT DEFAULT 'Cash', is_advance BOOLEAN DEFAULT FALSE, remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS party_ledger (id SERIAL PRIMARY KEY, party_code TEXT NOT NULL, branch_id INTEGER, transaction_date DATE, transaction_type TEXT, reference_no TEXT, debit NUMERIC DEFAULT 0, credit NUMERIC DEFAULT 0, balance NUMERIC DEFAULT 0, remarks TEXT, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS expenses (id SERIAL PRIMARY KEY, expense_date DATE, branch_id INTEGER, category TEXT, description TEXT, amount NUMERIC, payment_mode TEXT, bill_no TEXT, approved_by TEXT, created_at TIMESTAMP DEFAULT NOW())`,
@@ -349,7 +354,7 @@ async function runMigrations() {
       date TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS stock_items (id SERIAL PRIMARY KEY, item_code VARCHAR(30) UNIQUE, item_name VARCHAR(100) NOT NULL, item_type VARCHAR(30), unit VARCHAR(20) DEFAULT 'sheets', min_level INTEGER DEFAULT 50, critical_level INTEGER DEFAULT 20, urgent_level INTEGER DEFAULT 10, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
-    `CREATE TABLE IF NOT EXISTS stock_history (id SERIAL PRIMARY KEY, stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE CASCADE, action TEXT NOT NULL, document_number TEXT, used_by TEXT, date DATE NOT NULL DEFAULT CURRENT_DATE, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS stock_history (id SERIAL PRIMARY KEY, stock_item_id INTEGER NOT NULL REFERENCES stock_items(id) ON DELETE RESTRICT, action TEXT NOT NULL, document_number TEXT, used_by TEXT, date DATE NOT NULL DEFAULT CURRENT_DATE, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS trips (id SERIAL PRIMARY KEY, trip_no TEXT UNIQUE NOT NULL, trip_date DATE, branch_id INTEGER, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, from_branch TEXT, to_branch TEXT, via_hub TEXT, expected_departure DATE, expected_arrival DATE, distance_km NUMERIC, estimated_days INTEGER, status TEXT DEFAULT 'Planning', remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS rate_contracts (id SERIAL PRIMARY KEY, branch_id INTEGER, party_code TEXT, from_city TEXT NOT NULL, to_city TEXT NOT NULL, rate_type TEXT DEFAULT 'per_kg', rate_per_kg NUMERIC, rate_per_pkg NUMERIC, fixed_rate NUMERIC, min_charge NUMERIC, weight_from NUMERIC, weight_to NUMERIC, effective_from DATE NOT NULL, effective_to DATE, is_active BOOLEAN DEFAULT TRUE, remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`
   ];
@@ -359,7 +364,39 @@ async function runMigrations() {
   }
 
   await pool.query(`CREATE TABLE IF NOT EXISTS manifests (id SERIAL PRIMARY KEY, manifest_no TEXT UNIQUE NOT NULL, manifest_date DATE NOT NULL, branch_id INTEGER, from_branch TEXT, to_branch TEXT, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, status TEXT DEFAULT 'Created', remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS manifest_items (id SERIAL PRIMARY KEY, manifest_id INTEGER REFERENCES manifests(id) ON DELETE CASCADE, lr_no TEXT NOT NULL, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS manifest_items (id SERIAL PRIMARY KEY, manifest_id INTEGER REFERENCES manifests(id) ON DELETE RESTRICT, lr_no TEXT NOT NULL, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`);
+  await pool.query(`
+    DO $$
+    DECLARE
+      foreign_key RECORD;
+      safe_definition TEXT;
+    BEGIN
+      FOR foreign_key IN
+        SELECT conrelid::regclass AS table_name, conname, pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint
+        WHERE contype = 'f'
+          AND confdeltype IN ('c', 'n', 'd')
+          AND connamespace = current_schema()::regnamespace
+      LOOP
+        safe_definition := regexp_replace(
+          foreign_key.definition,
+          ' ON DELETE (CASCADE|SET NULL|SET DEFAULT)',
+          ' ON DELETE RESTRICT',
+          'i'
+        );
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', foreign_key.table_name, foreign_key.conname);
+        EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I %s', foreign_key.table_name, foreign_key.conname, safe_definition);
+      END LOOP;
+    END $$;
+  `);
+  for (const table of [
+    'branches', 'customers', 'parties', 'vehicles', 'consignments', 'bill_book',
+    'money_receipts', 'gadi_challans', 'bill_items', 'manifests', 'manifest_items', 'trips',
+    'rate_contracts', 'users'
+  ]) {
+    await addColumnIfNotExists(table, 'is_deleted', 'BOOLEAN NOT NULL DEFAULT FALSE');
+    await addColumnIfNotExists(table, 'deleted_at', 'TIMESTAMPTZ');
+  }
   await pool.query(`
     INSERT INTO document_stock (document_type, total_stock) VALUES
       ('bilty', 500), ('mr', 500), ('gadi_challan', 500),
@@ -906,9 +943,9 @@ function authMiddleware(req, res, next) {
 }
 
 function requireManualDeleteConfirmation(req, res, next) {
-  if (req.headers['x-confirm-permanent-delete'] !== 'true') {
+  if (req.headers['x-confirm-record-deletion'] !== 'true') {
     return res.status(428).json({
-      error: 'Confirm this permanent deletion explicitly before retrying.'
+      error: 'Confirm this record deletion explicitly before retrying.'
     });
   }
   const role = String(req.user?.role || '').toLowerCase();
@@ -923,8 +960,8 @@ registerStationeryRoutes(app, { pool, authMiddleware });
 function getBranchPaymentsScope(req, res) {
   const role = String(req.user?.role || '').toLowerCase();
   const isBranchUser = role === 'branch' || role === 'branch_user';
-  if (role !== 'admin' && !isBranchUser) {
-    res.status(403).json({ error: 'Only admins and branch staff can access the branch payment ledger.' });
+  if (role !== 'admin' && role !== 'manager' && !isBranchUser) {
+    res.status(403).json({ error: 'Only admins, managers, and branch staff can access the branch payment ledger.' });
     return null;
   }
   if (isBranchUser) {
@@ -965,6 +1002,7 @@ app.get('/api/admin/branch-payment-status', authMiddleware, async (req, res) => 
         END AS status
       FROM branches b
       JOIN branch_payments p ON p.branch_id = b.id
+      WHERE COALESCE(p.is_deleted, FALSE) = FALSE
       GROUP BY b.id, b.branch_code, b.branch_name
       ORDER BY b.branch_name`
     );
@@ -1045,7 +1083,8 @@ app.get('/api/branch-payments', authMiddleware, async (req, res) => {
         ) AS balance_after_transaction
       FROM branch_payments p
       LEFT JOIN branches b ON b.id = p.branch_id
-      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
+      WHERE COALESCE(p.is_deleted, FALSE) = FALSE
+      ${conditions.length ? `AND ${conditions.join(' AND ')}` : ''}
       ORDER BY p.payment_date DESC, p.created_at DESC, p.id DESC
       LIMIT $${params.length}`,
       params
@@ -1110,6 +1149,42 @@ app.post('/api/branch-payments', authMiddleware, async (req, res) => {
   }
 });
 
+app.delete('/api/branch-payments/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await ensureBranchPaymentsSchema();
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE branch_payments SET is_deleted = TRUE, deleted_at = NOW()
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE
+       RETURNING id, branch_id`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Payment record not found.' });
+    }
+    const { branch_id: branchId } = result.rows[0];
+    await client.query(
+      `UPDATE branch_ledger SET
+        total_given = COALESCE((SELECT SUM(amount) FROM branch_payments WHERE branch_id = $1 AND type = 'given' AND COALESCE(is_deleted, FALSE) = FALSE), 0),
+        total_received = COALESCE((SELECT SUM(amount) FROM branch_payments WHERE branch_id = $1 AND type = 'received' AND COALESCE(is_deleted, FALSE) = FALSE), 0),
+        current_balance = COALESCE((SELECT SUM(CASE WHEN type = 'given' THEN amount ELSE -amount END) FROM branch_payments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE), 0),
+        last_updated = NOW()
+       WHERE branch_id = $1`,
+      [branchId]
+    );
+    await client.query('COMMIT');
+    return res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    await client.query('ROLLBACK').catch((rollbackError) => console.error('Branch payment delete rollback failed:', rollbackError.message));
+    console.error('DELETE /api/branch-payments error:', error.message);
+    return res.status(500).json({ error: 'Unable to archive the branch payment record.' });
+  } finally {
+    client.release();
+  }
+});
+
 async function logAudit(action, module, recordId, details, performedBy, branchId = null) {
   try {
     await pool.query(`INSERT INTO audit_logs (action, module, record_id, details, performed_by, branch_id) VALUES ($1,$2,$3,$4,$5,$6)`, [action, module, recordId, details, performedBy, branchId]);
@@ -1152,7 +1227,11 @@ app.post('/api/auth/login', async (req, res) => {
       return res.json({ success: true, token, user: recoveryAccount });
     }
     const result = await pool.query(
-      `SELECT u.*, b.branch_code, b.branch_name, b.url_slug AS branch_slug FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE LOWER(u.username) = LOWER($1) OR LOWER(COALESCE(u.email, '')) = LOWER($1) LIMIT 1`,
+      `SELECT u.*, b.branch_code, b.branch_name, b.url_slug AS branch_slug
+       FROM users u LEFT JOIN branches b ON u.branch_id = b.id
+       WHERE COALESCE(u.is_deleted, FALSE) = FALSE
+         AND (LOWER(u.username) = LOWER($1) OR LOWER(COALESCE(u.email, '')) = LOWER($1))
+       LIMIT 1`,
       [loginUsername]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
@@ -1191,7 +1270,7 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       const result = await pool.query(`
         SELECT b.id, b.branch_code, b.branch_name, b.city,
           (SELECT COUNT(*) FROM consignments c WHERE (c.branch_id = b.id OR (c.branch_id IS NULL AND UPPER(TRIM(c.branch_code)) = UPPER(TRIM(b.branch_code)))) AND c.lr_date = CURRENT_DATE AND COALESCE(c.is_deleted, FALSE) = FALSE) AS bilties_today,
-          (SELECT COUNT(*) FROM bill_book bill WHERE (bill.branch_id = b.id OR (bill.branch_id IS NULL AND UPPER(TRIM(bill.branch_code)) = UPPER(TRIM(b.branch_code)))) AND bill.bill_date = CURRENT_DATE) AS bills_today,
+          (SELECT COUNT(*) FROM bill_book bill WHERE (bill.branch_id = b.id OR (bill.branch_id IS NULL AND UPPER(TRIM(bill.branch_code)) = UPPER(TRIM(b.branch_code)))) AND bill.bill_date = CURRENT_DATE AND COALESCE(bill.is_deleted, FALSE) = FALSE) AS bills_today,
           (SELECT COALESCE(SUM(c.commission_amount), 0) FROM commissions c WHERE c.branch_id = b.id) AS commission
         FROM branches b WHERE COALESCE(b.is_active, TRUE) = TRUE ORDER BY b.branch_name
       `);
@@ -1252,10 +1331,10 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     };
 
     const globalMasterCount = (table, condition) => {
-      if (isAdmin) return pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition}`);
+      if (isAdmin) return pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition} AND COALESCE(is_deleted, FALSE) = FALSE`);
       if (['drivers', 'vehicles'].includes(table) && userBranchId) {
         return pool.query(
-          `SELECT COUNT(*) as count FROM ${table} ${condition} AND branch_id = $1`,
+          `SELECT COUNT(*) as count FROM ${table} ${condition} AND COALESCE(is_deleted, FALSE) = FALSE AND branch_id = $1`,
           [userBranchId]
         );
       }
@@ -1268,9 +1347,9 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       runStat(`SELECT COUNT(*) as count FROM consignments WHERE 1=1 {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
       runStat(`SELECT COUNT(*) as count FROM consignments WHERE status IN ('Booked','In-Transit') {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
       runStat(`SELECT COUNT(*) as count FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
-      runStat(`SELECT COUNT(*) as count FROM bill_book {WHERE_BRANCH}`),
-      runStat(`SELECT COUNT(*) as count FROM bill_book {WHERE_BRANCH} {WHERE_OR_AND} COALESCE(payment_status, 'Unpaid') = 'Unpaid'`),
-      runStat(`SELECT COUNT(*) as count FROM money_receipts {WHERE_BRANCH}`),
+      runStat(`SELECT COUNT(*) as count FROM bill_book {WHERE_BRANCH} {WHERE_OR_AND} COALESCE(is_deleted, FALSE) = FALSE`),
+      runStat(`SELECT COUNT(*) as count FROM bill_book {WHERE_BRANCH} {WHERE_OR_AND} COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(payment_status, 'Unpaid') = 'Unpaid'`),
+      runStat(`SELECT COUNT(*) as count FROM money_receipts {WHERE_BRANCH} {WHERE_OR_AND} COALESCE(is_deleted, FALSE) = FALSE`),
       globalMasterCount('parties', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
       globalMasterCount('customers', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
       runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`),
@@ -1283,7 +1362,7 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
       globalMasterCount('branches', 'WHERE COALESCE(is_active, TRUE) = TRUE'),
       runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE lr_date = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [today]),
       runStat(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE to_char(lr_date, 'YYYY-MM') = $1 AND COALESCE(payment_status, 'Unpaid') = 'Paid' {AND_BRANCH} AND COALESCE(is_deleted, FALSE) = FALSE`, [thisMonth]),
-      runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH}`).catch(()=> pool.query('SELECT COUNT(*) as count FROM gadi_challans'))
+      runStat(`SELECT COUNT(*) as count FROM gadi_challans {WHERE_BRANCH} {WHERE_OR_AND} COALESCE(is_deleted, FALSE) = FALSE`)
     ];
 
     const results = await Promise.all(queries.map((query, index) => query.catch((error) => {
@@ -1416,6 +1495,7 @@ app.get('/api/dashboard/monthly-stats', authMiddleware, async (req, res) => {
          SELECT date_trunc('month', ${dateColumn}) AS month_start, COUNT(*)::int AS count
          FROM ${table}
          WHERE ${dateColumn} >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months'
+           AND COALESCE(is_deleted, FALSE) = FALSE
            ${branchFilter}
          GROUP BY 1
        )
@@ -1488,7 +1568,7 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
     };
     const [recentBilties, recentMR, recentClaims] = await Promise.all([
       pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, grand_total, status, COALESCE(payment_status, 'Unpaid') AS payment_status, created_at FROM consignments ${where('COALESCE(is_deleted, FALSE) = FALSE')} ORDER BY created_at DESC NULLS LAST, id DESC LIMIT 5`, branch.params),
-      pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 5`, branch.params),
+      pool.query(`SELECT mr_no, mr_date, party_name, amount, payment_mode, created_at FROM money_receipts ${where('COALESCE(is_deleted, FALSE) = FALSE')} ORDER BY created_at DESC NULLS LAST LIMIT 5`, branch.params),
       pool.query(`SELECT lr_no, claim_type, claim_amount, COALESCE(status, 'Open') AS status, created_at FROM claims ${where()} ORDER BY created_at DESC NULLS LAST LIMIT 3`, branch.params)
     ]);
     res.json({
@@ -1553,7 +1633,9 @@ app.use('/api/branches', noCacheHeaders);
 app.get('/api/branches', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view branches.' });
-    const activeBranchFilter = req.query.includeInactive === 'true' ? '' : 'WHERE COALESCE(is_active, TRUE) = TRUE';
+    const activeBranchFilter = req.query.includeInactive === 'true'
+      ? 'WHERE COALESCE(is_deleted, FALSE) = FALSE'
+      : 'WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE';
     const result = await pool.query(
       `SELECT id, branch_code, branch_name, address, city, state, pincode, phone, email, gst_no, pan_no, manager_name, manager_phone, incharge_name, incharge_username, url_slug, COALESCE(branch_login_enabled, TRUE) AS branch_login_enabled, login_credentials->>'username' AS branch_login_username, is_active, status, created_at FROM branches ${activeBranchFilter} ORDER BY branch_name`
     );
@@ -1586,6 +1668,7 @@ app.get('/api/admin/branches/credentials', noCacheHeaders, authMiddleware, async
               incharge_name AS incharge,
               '/branch-login/' || COALESCE(NULLIF(url_slug, ''), '') AS "loginUrl"
        FROM branches
+       WHERE COALESCE(is_deleted, FALSE) = FALSE
        ORDER BY branch_name`
     );
     res.json({ data: result.rows });
@@ -1600,7 +1683,7 @@ app.get('/api/branches/public', async (req, res) => {
     const result = await pool.query(
       `SELECT id, branch_code, branch_name, city, state, url_slug
        FROM branches
-       WHERE COALESCE(is_active, TRUE) = TRUE
+       WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE
        ORDER BY branch_name`
     );
     res.json({
@@ -1626,9 +1709,12 @@ app.get('/api/branches/slug/:slug', async (req, res) => {
     const result = await pool.query(
       `SELECT id, branch_code, branch_name, city, state, COALESCE(NULLIF(url_slug, ''), $1) AS url_slug, COALESCE(is_active, TRUE) AS is_active
        FROM branches
-       WHERE COALESCE(NULLIF(url_slug, ''), trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))) = $1
+      WHERE COALESCE(is_deleted, FALSE) = FALSE
+        AND (
+          COALESCE(NULLIF(url_slug, ''), trim(both '-' from lower(regexp_replace(trim(branch_name), '[^a-zA-Z0-9]+', '-', 'g')))) = $1
           OR trim(both '-' from lower(regexp_replace(trim(city), '[^a-zA-Z0-9]+', '-', 'g'))) = $1
           OR trim(both '-' from lower(regexp_replace(trim(branch_code), '[^a-zA-Z0-9]+', '-', 'g'))) = $1
+        )
        ORDER BY CASE WHEN lower(COALESCE(url_slug, '')) = $1 THEN 0 ELSE 1 END
        LIMIT 1`,
       [slug]
@@ -1783,8 +1869,12 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/branches/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can delete branches.' });
-    await pool.query('UPDATE branches SET is_active = FALSE WHERE id = $1', [req.params.id]);
+    const result = await pool.query(
+      `UPDATE branches SET is_active = FALSE, is_deleted = TRUE, deleted_at = NOW()
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Branch not found.' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }); 
@@ -2179,7 +2269,7 @@ app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/consignments/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
-    const result = await pool.query('UPDATE consignments SET is_deleted = TRUE WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id', [req.params.id]);
+    const result = await pool.query('UPDATE consignments SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id', [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Bilty not found' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2244,7 +2334,7 @@ app.get('/api/vehicles', authMiddleware, async (req, res) => {
   try {
     const branchClause = ['branch', 'branch_user'].includes(req.user?.role) ? 'AND branch_id = $1' : '';
     const result = await pool.query(
-      `SELECT * FROM vehicles WHERE COALESCE(status, 'Active') = 'Active' ${branchClause} ORDER BY vehicle_no`,
+      `SELECT * FROM vehicles WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(status, 'Active') = 'Active' ${branchClause} ORDER BY vehicle_no`,
       branchClause ? [req.user.branch_id] : []
     );
     res.json({ data: result.rows });
@@ -2261,6 +2351,21 @@ app.post('/api/vehicles', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.delete('/api/vehicles/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE vehicles SET is_deleted = TRUE, deleted_at = NOW(), status = 'Inactive'
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Vehicle not found.' });
+    return res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    console.error('DELETE /api/vehicles error:', error.message);
+    return res.status(500).json({ error: 'Unable to archive the vehicle.' });
+  }
+});
+
 app.get('/api/vehicles/expiring', authMiddleware, async (req, res) => {
   try {
     const thirtyDays = new Date(); thirtyDays.setDate(thirtyDays.getDate() + 30);
@@ -2270,7 +2375,8 @@ app.get('/api/vehicles/expiring', authMiddleware, async (req, res) => {
     if (isBranchUser) params.push(req.user.branch_id);
     const result = await pool.query(
       `SELECT * FROM vehicles
-       WHERE (insurance_expiry <= $1 OR fitness_expiry <= $1 OR permit_expiry <= $1 OR rc_expiry <= $1)
+       WHERE COALESCE(is_deleted, FALSE) = FALSE
+         AND (insurance_expiry <= $1 OR fitness_expiry <= $1 OR permit_expiry <= $1 OR rc_expiry <= $1)
        ${branchClause}
        ORDER BY insurance_expiry ASC`,
       params
@@ -2346,7 +2452,7 @@ app.get('/api/outstanding', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT consignor_name as party_name, consignor_code as party_code, branch_code, COUNT(*) as total_bilties, SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC) ELSE 0 END) as pending_amount, SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)) as total_amount FROM consignments ${branchCondition} GROUP BY consignor_name, consignor_code, branch_code HAVING SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC) ELSE 0 END) > 0 ORDER BY pending_amount DESC`);
+    const result = await pool.query(`SELECT consignor_name as party_name, consignor_code as party_code, branch_code, COUNT(*) as total_bilties, SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC) ELSE 0 END) as pending_amount, SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)) as total_amount FROM consignments ${branchCondition ? `${branchCondition} AND` : 'WHERE'} COALESCE(is_deleted, FALSE) = FALSE GROUP BY consignor_name, consignor_code, branch_code HAVING SUM(CASE WHEN COALESCE(payment_status, 'Unpaid') = 'Unpaid' THEN CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC) ELSE 0 END) > 0 ORDER BY pending_amount DESC`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/outstanding error:', err.message); res.status(503).json({ error: 'Outstanding balances are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -2422,7 +2528,7 @@ app.post('/api/commissions', authMiddleware, async (req, res) => {
 // PARTIES, BILLS, MONEY RECEIPTS
 // ==========================================
 app.get('/api/parties', authMiddleware, async (req, res) => {
-  try { const result = await pool.query('SELECT * FROM parties WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY party_name'); res.json({ data: result.rows }); }
+  try { const result = await pool.query('SELECT * FROM parties WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE ORDER BY party_name'); res.json({ data: result.rows }); }
   catch (err) { console.error('GET /api/parties error:', err.message); res.status(503).json({ error: 'Parties are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
@@ -2432,6 +2538,21 @@ app.post('/api/parties', authMiddleware, async (req, res) => {
     const result = await pool.query(`INSERT INTO parties (party_code, party_name, address, gst_no, email, phone) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(party_code) DO UPDATE SET party_name=EXCLUDED.party_name, address=EXCLUDED.address, gst_no=EXCLUDED.gst_no RETURNING *`, [party_code, party_name, address || '', gst_no || '', email || '', phone || '']);
     res.json({ success: true, data: result.rows[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/parties/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE parties SET is_deleted = TRUE, deleted_at = NOW(), is_active = FALSE
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id`,
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Party not found.' });
+    return res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    console.error('DELETE /api/parties error:', error.message);
+    return res.status(500).json({ error: 'Unable to archive the party.' });
+  }
 });
 
 app.get(['/api/bills', '/api/bill-list'], authMiddleware, async (req, res) => {
@@ -2467,7 +2588,8 @@ app.get(['/api/bills', '/api/bill-list'], authMiddleware, async (req, res) => {
       };
     }
     const branch = buildBranchCondition(scope);
-    const conditions = branch.sql ? [branch.sql] : [];
+    const conditions = ['COALESCE(is_deleted, FALSE) = FALSE'];
+    if (branch.sql) conditions.push(branch.sql);
     const params = [...branch.params];
     if (search) {
       params.push(`%${search}%`);
@@ -2518,11 +2640,13 @@ app.get('/api/bills/:identifier', authMiddleware, async (req, res) => {
   try {
     const { identifier } = req.params;
     const isNumeric = /^\d+$/.test(identifier);
-    const query = isNumeric ? `SELECT * FROM bill_book WHERE id = $1` : `SELECT * FROM bill_book WHERE bill_no = $1`;
+    const query = isNumeric
+      ? `SELECT * FROM bill_book WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE`
+      : `SELECT * FROM bill_book WHERE bill_no = $1 AND COALESCE(is_deleted, FALSE) = FALSE`;
     const result = await pool.query(query, [identifier]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
     const bill = result.rows[0];
-    const itemsResult = await pool.query(`SELECT * FROM bill_items WHERE bill_id = $1`, [bill.id]);
+    const itemsResult = await pool.query(`SELECT * FROM bill_items WHERE bill_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE`, [bill.id]);
     res.json({ ...bill, items: itemsResult.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -2613,7 +2737,7 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const existing = await client.query('SELECT * FROM bill_book WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const existing = await client.query('SELECT * FROM bill_book WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE FOR UPDATE', [req.params.id]);
     if (existing.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Bill not found' });
@@ -2624,7 +2748,10 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
     const values = Object.values(bill);
     const result = await client.query(`UPDATE bill_book SET ${fields.map((field, i) => `${field} = $${i + 1}`).join(', ')}, updated_at = NOW() WHERE id = $${fields.length + 1} RETURNING *`, [...values, req.params.id]);
     const items = Array.isArray(req.body.items) ? req.body.items : [];
-    await client.query('DELETE FROM bill_items WHERE bill_id = $1', [req.params.id]);
+    await client.query(
+      'UPDATE bill_items SET is_deleted = TRUE, deleted_at = NOW() WHERE bill_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE',
+      [req.params.id]
+    );
     await insertBillItems(client, req.params.id, items);
     await client.query('COMMIT');
     res.json({ ...result.rows[0], items });
@@ -2636,7 +2763,10 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
 
 app.delete('/api/bills/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
-    const result = await pool.query('DELETE FROM bill_book WHERE id = $1 RETURNING id', [req.params.id]);
+    const result = await pool.query(
+      'UPDATE bill_book SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
+      [req.params.id]
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
     res.json({ success: true, id: result.rows[0].id });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2648,8 +2778,8 @@ app.delete('/api/bills/:id', authMiddleware, requireManualDeleteConfirmation, as
 app.get('/api/mr', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT * FROM money_receipts ${branchCondition} ORDER BY id DESC LIMIT 500`);
+    const branchCondition = isAdmin ? '' : `AND branch_id = ${safeUserBranchId(req)}`;
+    const result = await pool.query(`SELECT * FROM money_receipts WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchCondition} ORDER BY id DESC LIMIT 500`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/mr error:', err.message); res.status(503).json({ error: 'Money receipts are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -2668,7 +2798,7 @@ app.get('/api/mr/next-number', authMiddleware, async (req, res) => {
 
 app.get('/api/mr/:id', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM money_receipts WHERE id = $1', [req.params.id]);
+    const result = await pool.query('SELECT * FROM money_receipts WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'MR not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2699,7 +2829,7 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
         return res.status(404).json({ error: 'Linked Bilty not found.' });
       }
       linkedDocument = result.rows[0];
-      const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1', [bilty_id]);
+      const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [bilty_id]);
       const totalReceived = Number(payments.rows[0].total);
       outstanding = linkedDocument.payment_status === 'Paid' ? 0 : Math.max(Number(linkedDocument.grand_total) - totalReceived, 0);
     } else if (bill_id) {
@@ -2733,7 +2863,7 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
     await useStock(client, 'mr_book', finalMRNo, req.user.username, branchId);
 
     if (bilty_id) {
-      const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1', [bilty_id]);
+      const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [bilty_id]);
       const paid = Number(payments.rows[0].total) >= Number(linkedDocument.grand_total);
       await client.query(`UPDATE consignments SET payment_status = $1, mr_no = $2, updated_at = NOW() WHERE id = $3`, [paid ? 'Paid' : 'Unpaid', finalMRNo, bilty_id]);
     }
@@ -2756,13 +2886,13 @@ app.delete('/api/mr/:id', authMiddleware, requireManualDeleteConfirmation, async
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const receiptResult = await client.query('SELECT * FROM money_receipts WHERE id = $1 FOR UPDATE', [req.params.id]);
+    const receiptResult = await client.query('SELECT * FROM money_receipts WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE FOR UPDATE', [req.params.id]);
     if (receiptResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'MR not found.' });
     }
     const receipt = receiptResult.rows[0];
-    await client.query('DELETE FROM money_receipts WHERE id = $1', [req.params.id]);
+    await client.query('UPDATE money_receipts SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1', [req.params.id]);
 
     if (receipt.bill_id) {
       const billResult = await client.query('SELECT id, grand_total, advance_received FROM bill_book WHERE id = $1 FOR UPDATE', [receipt.bill_id]);
@@ -2770,7 +2900,7 @@ app.delete('/api/mr/:id', authMiddleware, requireManualDeleteConfirmation, async
         const bill = billResult.rows[0];
         const advance = Math.max((Number(bill.advance_received) || 0) - Number(receipt.amount), 0);
         const balance = Math.max((Number(bill.grand_total) || 0) - advance, 0);
-        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bill_id = $1 ORDER BY id DESC LIMIT 1', [receipt.bill_id]);
+        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bill_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 1', [receipt.bill_id]);
         await client.query(`UPDATE bill_book SET advance_received = $1, balance_due = $2, net_balance = $2, payment_status = $3, mr_no = $4, updated_at = NOW() WHERE id = $5`, [advance, balance, balance <= 0.005 ? 'Paid' : 'Unpaid', lastReceipt.rows[0]?.mr_no || null, receipt.bill_id]);
       }
     }
@@ -2778,8 +2908,8 @@ app.delete('/api/mr/:id', authMiddleware, requireManualDeleteConfirmation, async
       const biltyResult = await client.query(`SELECT id, COALESCE(NULLIF(grand_total, ''), '0')::NUMERIC AS grand_total, basis_booking FROM consignments WHERE id = $1 FOR UPDATE`, [receipt.bilty_id]);
       if (biltyResult.rows.length > 0) {
         const bilty = biltyResult.rows[0];
-        const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1', [receipt.bilty_id]);
-        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bilty_id = $1 ORDER BY id DESC LIMIT 1', [receipt.bilty_id]);
+        const payments = await client.query('SELECT COALESCE(SUM(amount), 0) AS total FROM money_receipts WHERE bilty_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [receipt.bilty_id]);
+        const lastReceipt = await client.query('SELECT mr_no FROM money_receipts WHERE bilty_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 1', [receipt.bilty_id]);
         const paidByReceipt = Number(payments.rows[0].total) >= Number(bilty.grand_total);
         const paidAtBooking = String(bilty.basis_booking || '').trim().toLowerCase() === 'paid';
         await client.query(`UPDATE consignments SET payment_status = $1, mr_no = $2, updated_at = NOW() WHERE id = $3`, [paidByReceipt || paidAtBooking ? 'Paid' : 'Unpaid', lastReceipt.rows[0]?.mr_no || null, receipt.bilty_id]);
@@ -2806,13 +2936,13 @@ app.get('/api/audit', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/customers', authMiddleware, async (req, res) => {
-  try { const result = await pool.query('SELECT * FROM customers WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY customer_name'); res.json(result.rows); }
+  try { const result = await pool.query('SELECT * FROM customers WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE ORDER BY customer_name'); res.json(result.rows); }
   catch (err) { console.error('GET /api/customers error:', err.message); res.status(503).json({ error: 'Customers are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/customers/:id', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM customers WHERE id = $1', [req.params.id]);
+    const result = await pool.query('SELECT * FROM customers WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2871,7 +3001,11 @@ app.put('/api/customers/:id', authMiddleware, async (req, res) => {
 
 app.delete('/api/customers/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
-    const result = await pool.query('UPDATE customers SET is_active = FALSE WHERE id = $1 RETURNING id', [req.params.id]);
+    const result = await pool.query(
+      `UPDATE customers SET is_active = FALSE, is_deleted = TRUE, deleted_at = NOW()
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id`,
+      [req.params.id]
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2918,7 +3052,7 @@ app.get('/api/gadi-challan', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT * FROM gadi_challans ${branchCondition} ORDER BY id DESC LIMIT 100`);
+    const result = await pool.query(    `SELECT * FROM gadi_challans ${branchCondition ? `${branchCondition} AND` : 'WHERE'} COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 100`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/gadi-challan error:', err.message); res.status(503).json({ error: 'Gadi challans are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -2937,7 +3071,7 @@ app.get('/api/gadi-challan/next-number', authMiddleware, async (req, res) => {
 
 app.get('/api/gadi-challan/:id', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM gadi_challans WHERE id = $1', [req.params.id]);
+    const result = await pool.query('SELECT * FROM gadi_challans WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Challan not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2967,6 +3101,20 @@ app.post('/api/gadi-challan', authMiddleware, async (req, res) => {
     try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Challan transaction rollback failed:', rollbackError.message); }
     res.status(500).json({ error: err.message });
   } finally { client.release(); }
+});
+
+app.delete('/api/gadi-challan/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'UPDATE gadi_challans SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Vehicle challan not found.' });
+    return res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    console.error('DELETE /api/gadi-challan error:', error.message);
+    return res.status(500).json({ error: 'Unable to archive the vehicle challan.' });
+  }
 });
 
 const documentStockTypes = ['bilty', 'mr', 'gadi_challan', 'billing', 'gate_pass', 'pod', 'lr_copy'];
@@ -3116,10 +3264,37 @@ app.post('/api/stock/add', authMiddleware, async (req, res) => {
 app.get('/api/manifests', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE m.branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT m.*, COUNT(mi.id) as total_lrs, STRING_AGG(mi.lr_no, ', ') as lr_nos FROM manifests m LEFT JOIN manifest_items mi ON m.id = mi.manifest_id ${branchCondition} GROUP BY m.id ORDER BY m.created_at DESC LIMIT 200`);
+    const branchCondition = isAdmin ? '' : `AND m.branch_id = ${safeUserBranchId(req)}`;
+    const result = await pool.query(`SELECT m.*, COUNT(mi.id) as total_lrs, STRING_AGG(mi.lr_no, ', ') as lr_nos FROM manifests m LEFT JOIN manifest_items mi ON m.id = mi.manifest_id AND COALESCE(mi.is_deleted, FALSE) = FALSE WHERE COALESCE(m.is_deleted, FALSE) = FALSE ${branchCondition} GROUP BY m.id ORDER BY m.created_at DESC LIMIT 200`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/manifests error:', err.message); res.status(503).json({ error: 'Manifests are temporarily unavailable.', details: err.message, code: err.code || null }); }
+});
+
+app.delete('/api/manifests/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      'UPDATE manifests SET is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
+      [req.params.id]
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Branch transfer not found.' });
+    }
+    await client.query(
+      'UPDATE manifest_items SET is_deleted = TRUE, deleted_at = NOW() WHERE manifest_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE',
+      [req.params.id]
+    );
+    await client.query('COMMIT');
+    return res.json({ success: true, id: result.rows[0].id });
+  } catch (error) {
+    await client.query('ROLLBACK').catch((rollbackError) => console.error('Manifest delete rollback failed:', rollbackError.message));
+    console.error('DELETE /api/manifests error:', error.message);
+    return res.status(500).json({ error: 'Unable to archive the branch transfer.' });
+  } finally {
+    client.release();
+  }
 });
 
 app.post('/api/manifests', authMiddleware, async (req, res) => {
@@ -3156,11 +3331,11 @@ app.post('/api/public/pod-upload', async (req, res) => {
   try {
     const { lr_no, delivery_date, delivered_by, receiver_name, receiver_phone, delivery_remarks, photo_url } = req.body;
     if (!lr_no) return res.status(400).json({ error: 'LR Number is required' });
-    const biltyCheck = await pool.query('SELECT id, lr_no FROM consignments WHERE lr_no = $1', [lr_no]);
+    const biltyCheck = await pool.query('SELECT id, lr_no FROM consignments WHERE lr_no = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [lr_no]);
     if (biltyCheck.rows.length === 0) return res.status(404).json({ error: 'Bilty not found' });
     const finalDate = delivery_date || new Date().toISOString().split('T')[0];
     const result = await pool.query(`INSERT INTO pod_records (lr_no, branch_id, delivery_date, delivered_by, receiver_name, receiver_phone, delivery_remarks, photo_url, status) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, 'Delivered') RETURNING *`, [lr_no, finalDate, delivered_by || '', receiver_name || '', receiver_phone || '', delivery_remarks || '', photo_url || '']);
-    await pool.query("UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2", [finalDate, lr_no]);
+    await pool.query("UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2 AND COALESCE(is_deleted, FALSE) = FALSE", [finalDate, lr_no]);
     res.json({ success: true, message: 'POD uploaded successfully!', data: result.rows[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -3170,7 +3345,7 @@ app.get('/api/public/pod-view', async (req, res) => {
     const lr_no = req.query.lr_no;
     if (!lr_no) return res.status(400).json({ error: 'LR Number is required' });
     const podResult = await pool.query(`SELECT * FROM pod_records WHERE lr_no = $1 ORDER BY created_at DESC LIMIT 1`, [lr_no]);
-    const biltyResult = await pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, from_name, to_name, packages, actual_weight, grand_total, status, pod_status FROM consignments WHERE lr_no = $1`, [lr_no]);
+    const biltyResult = await pool.query(`SELECT lr_no, lr_date, consignor_name, consignee_name, from_name, to_name, packages, actual_weight, grand_total, status, pod_status FROM consignments WHERE lr_no = $1 AND COALESCE(is_deleted, FALSE) = FALSE`, [lr_no]);
     if (podResult.rows.length === 0 && biltyResult.rows.length === 0) return res.status(404).json({ error: 'No POD or Bilty found' });
     res.json({ success: true, pod: podResult.rows[0] || null, bilty: biltyResult.rows[0] || null });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -3221,7 +3396,7 @@ app.get('/api/rates', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT * FROM rate_contracts ${branchCondition} ORDER BY from_city, to_city, effective_from DESC`);
+    const result = await pool.query(`SELECT * FROM rate_contracts ${branchCondition ? `${branchCondition} AND` : 'WHERE'} COALESCE(is_deleted, FALSE) = FALSE ORDER BY from_city, to_city, effective_from DESC`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/rates error:', err.message); res.status(503).json({ error: 'Rates are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -3246,8 +3421,14 @@ app.put('/api/rates/:id', authMiddleware, async (req, res) => {
 });
 
 app.delete('/api/rates/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
-  try { await pool.query('DELETE FROM rate_contracts WHERE id = $1', [req.params.id]); res.json({ success: true }); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    const result = await pool.query(
+      'UPDATE rate_contracts SET is_deleted = TRUE, deleted_at = NOW(), is_active = FALSE WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
+      [req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Rate contract not found.' });
+    return res.json({ success: true, id: result.rows[0].id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/rates/calculate', authMiddleware, async (req, res) => {
@@ -3255,7 +3436,7 @@ app.post('/api/rates/calculate', authMiddleware, async (req, res) => {
     const { from_city, to_city, weight_kg, packages, party_code } = req.body;
     if (!from_city || !to_city) return res.status(400).json({ error: 'From and To cities are required' });
     const today = new Date().toISOString().split('T')[0];
-    let query = `SELECT * FROM rate_contracts WHERE from_city = $1 AND to_city = $2 AND effective_from <= $3 AND (effective_to IS NULL OR effective_to >= $3) AND COALESCE(is_active, TRUE) = TRUE`;
+    let query = `SELECT * FROM rate_contracts WHERE COALESCE(is_deleted, FALSE) = FALSE AND from_city = $1 AND to_city = $2 AND effective_from <= $3 AND (effective_to IS NULL OR effective_to >= $3) AND COALESCE(is_active, TRUE) = TRUE`;
     const params = [from_city, to_city, today];
     if (party_code) { query += ` AND (party_code = $4 OR party_code IS NULL)`; params.push(party_code); }
     if (req.user.role !== 'admin') {
@@ -3282,11 +3463,11 @@ app.get('/api/accounts/summary', authMiddleware, async (req, res) => {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `AND branch_id = ${safeUserBranchId(req)}`;
     const branchWhere = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const receivableRes = await pool.query(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid' ${branchCondition}`);
-    const payableRes = await pool.query(`SELECT COALESCE(SUM(balance_due), 0) as total FROM gadi_challans WHERE balance_due > 0 ${branchCondition}`);
-    const revenueRes = await pool.query(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(payment_status, 'Unpaid') = 'Paid' ${branchCondition}`);
+    const receivableRes = await pool.query(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(payment_status, 'Unpaid') = 'Unpaid' ${branchCondition}`);
+    const payableRes = await pool.query(`SELECT COALESCE(SUM(balance_due), 0) as total FROM gadi_challans WHERE COALESCE(is_deleted, FALSE) = FALSE AND balance_due > 0 ${branchCondition}`);
+    const revenueRes = await pool.query(`SELECT COALESCE(SUM(CAST(NULLIF(regexp_replace(COALESCE(grand_total,'0'), '[^0-9.-]', '', 'g'), '') AS NUMERIC)), 0) as total FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(payment_status, 'Unpaid') = 'Paid' ${branchCondition}`);
     const expenseRes = await pool.query(`SELECT COALESCE(SUM(amount), 0) as total FROM expenses ${branchWhere}`);
-    const tdsRes = await pool.query(`SELECT COALESCE(SUM(tds_deduction), 0) as total FROM gadi_challans ${branchCondition}`);
+    const tdsRes = await pool.query(`SELECT COALESCE(SUM(tds_deduction), 0) as total FROM gadi_challans WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchCondition}`);
     res.json({
       success: true, data: {
         total_receivable: parseFloat(receivableRes.rows[0].total || 0), total_payable: parseFloat(payableRes.rows[0].total || 0),
@@ -3300,7 +3481,9 @@ app.get('/api/accounts/summary', authMiddleware, async (req, res) => {
 app.get('/api/accounts/tds-register', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? `WHERE tds_deduction > 0` : `WHERE branch_id = ${safeUserBranchId(req)} AND tds_deduction > 0`;
+    const branchCondition = isAdmin
+      ? `WHERE COALESCE(is_deleted, FALSE) = FALSE AND tds_deduction > 0`
+      : `WHERE COALESCE(is_deleted, FALSE) = FALSE AND branch_id = ${safeUserBranchId(req)} AND tds_deduction > 0`;
     const result = await pool.query(`SELECT challan_no, issue_date, broker_name, freight_amount, tds_deduction, net_payable FROM gadi_challans ${branchCondition} ORDER BY issue_date DESC LIMIT 200`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/accounts/tds-register error:', err.message); res.status(503).json({ error: 'TDS records are temporarily unavailable.', details: err.message, code: err.code || null }); }
@@ -3313,7 +3496,7 @@ app.get('/api/eway-bills', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
     const branchCondition = isAdmin ? '' : `AND c.branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT c.id, c.lr_no, c.lr_date, c.consignor_name, c.consignee_name, c.from_name, c.to_name, c.declared_value, c.eway_bill_no, c.eway_valid_upto, c.transporter_id, c.transporter_name, c.status, c.from_state, c.to_state FROM consignments c WHERE CAST(c.declared_value AS NUMERIC) > CASE WHEN c.from_state IS NOT NULL AND c.to_state IS NOT NULL AND UPPER(TRIM(c.from_state)) = UPPER(TRIM(c.to_state)) THEN 100000 ELSE 50000 END ${branchCondition} ORDER BY c.lr_date DESC LIMIT 200`);
+    const result = await pool.query(`SELECT c.id, c.lr_no, c.lr_date, c.consignor_name, c.consignee_name, c.from_name, c.to_name, c.declared_value, c.eway_bill_no, c.eway_valid_upto, c.transporter_id, c.transporter_name, c.status, c.from_state, c.to_state FROM consignments c WHERE COALESCE(c.is_deleted, FALSE) = FALSE AND CAST(c.declared_value AS NUMERIC) > CASE WHEN c.from_state IS NOT NULL AND c.to_state IS NOT NULL AND UPPER(TRIM(c.from_state)) = UPPER(TRIM(c.to_state)) THEN 100000 ELSE 50000 END ${branchCondition} ORDER BY c.lr_date DESC LIMIT 200`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/eway-bills error:', err.message); res.status(503).json({ error: 'E-way bills are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -3332,7 +3515,7 @@ app.put('/api/eway-bills/:id', authMiddleware, async (req, res) => {
 app.get('/api/users', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can view all users' });
-    const result = await pool.query(`SELECT u.id, u.username, u.email, u.full_name, u.role, u.branch_id, COALESCE(u.is_active, TRUE) as is_active, u.created_at, b.branch_code, b.branch_name, b.city FROM users u LEFT JOIN branches b ON u.branch_id = b.id ORDER BY u.created_at DESC`);
+    const result = await pool.query(`SELECT u.id, u.username, u.email, u.full_name, u.role, u.branch_id, COALESCE(u.is_active, TRUE) as is_active, u.created_at, b.branch_code, b.branch_name, b.city FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE COALESCE(u.is_deleted, FALSE) = FALSE ORDER BY u.created_at DESC`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/users error:', err.message); res.status(503).json({ error: 'Users are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -3390,7 +3573,11 @@ app.delete('/api/users/:id', authMiddleware, requireManualDeleteConfirmation, as
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can delete users' });
     const id = req.params.id;
     if (parseInt(id) === req.user.id) return res.status(400).json({ error: 'Cannot delete your own account' });
-    await pool.query('UPDATE users SET is_active = FALSE WHERE id = $1', [id]);
+    const result = await pool.query(
+      'UPDATE users SET is_active = FALSE, is_deleted = TRUE, deleted_at = NOW() WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id',
+      [id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'User not found.' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -3402,7 +3589,8 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can backup data' });
     console.log('📦 Starting full database backup...');
-    const tables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records'];
+    await ensureBranchPaymentsSchema();
+    const tables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records', 'branch_payments', 'branch_ledger'];
     const backupData = { backup_date: new Date().toISOString(), software_version: '6.0', taken_by: req.user.username, data: {} };
     for (const table of tables) {
       try {
@@ -3426,7 +3614,8 @@ app.post('/api/backup/import', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can restore data' });
     const backupData = req.body.data;
-    const backupTables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records'];
+    await ensureBranchPaymentsSchema();
+    const backupTables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records', 'branch_payments', 'branch_ledger'];
     if (!backupData || !backupData.data || typeof backupData.data !== 'object' || Array.isArray(backupData.data)) {
       return res.status(400).json({ error: 'Invalid backup file format' });
     }

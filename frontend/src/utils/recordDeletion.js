@@ -1,14 +1,14 @@
-export const PERMANENT_DELETE_CONFIRMATION =
-  'Are you sure you want to permanently delete this record? This action cannot be undone.'
+export const RECORD_DELETE_CONFIRMATION =
+  'Archive this record? It will be hidden from active lists but retained in the database and backups.'
 
-export const permanentDeleteHeaders = {
-  'X-Confirm-Permanent-Delete': 'true'
+export const recordDeletionHeaders = {
+  'X-Confirm-Record-Deletion': 'true'
 }
 
 export function canDeleteRecords(role) {
   return ['admin', 'manager'].includes(String(role || '').toLowerCase())
 }
 
-export function confirmPermanentDelete() {
-  return window.confirm(PERMANENT_DELETE_CONFIRMATION)
+export function confirmRecordDeletion() {
+  return window.confirm(RECORD_DELETE_CONFIRMATION)
 }

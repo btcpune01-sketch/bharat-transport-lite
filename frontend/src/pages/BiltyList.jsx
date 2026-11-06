@@ -4,7 +4,7 @@ import { biltyAPI } from '../api'
 import toast from 'react-hot-toast'
 import { formatDate } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
-import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function BiltyList() {
   const { currentUser } = useAuth()
@@ -43,10 +43,10 @@ export default function BiltyList() {
   }
 
   const handleDelete = async (lrNo) => {
-    if (!confirmPermanentDelete()) return
+    if (!confirmRecordDeletion()) return
     try {
-      await biltyAPI.delete(lrNo, { headers: permanentDeleteHeaders })
-      toast.success('Bilty delete हो गई')
+      await biltyAPI.delete(lrNo, { headers: recordDeletionHeaders })
+      toast.success('Bilty archive हो गई')
       fetchBilties()
     } catch (err) {
       toast.error(err.response?.data?.error || 'Delete failed')

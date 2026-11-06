@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import { useAuth } from '../AuthContext'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function Vehicles() {
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -131,6 +135,27 @@ export default function Vehicles() {
       fetchVehicles()
     } catch (err) {
       alert('Error updating status')
+    }
+  }
+
+  const handleDelete = async (vehicle) => {
+    if (!confirmRecordDeletion()) return
+    try {
+      const token = localStorage.getItem('token')
+      const apiUrl = import.meta.env.VITE_API_URL || '/api'
+      const response = await fetch(`${apiUrl}/vehicles/${vehicle.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, ...recordDeletionHeaders }
+      })
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Unable to archive vehicle.')
+      }
+      await fetchVehicles()
+      await fetchExpiryAlerts()
+      alert('Vehicle archived. Its record remains available in the database and backups.')
+    } catch (error) {
+      alert(`Unable to archive vehicle: ${error.message}`)
     }
   }
 
@@ -388,6 +413,7 @@ export default function Vehicles() {
                         <button onClick={() => handleStatusToggle(v)} className={`flex-1 py-2 rounded text-xs font-bold ${v.status === 'Active' ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
                           {v.status === 'Active' ? '⏸️ Deactivate' : '▶️ Activate'}
                         </button>
+                        {canDelete && <button onClick={() => handleDelete(v)} className="rounded bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200" title="Archive vehicle">Archive</button>}
                       </div>
                     </div>
                   </div>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { customerAPI } from '../api'
 import toast from 'react-hot-toast'
 import { useAuth } from '../AuthContext'
-import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function PartyList({ branchMode = false }) {
   const navigate = useNavigate()
@@ -29,10 +29,10 @@ export default function PartyList({ branchMode = false }) {
   }
 
   const handleDelete = async (id, name) => {
-    if (!confirmPermanentDelete()) return
+    if (!confirmRecordDeletion()) return
     try {
-      await customerAPI.delete(id, { headers: permanentDeleteHeaders })
-      toast.success('Party delete हो गई')
+      await customerAPI.delete(id, { headers: recordDeletionHeaders })
+      toast.success('Party archive हो गई')
       fetchParties()
     } catch (err) {
       toast.error(err.response?.data?.error || 'Delete failed')
@@ -155,7 +155,7 @@ export default function PartyList({ branchMode = false }) {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                             </svg>
                           </button>}
-                          {!branchMode && <button
+                          {!branchMode && canDelete && <button
                             onClick={() => handleDelete(party.id, party.customer_name || party.name)}
                             className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition" 
                             title="Delete"

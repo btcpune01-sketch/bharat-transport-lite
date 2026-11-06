@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
+import { useAuth } from '../AuthContext'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function Transit() {
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [manifests, setManifests] = useState([])
   const [availableLrs, setAvailableLrs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -100,6 +104,26 @@ export default function Transit() {
       alert('Failed to create manifest')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async (manifest) => {
+    if (!confirmRecordDeletion()) return
+    try {
+      const token = localStorage.getItem('token')
+      const apiUrl = import.meta.env.VITE_API_URL || '/api'
+      const response = await fetch(`${apiUrl}/manifests/${manifest.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, ...recordDeletionHeaders }
+      })
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Unable to archive branch transfer.')
+      }
+      await fetchData()
+      window.alert('Branch transfer archived. Its history remains in the database and backups.')
+    } catch (error) {
+      window.alert(`Unable to archive branch transfer: ${error.message}`)
     }
   }
 
@@ -264,6 +288,7 @@ export default function Transit() {
                       <th className="p-4 text-left font-bold text-gray-600">Vehicle & Driver</th>
                       <th className="p-4 text-center font-bold text-gray-600">Total LRs</th>
                       <th className="p-4 text-left font-bold text-gray-600">Status</th>
+                      {canDelete && <th className="p-4 text-right font-bold text-gray-600">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -278,6 +303,11 @@ export default function Transit() {
                             <span className="font-medium">{m.to_branch}</span>
                           </div>
                         </td>
+                        {canDelete && <td className="p-4 text-right">
+                          <button onClick={() => handleDelete(m)} className="rounded bg-red-100 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-200">
+                            Archive
+                          </button>
+                        </td>}
                         <td className="p-4">
                           <div className="font-medium text-gray-800">{m.vehicle_no}</div>
                           <div className="text-xs text-gray-500">{m.driver_name} ({m.driver_mobile})</div>

@@ -4,7 +4,7 @@ import { Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion';
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion';
 
 const Consignments = () => {
   const { currentUser } = useAuth();
@@ -79,11 +79,11 @@ const Consignments = () => {
   });
 
   const handleDelete = async (id, lr_no) => {
-    if (!confirmPermanentDelete()) return;
+    if (!confirmRecordDeletion()) return;
 
     try {
-      await api.delete(`/consignments/${id}`, { headers: permanentDeleteHeaders });
-      toast.success('Deleted');
+      await api.delete(`/consignments/${id}`, { headers: recordDeletionHeaders });
+      toast.success('Archived');
       await fetchConsignments();
     } catch (err) {
       console.error('Delete consignment error:', err);

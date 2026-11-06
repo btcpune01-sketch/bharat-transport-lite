@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { Eye, EyeOff } from 'lucide-react'
 import { getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 import { useAuth } from '../AuthContext'
-import { confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 const emptyBranchForm = {
   branch_name: '', branch_code: '', city: '', state: '', address: '', phone: '', email: '',
@@ -23,6 +23,7 @@ function getBranchLoginUrl(slug) {
 export default function Branches() {
   const navigate = useNavigate()
   const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [branches, setBranches] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -196,10 +197,10 @@ export default function Branches() {
   }
 
   const handleDelete = async (id, name) => {
-    if (!confirmPermanentDelete()) return
+    if (!confirmRecordDeletion()) return
     try {
-      await api.delete(`/branches/${id}`, { headers: permanentDeleteHeaders })
-      alert('✅ Branch deleted!')
+      await api.delete(`/branches/${id}`, { headers: recordDeletionHeaders })
+      alert('✅ Branch archived!')
       loadBranches()
     } catch (err) {
       alert('❌ Delete failed: ' + (err.response?.data?.error || err.message))
@@ -507,7 +508,7 @@ export default function Branches() {
                               {branch.branch_login_username ? '🔄 Reset Login' : '🔐 Setup Login'}
                             </button>
                             <button onClick={() => handleEdit(branch)} disabled={branch.local} className="px-2 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-xs hover:bg-blue-200 disabled:opacity-50" title="Edit branch">✏️ Edit</button>
-                            {currentUser?.role === 'admin' && <button onClick={() => handleDelete(branch.id, branch.branch_name)} disabled={branch.local} className="px-2 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs hover:bg-red-200 disabled:opacity-50" title="Delete branch">🗑️</button>}
+                            {canDelete && <button onClick={() => handleDelete(branch.id, branch.branch_name)} disabled={branch.local} className="px-2 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs hover:bg-red-200 disabled:opacity-50" title="Archive branch">🗑️</button>}
                           </div>
                         </td>
                       </tr>

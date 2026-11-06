@@ -1,24 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
 import api from '../api';
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion';
 
 export default function BranchPayments() {
   const { currentUser } = useAuth();
+  const canDelete = canDeleteRecords(currentUser?.role);
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState([]);
   const [total, setTotal] = useState(0);
   const [filterBranch, setFilterBranch] = useState('');
   const [branches, setBranches] = useState([]);
 
-  // Form State
   const [formData, setFormData] = useState({
-    branch: '',
+    branch_id: '',
     amount: '',
-    paymentDate: new Date().toISOString().split('T')[0],
-    paymentMode: 'Cash',
-    reference: '',
-    description: '',
-    createdBy: currentUser?.username || 'Admin'
+    date: new Date().toISOString().split('T')[0],
+    type: 'given',
+    payment_mode: 'Cash',
+    notes: ''
   });
 
   useEffect(() => {
@@ -39,12 +39,11 @@ export default function BranchPayments() {
     setLoading(true);
     try {
       const params = {};
-      if (filterBranch) params.branch = filterBranch;
+      if (filterBranch) params.branch_id = filterBranch;
       const res = await api.get('/branch-payments', { params });
-      if (res.data?.payments) {
-        setPayments(res.data.payments);
-        setTotal(res.data.total || 0);
-      }
+      const rows = res.data?.data || [];
+      setPayments(rows);
+      setTotal(rows.reduce((sum, payment) => sum + Number(payment.amount || 0), 0));
     } catch (err) {
       console.error('Payments fetch error:', err);
     } finally {
@@ -54,7 +53,7 @@ export default function BranchPayments() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.branch || !formData.amount) {
+    if (!formData.branch_id || !formData.amount) {
       alert('Branch और Amount ज़रूरी हैं!');
       return;
     }
@@ -62,17 +61,27 @@ export default function BranchPayments() {
       await api.post('/branch-payments', formData);
       alert('Payment सफलतापूर्वक Save हो गई!');
       setFormData({
-        branch: '',
+        branch_id: '',
         amount: '',
-        paymentDate: new Date().toISOString().split('T')[0],
-        paymentMode: 'Cash',
-        reference: '',
-        description: '',
-        createdBy: currentUser?.username || 'Admin'
+        date: new Date().toISOString().split('T')[0],
+        type: 'given',
+        payment_mode: 'Cash',
+        notes: ''
       });
       fetchPayments();
     } catch (err) {
       alert(err.response?.data?.error || 'Payment save करने में Error!');
+    }
+  };
+
+  const handleDelete = async (payment) => {
+    if (!confirmRecordDeletion()) return;
+    try {
+      await api.delete(`/branch-payments/${payment.id}`, { headers: recordDeletionHeaders });
+      alert('Payment archived. Its history remains in the database and backups.');
+      await fetchPayments();
+    } catch (error) {
+      alert(error.response?.data?.error || 'Unable to archive payment.');
     }
   };
 
@@ -106,13 +115,13 @@ export default function BranchPayments() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Branch *</label>
                 <select
                   className="w-full border border-gray-300 rounded-lg p-2"
-                  value={formData.branch}
-                  onChange={(e) => setFormData({ ...formData, branch: e.target.value })}
+                  value={formData.branch_id}
+                  onChange={(e) => setFormData({ ...formData, branch_id: e.target.value })}
                   required
                 >
                   <option value="">Select Branch</option>
                   {branches.map(b => (
-                    <option key={b.id} value={b.branch_name}>{b.branch_name}</option>
+                    <option key={b.id} value={b.id}>{b.branch_name}</option>
                   ))}
                 </select>
               </div>
@@ -136,16 +145,16 @@ export default function BranchPayments() {
                   <input
                     type="date"
                     className="w-full border border-gray-300 rounded-lg p-2"
-                    value={formData.paymentDate}
-                    onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
+                    value={formData.date}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
                   <select
                     className="w-full border border-gray-300 rounded-lg p-2"
-                    value={formData.paymentMode}
-                    onChange={(e) => setFormData({ ...formData, paymentMode: e.target.value })}
+                    value={formData.payment_mode}
+                    onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
                   >
                     <option value="Cash">Cash</option>
                     <option value="UPI">UPI</option>
@@ -155,25 +164,27 @@ export default function BranchPayments() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Reference</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Type</label>
+                <select
                   className="w-full border border-gray-300 rounded-lg p-2"
-                  value={formData.reference}
-                  onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
-                  placeholder="UTR / Cheque No."
-                />
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                >
+                  <option value="given">Given to branch</option>
+                  <option value="received">Received from branch</option>
+                </select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Reference</label>
+                <input
+                  type="text"
                   className="w-full border border-gray-300 rounded-lg p-2"
-                  rows="3"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Optional remarks..."
-                ></textarea>
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="UTR / Cheque No. / remarks"
+                  maxLength={1000}
+                />
               </div>
 
               <button
@@ -198,7 +209,7 @@ export default function BranchPayments() {
               >
                 <option value="">All Branches</option>
                 {branches.map(b => (
-                  <option key={b.id} value={b.branch_name}>{b.branch_name}</option>
+                  <option key={b.id} value={b.id}>{b.branch_name}</option>
                 ))}
               </select>
             </div>
@@ -211,13 +222,14 @@ export default function BranchPayments() {
                     <th className="px-4 py-3">Branch</th>
                     <th className="px-4 py-3 text-right">Amount</th>
                     <th className="px-4 py-3">Mode</th>
-                    <th className="px-4 py-3">Reference</th>
+                    <th className="px-4 py-3">Type / Reference</th>
+                    {canDelete && <th className="px-4 py-3 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {payments.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                      <td colSpan={canDelete ? 6 : 5} className="px-4 py-8 text-center text-gray-500">
                         No payments found.
                       </td>
                     </tr>
@@ -225,9 +237,9 @@ export default function BranchPayments() {
                     payments.map((p) => (
                       <tr key={p.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          {p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-IN') : '—'}
+                          {p.date ? new Date(`${p.date}T00:00:00`).toLocaleDateString('en-IN') : '—'}
                         </td>
-                        <td className="px-4 py-3 font-medium">{p.branch}</td>
+                        <td className="px-4 py-3 font-medium">{p.branch_name}</td>
                         <td className="px-4 py-3 text-right font-bold text-green-600">
                           ₹{Number(p.amount).toLocaleString('en-IN')}
                         </td>
@@ -236,7 +248,12 @@ export default function BranchPayments() {
                             {p.payment_mode || 'Cash'}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-gray-600">{p.reference || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600">{p.type} / {p.notes || '—'}</td>
+                        {canDelete && <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleDelete(p)} className="rounded bg-red-100 px-3 py-1 text-xs font-bold text-red-700 hover:bg-red-200">
+                            Archive
+                          </button>
+                        </td>}
                       </tr>
                     ))
                   )}

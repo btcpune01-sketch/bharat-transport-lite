@@ -3,9 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { formatDateForInput } from '../utils/dateFormatter'
 import toast from 'react-hot-toast'
 import { getLocalDocumentNumber, getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
+import { useAuth } from '../AuthContext'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function GadiChallan() {
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [challans, setChallans] = useState([])
   const [biltyList, setBiltyList] = useState([])
   const [loading, setLoading] = useState(true)
@@ -87,6 +91,26 @@ export default function GadiChallan() {
       }
     } catch (err) {
       console.error('Bilty fetch error:', err)
+    }
+  }
+
+  const handleDelete = async (challan) => {
+    if (challan.localDraftId || !confirmRecordDeletion()) return
+    try {
+      const token = localStorage.getItem('token')
+      const apiUrl = import.meta.env.VITE_API_URL || '/api'
+      const response = await fetch(`${apiUrl}/gadi-challan/${challan.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}`, ...recordDeletionHeaders }
+      })
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Unable to archive challan.')
+      }
+      await fetchData()
+      toast.success('Challan archived')
+    } catch (error) {
+      toast.error(error.message || 'Unable to archive challan')
     }
   }
 
@@ -472,6 +496,9 @@ export default function GadiChallan() {
                           <button onClick={() => handleEdit(c)} disabled={Boolean(c.localDraftId)} className="block w-full text-center px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold hover:bg-yellow-200 disabled:opacity-50">
                             ✏️ Edit
                           </button>
+                          {canDelete && <button onClick={() => handleDelete(c)} disabled={Boolean(c.localDraftId)} className="block w-full text-center px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200 disabled:opacity-50">
+                            Archive
+                          </button>}
                         </td>
                       </tr>
                     ))}

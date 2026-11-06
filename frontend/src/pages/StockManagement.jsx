@@ -676,9 +676,6 @@ export default function StockManagement() {
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800"> Stock History ({history.length})</h2>
-              {history.length > 0 && (
-                <button onClick={() => { if (window.confirm('Clear all history?')) saveHistory([]) }} className="text-sm text-red-600 hover:text-red-800">🗑️ Clear History</button>
-              )}
             </div>
             {history.length === 0 ? (
               <div className="p-12 text-center text-gray-500">

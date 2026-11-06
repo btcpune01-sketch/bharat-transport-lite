@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
-import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
+import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
 export default function BillList({ branchMode = false, branchCode }) {
   const { currentUser } = useAuth()
@@ -68,9 +68,9 @@ export default function BillList({ branchMode = false, branchCode }) {
   }
 
   const deleteBill = async (bill) => {
-    if (!confirmPermanentDelete()) return
+    if (!confirmRecordDeletion()) return
     try {
-      await api.delete(`/bills/${bill.id}`, { headers: permanentDeleteHeaders })
+      await api.delete(`/bills/${bill.id}`, { headers: recordDeletionHeaders })
       setBills(current => current.filter(item => item.id !== bill.id))
       setTotalBills((current) => Math.max(0, current - 1))
     } catch (err) {
