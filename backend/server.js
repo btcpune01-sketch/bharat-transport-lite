@@ -2336,18 +2336,35 @@ app.delete('/api/consignments/:id', authMiddleware, requireManualDeleteConfirmat
 // ==========================================
 app.get('/api/pod', authMiddleware, async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT * FROM pod_records ${branchCondition} ORDER BY id DESC LIMIT 200`);
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    const branch = buildBranchCondition({ branchId });
+    const result = await pool.query(
+      `SELECT * FROM pod_records ${branch.sql ? `WHERE ${branch.sql}` : ''} ORDER BY id DESC LIMIT 200`,
+      branch.params
+    );
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/pod error:', err.message); res.status(503).json({ error: 'POD records are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.post('/api/pod', authMiddleware, async (req, res) => {
   try {
-    const { lr_no, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url, branch_id } = req.body;
-    const result = await pool.query(`INSERT INTO pod_records (lr_no, branch_id, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Delivered') RETURNING *`, [lr_no, branch_id || req.user.branch_id, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url]);
-    await pool.query("UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2", [delivery_date, lr_no]);
+    const branchId = await resolveRequestBranchId(req, res, req.body);
+    if (branchId === undefined) return;
+    const { lr_no, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url } = req.body;
+    if (branchId !== null) {
+      const consignment = await pool.query(
+        'SELECT id FROM consignments WHERE lr_no = $1 AND branch_id = $2 AND COALESCE(is_deleted, FALSE) = FALSE',
+        [lr_no, branchId]
+      );
+      if (!consignment.rows[0]) return res.status(403).json({ error: 'Referenced bilty does not belong to the selected branch.' });
+    }
+    const result = await pool.query(`INSERT INTO pod_records (lr_no, branch_id, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Delivered') RETURNING *`, [lr_no, branchId, delivery_date, delivered_by, receiver_name, receiver_signature, receiver_phone, delivery_remarks, photo_url]);
+    const branch = buildBranchCondition({ branchId }, 3);
+    await pool.query(
+      `UPDATE consignments SET pod_status = 'Delivered', pod_date = $1 WHERE lr_no = $2${branch.sql ? ` AND ${branch.sql}` : ''}`,
+      [delivery_date, lr_no, ...branch.params]
+    );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -3226,9 +3243,13 @@ app.delete('/api/customers/:id', authMiddleware, requireManualDeleteConfirmation
 
 app.get('/api/gate-pass', authMiddleware, async (req, res) => {
   try {
-    const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT * FROM gate_passes ${branchCondition} ORDER BY id DESC LIMIT 100`);
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    const branch = buildBranchCondition({ branchId });
+    const result = await pool.query(
+      `SELECT * FROM gate_passes ${branch.sql ? `WHERE ${branch.sql}` : ''} ORDER BY id DESC LIMIT 100`,
+      branch.params
+    );
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/gate-pass error:', err.message); res.status(503).json({ error: 'Gate passes are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
@@ -3248,8 +3269,9 @@ app.get('/api/gate-pass/next-number', authMiddleware, async (req, res) => {
 app.post('/api/gate-pass', authMiddleware, async (req, res) => {
   if (!pool) return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
   try {
+    const branchId = await resolveRequestBranchId(req, res, req.body);
+    if (branchId === undefined) return;
     const { lr_no, vehicle_no, driver_name, driver_mobile, material_desc, quantity, weight, valid_until, issued_by } = req.body;
-    const branchId = req.body.branch_id || req.user.branch_id;
     const result = await pool.query(`SELECT pass_no FROM gate_passes WHERE pass_no LIKE $1 ORDER BY id DESC LIMIT 1`, ['BTC/GP/%']);
     let nextSerial = 1;
     if (result.rows.length > 0 && result.rows[0].pass_no) {
