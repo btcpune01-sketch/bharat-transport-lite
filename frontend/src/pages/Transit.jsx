@@ -4,8 +4,9 @@ import { formatDate } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
-export default function Transit() {
+export default function Transit({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
+  const branchQuery = branchMode && branchCode ? `branch=${encodeURIComponent(branchCode)}` : ''
   const { currentUser } = useAuth()
   const canDelete = canDeleteRecords(currentUser?.role)
   const [manifests, setManifests] = useState([])
@@ -25,7 +26,7 @@ export default function Transit() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchData = async () => {
     try {
@@ -35,14 +36,14 @@ export default function Transit() {
       const headers = { 'Authorization': `Bearer ${token}` }
 
       // Fetch Manifests
-      const resManifests = await fetch(`${apiUrl}/manifests`, { headers })
+      const resManifests = await fetch(`${apiUrl}/manifests${branchQuery ? `?${branchQuery}` : ''}`, { headers })
       if (resManifests.ok) {
         const data = await resManifests.json()
         setManifests(data.data || [])
       }
 
       // Fetch Booked LRs for selection (Limit 100 for performance)
-      const resLrs = await fetch(`${apiUrl}/consignments?status=Booked`, { headers })
+      const resLrs = await fetch(`${apiUrl}/consignments?status=Booked${branchQuery ? `&${branchQuery}` : ''}`, { headers })
       if (resLrs.ok) {
         const data = await resLrs.json()
         setAvailableLrs((data.data || []).slice(0, 100))
@@ -80,13 +81,13 @@ export default function Transit() {
         status: 'Dispatched'
       }
 
-      const res = await fetch(`${apiUrl}/manifests`, {
+      const res = await fetch(`${apiUrl}/manifests${branchQuery ? `?${branchQuery}` : ''}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ ...payload, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
       })
 
       if (res.ok) {
@@ -112,7 +113,7 @@ export default function Transit() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = import.meta.env.VITE_API_URL || '/api'
-      const response = await fetch(`${apiUrl}/manifests/${manifest.id}`, {
+      const response = await fetch(`${apiUrl}/manifests/${manifest.id}${branchQuery ? `?${branchQuery}` : ''}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, ...recordDeletionHeaders }
       })
@@ -148,7 +149,7 @@ export default function Transit() {
       <nav className="bg-gradient-to-r from-indigo-700 to-indigo-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">🔄 Transit & Manifest Management</h1>
               <p className="text-xs text-indigo-200">Hub-to-Hub Transfer & Vehicle Dispatch (TCI Style)</p>
