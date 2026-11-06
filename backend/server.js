@@ -112,26 +112,15 @@ async function ensureMigrationsRun() {
   }
 }
 app.use(async (req, res, next) => {
+  if (req.path === '/api/health') return next();
   if (process.env.VERCEL && databaseUrl && missingEnv.length === 0 && !invalidDatabaseUrl) {
     await ensureMigrationsRun();
   }
   next();
 });
 
-// ✅ FIX 4: health check
-app.get('/api/health', async (req, res) => {
-  if (!pool) return res.status(503).json({ ok: false, db: 'unavailable', count: 0 });
-  try {
-    const r = await pool.query(
-      `SELECT NOW() AS now, COUNT(*)::int AS count
-       FROM information_schema.tables
-       WHERE table_schema = current_schema()`
-    );
-    res.json({ ok: true, db: 'connected', count: r.rows[0].count, time: r.rows[0].now });
-  } catch (err) {
-    console.error('Database health check failed:', err.message);
-    res.status(503).json({ ok: false, db: 'failed', count: 0 });
-  }
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ ok: true, status: 'healthy', db: 'not_checked', time: new Date().toISOString() });
 });
 
 let branchPaymentsSchemaPromise = null;
