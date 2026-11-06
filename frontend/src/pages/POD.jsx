@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 
-export default function POD({ branchMode = false }) {
+export default function POD({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [pendingBilties, setPendingBilties] = useState([])
   const [deliveredBilties, setDeliveredBilties] = useState([])
@@ -28,7 +28,7 @@ export default function POD({ branchMode = false }) {
   useEffect(() => {
     fetchPODData()
     if (!branchMode) fetchBranches()
-  }, [branchFilter, branchMode])
+  }, [branchFilter, branchMode, branchCode])
 
   const fetchBranches = async () => {
     try {
@@ -46,7 +46,9 @@ export default function POD({ branchMode = false }) {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
-      const branchParam = branchFilter ? `?branch_id=${branchFilter}` : ''
+      const branchParam = branchMode && branchCode
+        ? `?branch=${encodeURIComponent(branchCode)}`
+        : branchFilter ? `?branch_id=${branchFilter}` : ''
       const [podRes, biltyRes] = await Promise.all([
         fetch(`${apiUrl}/pod${branchParam}`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`${apiUrl}/consignments${branchParam}`, { headers: { 'Authorization': `Bearer ${token}` } })
@@ -144,7 +146,7 @@ export default function POD({ branchMode = false }) {
             </p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => navigate('/')} className="bg-green-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-green-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
           </div>
         </div>
       </nav>
