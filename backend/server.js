@@ -2338,7 +2338,7 @@ app.get('/api/pod', authMiddleware, async (req, res) => {
   try {
     const branchId = await resolveRequestBranchId(req, res);
     if (branchId === undefined) return;
-    const branchCondition = branchId === null ? '' : 'WHERE history.branch_id = $1';
+    const branch = buildBranchCondition({ branchId });
     const result = await pool.query(
       `SELECT * FROM pod_records ${branch.sql ? `WHERE ${branch.sql}` : ''} ORDER BY id DESC LIMIT 200`,
       branch.params
@@ -3418,7 +3418,7 @@ app.get('/api/stock/history', authMiddleware, async (req, res) => {
   try {
     const branchId = await resolveRequestBranchId(req, res);
     if (branchId === undefined) return;
-    const branch = buildBranchCondition({ branchId });
+    const branchCondition = branchId === null ? '' : 'WHERE history.branch_id = $1';
     const result = await pool.query(`
       SELECT history.id, history.action, history.document_number, history.used_by,
         history.date, history.branch_id, COALESCE(branches.branch_name, branches.branch_code, 'Head Office') AS branch,
