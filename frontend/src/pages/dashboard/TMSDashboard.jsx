@@ -216,6 +216,7 @@ export default function TMSDashboard({ branch }) {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [branchSession, setBranchSession] = useState(null)
+  const [documentSeriesStatus, setDocumentSeriesStatus] = useState([])
   const isAdmin = isAdminUser && !isBranchDashboard
   const menuItems = [
     ...navigation,
@@ -266,6 +267,25 @@ export default function TMSDashboard({ branch }) {
       })
     return () => { active = false }
   }, [isAdminUser])
+
+  useEffect(() => {
+    if (!isBranchDashboard) {
+      setDocumentSeriesStatus([])
+      return undefined
+    }
+    let active = true
+    api.get('/document-series/status', { params: { branch: branchSlug } })
+      .then(response => {
+        const rows = response.data?.data
+        if (!Array.isArray(rows)) throw new Error('The server returned invalid document series data.')
+        if (active) setDocumentSeriesStatus(rows)
+      })
+      .catch(error => {
+        console.error('Unable to load branch document series on dashboard:', error)
+        if (active) setDocumentSeriesStatus([])
+      })
+    return () => { active = false }
+  }, [branchSlug, isBranchDashboard, refreshKey])
 
   const activeBranch = branchSession?.branch
     || branches.find((item) => item.url_slug === branchSlug)
@@ -781,6 +801,45 @@ export default function TMSDashboard({ branch }) {
             ))}
           </div>
         </section>
+        {isBranchDashboard && (
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-bold text-slate-900">Bilty / Bill Series Status</h2>
+              <Link to={branchPath('stationery-stock')} className="text-sm font-semibold text-blue-700 hover:underline">Manage series</Link>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-[900px] w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    {['Branch Name', 'Series Type', 'Series Start', 'Series End', 'Last Used', 'Next Number', 'Remaining', 'Status'].map(label => <th key={label} className="px-3 py-3">{label}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {documentSeriesStatus.map(row => (
+                    <tr key={`${row.branch_id}-${row.series_type}`}>
+                      <td className="px-3 py-3 font-semibold">{row.branch_name} ({row.branch_code})</td>
+                      <td className="px-3 py-3">{row.series_type === 'bilty' ? 'Bilty' : 'Bill'}</td>
+                      <td className="px-3 py-3">{row.series_start || '—'}</td>
+                      <td className="px-3 py-3">{row.series_end || '—'}</td>
+                      <td className="px-3 py-3">{row.last_used || '—'}</td>
+                      <td className="px-3 py-3 font-semibold">{row.next_number || '—'}</td>
+                      <td className="px-3 py-3">{row.remaining ?? '—'}</td>
+                      <td className="px-3 py-3">
+                        <span className={`rounded-full px-2 py-1 text-xs font-bold ${
+                          row.status === 'Khatam' ? 'bg-red-100 text-red-700'
+                            : row.status === 'Khatam Hone Wala' ? 'bg-amber-100 text-amber-800'
+                              : row.status === 'Active' ? 'bg-green-100 text-green-700'
+                                : 'bg-slate-100 text-slate-600'
+                        }`}>{row.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {!documentSeriesStatus.length && <tr><td colSpan={8} className="px-3 py-5 text-center text-slate-500">Series status is currently unavailable.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </div>
       {pendingToClear && (
         <div

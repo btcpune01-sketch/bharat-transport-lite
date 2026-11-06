@@ -276,9 +276,9 @@ async function runMigrations() {
     `CREATE TABLE IF NOT EXISTS freight_rates (id SERIAL PRIMARY KEY, from_city TEXT NOT NULL, to_city TEXT NOT NULL, material TEXT, rate_per_kg NUMERIC, rate_per_pkg NUMERIC, min_charge NUMERIC, distance_km NUMERIC, effective_from DATE, effective_to DATE, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS materials (id SERIAL PRIMARY KEY, material_name TEXT UNIQUE NOT NULL, material_code TEXT, hsn_code TEXT, category TEXT, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS routes (id SERIAL PRIMARY KEY, from_city TEXT NOT NULL, to_city TEXT NOT NULL, distance_km NUMERIC, via TEXT, estimated_days INTEGER, is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMP DEFAULT NOW())`,
-    `CREATE TABLE IF NOT EXISTS consignments (id SERIAL PRIMARY KEY, lr_no TEXT UNIQUE NOT NULL, lr_date DATE, branch_id INTEGER, branch_code TEXT, from_name TEXT, to_name TEXT, consignor_code TEXT, consignor_name TEXT, consignor_address TEXT, consignor_gst TEXT, consignee_code TEXT, consignee_name TEXT, consignee_address TEXT, consignee_gst TEXT, invoice_no TEXT, invoice_date TEXT, po_no TEXT, lorry_no TEXT, driver_name TEXT, driver_mobile TEXT, delivery_type TEXT DEFAULT 'DOOR DELIVERY', packages TEXT, no_of_packages TEXT, method_of_packing TEXT, hsn_code TEXT, actual_weight TEXT, charged_weight TEXT, material_desc TEXT, description TEXT, eway_bill_no TEXT, length TEXT, width TEXT, height TEXT, total_cft TEXT, cft_cmt TEXT, declared_value TEXT, basis_party TEXT, basis_booking TEXT DEFAULT 'TO PAY', rv_no TEXT, rv_dt TEXT, rv_am TEXT, insurance_company TEXT, policy_no TEXT, insurance_amount TEXT, freight TEXT, aoc_percent TEXT, material_mgmt_ch TEXT, material_charges TEXT, collection_charges TEXT, door_dly_charges TEXT, door_delivery TEXT, misc_charges TEXT, grand_total TEXT, status TEXT DEFAULT 'Booked', payment_status TEXT DEFAULT 'Unpaid', mr_no TEXT, pod_status TEXT DEFAULT 'Pending', pod_date DATE, pod_remarks TEXT, from_state TEXT, to_state TEXT, transporter_id TEXT, transporter_name TEXT, eway_valid_upto DATE, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS consignments (id SERIAL PRIMARY KEY, lr_no TEXT NOT NULL, lr_date DATE, branch_id INTEGER, branch_code TEXT, from_name TEXT, to_name TEXT, consignor_code TEXT, consignor_name TEXT, consignor_address TEXT, consignor_gst TEXT, consignee_code TEXT, consignee_name TEXT, consignee_address TEXT, consignee_gst TEXT, invoice_no TEXT, invoice_date TEXT, po_no TEXT, lorry_no TEXT, driver_name TEXT, driver_mobile TEXT, delivery_type TEXT DEFAULT 'DOOR DELIVERY', packages TEXT, no_of_packages TEXT, method_of_packing TEXT, hsn_code TEXT, actual_weight TEXT, charged_weight TEXT, material_desc TEXT, description TEXT, eway_bill_no TEXT, length TEXT, width TEXT, height TEXT, total_cft TEXT, cft_cmt TEXT, declared_value TEXT, basis_party TEXT, basis_booking TEXT DEFAULT 'TO PAY', rv_no TEXT, rv_dt TEXT, rv_am TEXT, insurance_company TEXT, policy_no TEXT, insurance_amount TEXT, freight TEXT, aoc_percent TEXT, material_mgmt_ch TEXT, material_charges TEXT, collection_charges TEXT, door_dly_charges TEXT, door_delivery TEXT, misc_charges TEXT, grand_total TEXT, status TEXT DEFAULT 'Booked', payment_status TEXT DEFAULT 'Unpaid', mr_no TEXT, pod_status TEXT DEFAULT 'Pending', pod_date DATE, pod_remarks TEXT, from_state TEXT, to_state TEXT, transporter_id TEXT, transporter_name TEXT, eway_valid_upto DATE, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS pod_records (id SERIAL PRIMARY KEY, lr_no TEXT NOT NULL, branch_id INTEGER, delivery_date DATE, delivered_by TEXT, receiver_name TEXT, receiver_signature TEXT, receiver_phone TEXT, delivery_remarks TEXT, photo_url TEXT, status TEXT DEFAULT 'Delivered', created_at TIMESTAMP DEFAULT NOW())`,
-    `CREATE TABLE IF NOT EXISTS bill_book (id SERIAL PRIMARY KEY, bill_no TEXT UNIQUE, bill_date DATE, branch_id INTEGER, party_name TEXT, party_code TEXT, party_gst TEXT, party_address TEXT, from_name TEXT, to_name TEXT, consignor_name TEXT, consignee_name TEXT, vehicle_no TEXT, lr_nos TEXT, amount TEXT, gst_amount TEXT, total_amount TEXT, grand_total NUMERIC DEFAULT 0, advance_received NUMERIC DEFAULT 0, balance_due NUMERIC DEFAULT 0, net_balance NUMERIC DEFAULT 0, trip_subtotal NUMERIC DEFAULT 0, gst_percent NUMERIC DEFAULT 0, invoice_no TEXT, invoice_date DATE, amount_in_words TEXT, payment_mode TEXT, payment_details TEXT, remarks TEXT, status TEXT DEFAULT 'Pending', payment_status TEXT DEFAULT 'Unpaid', mr_no TEXT, branch_code TEXT, customer_id INTEGER, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
+    `CREATE TABLE IF NOT EXISTS bill_book (id SERIAL PRIMARY KEY, bill_no TEXT, bill_date DATE, branch_id INTEGER, party_name TEXT, party_code TEXT, party_gst TEXT, party_address TEXT, from_name TEXT, to_name TEXT, consignor_name TEXT, consignee_name TEXT, vehicle_no TEXT, lr_nos TEXT, amount TEXT, gst_amount TEXT, total_amount TEXT, grand_total NUMERIC DEFAULT 0, advance_received NUMERIC DEFAULT 0, balance_due NUMERIC DEFAULT 0, net_balance NUMERIC DEFAULT 0, trip_subtotal NUMERIC DEFAULT 0, gst_percent NUMERIC DEFAULT 0, invoice_no TEXT, invoice_date DATE, amount_in_words TEXT, payment_mode TEXT, payment_details TEXT, remarks TEXT, status TEXT DEFAULT 'Pending', payment_status TEXT DEFAULT 'Unpaid', mr_no TEXT, branch_code TEXT, customer_id INTEGER, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS bill_items (id SERIAL PRIMARY KEY, bill_id INTEGER REFERENCES bill_book(id) ON DELETE RESTRICT, lr_no TEXT, invoice_no TEXT, from_name TEXT, to_name TEXT, weight_mt NUMERIC DEFAULT 0, packages INTEGER DEFAULT 0, freight NUMERIC DEFAULT 0, loading NUMERIC DEFAULT 0, unloading NUMERIC DEFAULT 0, other_charges NUMERIC DEFAULT 0, total NUMERIC DEFAULT 0, created_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS money_receipts (id SERIAL PRIMARY KEY, mr_no TEXT UNIQUE NOT NULL, mr_date DATE NOT NULL, branch_id INTEGER, party_type TEXT NOT NULL, party_name TEXT NOT NULL, bilty_id INTEGER, bilty_lr_no TEXT, bill_id INTEGER, bill_no TEXT, amount NUMERIC NOT NULL, payment_mode TEXT DEFAULT 'Cash', is_advance BOOLEAN DEFAULT FALSE, remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`,
     `CREATE TABLE IF NOT EXISTS party_ledger (id SERIAL PRIMARY KEY, party_code TEXT NOT NULL, branch_id INTEGER, transaction_date DATE, transaction_type TEXT, reference_no TEXT, debit NUMERIC DEFAULT 0, credit NUMERIC DEFAULT 0, balance NUMERIC DEFAULT 0, remarks TEXT, created_at TIMESTAMP DEFAULT NOW())`,
@@ -363,6 +363,76 @@ async function runMigrations() {
     try { await pool.query(sql); } catch (err) { console.error('Table error:', err.message); }
   }
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS document_series (
+      id SERIAL PRIMARY KEY,
+      branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+      series_type TEXT NOT NULL CHECK (series_type IN ('bilty', 'bill')),
+      prefix TEXT NOT NULL,
+      start_number BIGINT NOT NULL CHECK (start_number > 0),
+      end_number BIGINT NOT NULL CHECK (end_number >= start_number),
+      digit_width INTEGER NOT NULL DEFAULT 1 CHECK (digit_width > 0),
+      last_used_number BIGINT NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE
+      item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT conrelid::regclass AS table_name, conname
+        FROM pg_constraint
+        WHERE contype = 'u'
+          AND conrelid IN ('consignments'::regclass, 'bill_book'::regclass)
+          AND (
+            (conrelid = 'consignments'::regclass AND conkey = ARRAY[
+              (SELECT attnum FROM pg_attribute WHERE attrelid = 'consignments'::regclass AND attname = 'lr_no')
+            ]::smallint[])
+            OR
+            (conrelid = 'bill_book'::regclass AND conkey = ARRAY[
+              (SELECT attnum FROM pg_attribute WHERE attrelid = 'bill_book'::regclass AND attname = 'bill_no')
+            ]::smallint[])
+          )
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', item.table_name, item.conname);
+      END LOOP;
+    END $$;
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE
+      item RECORD;
+    BEGIN
+      FOR item IN
+        SELECT ns.nspname AS schema_name, tbl.relname AS table_name, idx.relname AS index_name
+        FROM pg_index AS indexes
+        JOIN pg_class AS tbl ON tbl.oid = indexes.indrelid
+        JOIN pg_class AS idx ON idx.oid = indexes.indexrelid
+        JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+        JOIN pg_attribute AS attr ON attr.attrelid = tbl.oid AND attr.attnum = indexes.indkey[0]
+        WHERE indexes.indisunique AND NOT indexes.indisprimary
+          AND indexes.indnatts = 1
+          AND (
+            (tbl.relname = 'consignments' AND attr.attname = 'lr_no')
+            OR (tbl.relname = 'bill_book' AND attr.attname = 'bill_no')
+          )
+      LOOP
+        EXECUTE format('DROP INDEX %I.%I', item.schema_name, item.index_name);
+      END LOOP;
+    END $$;
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS consignments_branch_lr_number_idx ON consignments (branch_id, LOWER(lr_no));
+    CREATE INDEX IF NOT EXISTS bill_book_branch_bill_number_idx ON bill_book (branch_id, LOWER(bill_no));
+    CREATE INDEX IF NOT EXISTS document_series_branch_type_idx ON document_series (branch_id, series_type);
+    CREATE UNIQUE INDEX IF NOT EXISTS document_series_one_active_branch_type_idx
+      ON document_series (branch_id, series_type) WHERE is_active = TRUE
+  `);
+
   await pool.query(`CREATE TABLE IF NOT EXISTS manifests (id SERIAL PRIMARY KEY, manifest_no TEXT UNIQUE NOT NULL, manifest_date DATE NOT NULL, branch_id INTEGER, from_branch TEXT, to_branch TEXT, vehicle_no TEXT, driver_name TEXT, driver_mobile TEXT, status TEXT DEFAULT 'Created', remarks TEXT, created_by TEXT, created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW())`);
   await pool.query(`CREATE TABLE IF NOT EXISTS manifest_items (id SERIAL PRIMARY KEY, manifest_id INTEGER REFERENCES manifests(id) ON DELETE RESTRICT, lr_no TEXT NOT NULL, branch_id INTEGER, created_at TIMESTAMP DEFAULT NOW())`);
   await pool.query(`
@@ -424,6 +494,44 @@ async function runMigrations() {
   await addColumnIfNotExists('stationery_stock_history', 'end_serial', 'TEXT');
   await addColumnIfNotExists('stationery_stock_history', 'current_running_serial', 'TEXT');
   await addColumnIfNotExists('stationery_stock_history', 'bilty_no', 'TEXT');
+  const legacySeries = await pool.query(
+    `SELECT branch_id, book_type, start_serial, end_serial
+     FROM stationery_stocks
+     WHERE book_type IN ('bilty_book', 'bill_book')
+       AND start_serial IS NOT NULL AND end_serial IS NOT NULL`
+  );
+  for (const legacy of legacySeries.rows) {
+    const seriesType = legacy.book_type === 'bilty_book' ? 'bilty' : 'bill';
+    const startMatch = String(legacy.start_serial).match(/^(.*?)(\d+)$/);
+    const endMatch = String(legacy.end_serial).match(/^(.*?)(\d+)$/);
+    if (!startMatch || !endMatch || startMatch[1] !== endMatch[1]) continue;
+    const existingSeries = await pool.query(
+      'SELECT id FROM document_series WHERE branch_id = $1 AND series_type = $2 LIMIT 1',
+      [legacy.branch_id, seriesType]
+    );
+    if (existingSeries.rowCount) continue;
+    const startNumber = BigInt(startMatch[2]);
+    const endNumber = BigInt(endMatch[2]);
+    const escapedPrefix = startMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sourceTable = seriesType === 'bilty' ? 'consignments' : 'bill_book';
+    const sourceColumn = seriesType === 'bilty' ? 'lr_no' : 'bill_no';
+    const usedResult = await pool.query(
+      `SELECT COALESCE(MAX((regexp_match(${sourceColumn}, $2))[1]::BIGINT), $3) AS last_used
+       FROM ${sourceTable}
+       WHERE branch_id = $1 AND ${sourceColumn} ~ $2
+         AND (regexp_match(${sourceColumn}, $2))[1]::BIGINT BETWEEN $4 AND $5`,
+      [legacy.branch_id, `^${escapedPrefix}([0-9]+)$`, String(startNumber - 1n),
+        startNumber.toString(), endNumber.toString()]
+    );
+    const lastUsed = BigInt(usedResult.rows[0]?.last_used || (startNumber - 1n));
+    await pool.query(
+      `INSERT INTO document_series
+         (branch_id, series_type, prefix, start_number, end_number, digit_width, last_used_number, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'migration')`,
+      [legacy.branch_id, seriesType, startMatch[1], startNumber.toString(), endNumber.toString(),
+        startMatch[2].length, lastUsed.toString()]
+    );
+  }
   await pool.query(`
     ALTER TABLE stationery_stock_history
       DROP CONSTRAINT IF EXISTS stationery_stock_history_action_check,
@@ -721,6 +829,27 @@ async function runMigrations() {
       AND bill.branch_code IS NOT NULL
       AND UPPER(TRIM(bill.branch_code)) = UPPER(TRIM(b.branch_code))
   `);
+  const activeDocumentSeries = await pool.query(
+    `SELECT id, branch_id, series_type, prefix, start_number, end_number
+     FROM document_series WHERE is_active = TRUE`
+  );
+  for (const series of activeDocumentSeries.rows) {
+    const [sourceTable, sourceColumn] = documentSeriesSources[series.series_type];
+    const pattern = `^${escapeRegex(series.prefix)}([0-9]+)$`;
+    const used = await pool.query(
+      `SELECT COALESCE(MAX((regexp_match(${sourceColumn}, $2))[1]::BIGINT), $3) AS last_used
+       FROM ${sourceTable}
+       WHERE branch_id = $1 AND ${sourceColumn} ~* $2
+         AND (regexp_match(${sourceColumn}, $2))[1]::BIGINT BETWEEN $4 AND $5`,
+      [series.branch_id, pattern, String(BigInt(series.start_number) - 1n),
+        series.start_number, series.end_number]
+    );
+    await pool.query(
+      `UPDATE document_series SET last_used_number = GREATEST(last_used_number, $1)
+       WHERE id = $2`,
+      [used.rows[0].last_used, series.id]
+    );
+  }
   await addColumnIfNotExists('consignments', 'basis_of_booking', 'TEXT');
   await addColumnIfNotExists('consignments', 'is_deleted', 'BOOLEAN DEFAULT FALSE');
   await addColumnIfNotExists('consignments', 'consignor_address', 'TEXT');
@@ -832,10 +961,10 @@ function sendLocalStorageModeResponse(req, res) {
     return res.json({ lastSerial: 0, fallback: true });
   }
   if (req.path === '/api/bills/next-number') {
-    return res.json({ bill_no: `${getBillNumberPrefix()}00001`, fallback: true });
+    return res.json({ bill_no: 'BTC/BILL/00001', fallback: true, branch_required: true });
   }
   if (req.path === '/api/next-bill') {
-    return res.json({ bill_no: `${getBillNumberPrefix()}00001`, fallback: true });
+    return res.json({ bill_no: 'BTC/BILL/00001', fallback: true, branch_required: true });
   }
   if (req.path === '/api/gadi-challan/next-number') {
     return res.json({ challan_no: 'BTC/CH/00001', fallback: true });
@@ -2022,17 +2151,267 @@ app.post('/api/branch/login', (req, res) => {
 // ==========================================
 // CONSIGNMENTS (ROLE BASED FIXED)
 // ==========================================
-async function generateBiltyNo(db = pool) {
-  const result = await db.query(`SELECT COALESCE(MAX(((regexp_match(lr_no, '([0-9]+)$'))[1])::BIGINT), 0) AS max_serial FROM consignments WHERE lr_no ~ '[0-9]+$'`);
-  const nextSerial = BigInt(result.rows[0].max_serial || 0) + 1n;
-  return `BTC-${String(nextSerial).padStart(5, '0')}`;
-}
-
 function incrementStationerySerial(value) {
   const match = String(value || '').match(/^(.*?)(\d+)$/);
   if (!match) return value || null;
   return `${match[1]}${(BigInt(match[2]) + 1n).toString().padStart(match[2].length, '0')}`;
 }
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function formatDocumentNumber(prefix, serial, width) {
+  return `${prefix}${String(serial).padStart(Number(width) || 1, '0')}`;
+}
+
+async function getBranchDocumentNumber(db, branchId, seriesType) {
+  const seriesResult = await db.query(
+    `SELECT * FROM document_series
+     WHERE branch_id = $1 AND series_type = $2 AND is_active = TRUE
+     ORDER BY id DESC LIMIT 1`,
+    [branchId, seriesType]
+  );
+  const series = seriesResult.rows[0];
+  const table = seriesType === 'bilty' ? 'consignments' : 'bill_book';
+  const column = seriesType === 'bilty' ? 'lr_no' : 'bill_no';
+  const prefix = series?.prefix || (seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/');
+  const pattern = `^${escapeRegex(prefix)}([0-9]+)$`;
+  const lastResult = await db.query(
+    `SELECT COALESCE(MAX((regexp_match(${column}, $2))[1]::BIGINT), 0) AS last_serial
+     FROM ${table}
+     WHERE branch_id = $1 AND ${column} ~* $2
+       AND ($3::BIGINT IS NULL OR (regexp_match(${column}, $2))[1]::BIGINT BETWEEN $3 AND $4)`,
+    [branchId, pattern, series?.start_number || null, series?.end_number || null]
+  );
+  const storedLast = BigInt(series?.last_used_number || 0);
+  const recordedLast = BigInt(lastResult.rows[0]?.last_serial || 0);
+  const start = BigInt(series?.start_number || 1);
+  const nextSerial = [storedLast + 1n, recordedLast + 1n, start].reduce((largest, value) =>
+    value > largest ? value : largest
+  );
+  return {
+    number: formatDocumentNumber(prefix, nextSerial, series?.digit_width || 5),
+    branch_id: branchId,
+    prefix,
+    series_id: series?.id || null,
+    series_type: seriesType,
+    start_number: series?.start_number || null,
+    end_number: series?.end_number || null,
+    last_used_number: series ? String([storedLast, recordedLast].reduce((largest, value) =>
+      value > largest ? value : largest
+    )) : String(recordedLast)
+  };
+}
+
+async function recordDocumentSeriesUsage(client, branchId, seriesType, documentNumber) {
+  if (!branchId || !documentNumber) return;
+  try {
+    await client.query('SAVEPOINT document_series_usage');
+    await updateDocumentSeriesUsage(client, branchId, seriesType, documentNumber);
+    await client.query('RELEASE SAVEPOINT document_series_usage');
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK TO SAVEPOINT document_series_usage');
+      await client.query('RELEASE SAVEPOINT document_series_usage');
+    } catch (rollbackError) {
+      console.error('Unable to roll back the document-series update savepoint:', rollbackError.message);
+    }
+    console.error('Unable to update document series usage; document save will continue:', error.message);
+  }
+}
+
+async function updateDocumentSeriesUsage(db, branchId, seriesType, documentNumber) {
+  const activeResult = await db.query(
+    `SELECT id, prefix, start_number, end_number
+     FROM document_series
+     WHERE branch_id = $1 AND series_type = $2 AND is_active = TRUE
+     LIMIT 1`,
+    [branchId, seriesType]
+  );
+  const series = activeResult.rows[0];
+  if (!series) return;
+  const match = String(documentNumber).match(new RegExp(`^${escapeRegex(series.prefix)}(\\d+)$`, 'i'));
+  if (!match) return;
+  const serial = BigInt(match[1]);
+  if (serial >= BigInt(series.start_number) && serial <= BigInt(series.end_number)) {
+    await db.query(
+      `UPDATE document_series SET last_used_number = GREATEST(last_used_number, $1)
+       WHERE id = $2`,
+      [serial.toString(), series.id]
+    );
+  }
+}
+
+const documentSeriesTypes = new Set(['bilty', 'bill']);
+const documentSeriesSources = { bilty: ['consignments', 'lr_no'], bill: ['bill_book', 'bill_no'] };
+
+app.get('/api/document-series/next-number', authMiddleware, async (req, res) => {
+  try {
+    const seriesType = String(req.query.type || '').toLowerCase();
+    if (!documentSeriesTypes.has(seriesType)) return res.status(400).json({ error: 'Series type must be bilty or bill.' });
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) {
+      return res.json({
+        number: seriesType === 'bilty' ? 'BTC-00001' : 'BTC/BILL/00001',
+        fallback: true,
+        branch_required: true,
+        series_type: seriesType
+      });
+    }
+    const [next, branchResult] = await Promise.all([
+      getBranchDocumentNumber(pool, branchId, seriesType),
+      pool.query('SELECT branch_name, branch_code FROM branches WHERE id = $1', [branchId])
+    ]);
+    const branch = branchResult.rows[0] || {};
+    res.json({
+      ...next,
+      number: next.number,
+      ...(seriesType === 'bilty' ? { lr_no: next.number } : { bill_no: next.number }),
+      branch_name: branch.branch_name || branch.branch_code || '',
+      branch_code: branch.branch_code || ''
+    });
+  } catch (error) {
+    console.error('Branch document number generation failed:', error.message);
+    res.status(503).json({ error: 'Unable to load this branch series.' });
+  }
+});
+
+app.get('/api/document-series/validate', authMiddleware, async (req, res) => {
+  try {
+    const seriesType = String(req.query.type || '').toLowerCase();
+    const documentNumber = String(req.query.number || '').trim();
+    if (!documentSeriesTypes.has(seriesType) || !documentNumber) {
+      return res.status(400).json({ error: 'A series type and document number are required.' });
+    }
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) return res.json({ duplicate: false });
+    const [table, column] = documentSeriesSources[seriesType];
+    const identifier = String(req.query.exclude_id || '').trim();
+    const params = [branchId, documentNumber];
+    const exclude = identifier ? `AND id::TEXT <> $3` : '';
+    if (identifier) params.push(identifier);
+    const result = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM ${table}
+         WHERE branch_id = $1 AND LOWER(${column}) = LOWER($2)
+           ${exclude}
+       ) AS duplicate`,
+      params
+    );
+    res.json({ duplicate: result.rows[0]?.duplicate === true, branch_id: branchId });
+  } catch (error) {
+    console.error('Branch document number validation failed:', error.message);
+    res.status(503).json({ error: 'Unable to check this branch number.' });
+  }
+});
+
+app.get('/api/document-series/status', authMiddleware, async (req, res) => {
+  try {
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    const where = branchId === null ? '' : 'WHERE b.id = $1';
+    const result = await pool.query(
+      `SELECT b.id AS branch_id, b.branch_name, b.branch_code, b.url_slug,
+              types.series_type, s.id AS series_id, s.prefix, s.start_number,
+              s.end_number, s.digit_width, s.last_used_number
+       FROM branches AS b
+       CROSS JOIN (VALUES ('bilty'::TEXT), ('bill'::TEXT)) AS types(series_type)
+       LEFT JOIN document_series AS s
+         ON s.branch_id = b.id AND s.series_type = types.series_type AND s.is_active = TRUE
+       ${where}
+       ORDER BY b.branch_name, types.series_type`,
+      branchId === null ? [] : [branchId]
+    );
+    const data = result.rows.map((row) => {
+      const start = row.start_number == null ? null : BigInt(row.start_number);
+      const end = row.end_number == null ? null : BigInt(row.end_number);
+      const last = row.last_used_number == null ? null : BigInt(row.last_used_number);
+      const next = start === null ? null : (last + 1n > start ? last + 1n : start);
+      const remaining = end === null || next === null ? null : Number(end >= next ? end - next + 1n : 0n);
+      const status = remaining === null
+        ? 'Series Not Added'
+        : remaining === 0
+          ? 'Khatam'
+          : remaining <= 10
+            ? 'Khatam Hone Wala'
+            : 'Active';
+      return {
+        ...row,
+        series_start: start === null ? null : formatDocumentNumber(row.prefix, start, row.digit_width),
+        series_end: end === null ? null : formatDocumentNumber(row.prefix, end, row.digit_width),
+        last_used: last === null || last < start ? null : formatDocumentNumber(row.prefix, last, row.digit_width),
+        next_number: next === null ? null : formatDocumentNumber(row.prefix, next, row.digit_width),
+        remaining,
+        status
+      };
+    });
+    res.json({ data });
+  } catch (error) {
+    console.error('Branch document series status failed:', error.message);
+    res.status(503).json({ error: 'Unable to load branch series status.' });
+  }
+});
+
+app.post('/api/document-series', authMiddleware, async (req, res) => {
+  let client;
+  try {
+    const seriesType = String(req.body?.series_type || '').toLowerCase();
+    const prefix = String(req.body?.prefix || '').trim();
+    const startNumber = Number(req.body?.start_number);
+    const endNumber = Number(req.body?.end_number);
+    if (!documentSeriesTypes.has(seriesType)) return res.status(400).json({ error: 'Series type must be bilty or bill.' });
+    if (!/^[A-Za-z0-9/-]+$/.test(prefix) || /\d$/.test(prefix)) {
+      return res.status(400).json({ error: 'Enter a valid series prefix, such as BTC-.' });
+    }
+    if (!Number.isSafeInteger(startNumber) || startNumber <= 0 ||
+        !Number.isSafeInteger(endNumber) || endNumber < startNumber) {
+      return res.status(400).json({ error: 'Enter a valid start and end number.' });
+    }
+    const branchId = await resolveRequestBranchId(req, res, req.body);
+    if (branchId === undefined) return;
+    if (!branchId) return res.status(400).json({ error: 'Select a branch before adding a series.' });
+
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`document-series:${branchId}:${seriesType}`]);
+    const overlap = await client.query(
+      `SELECT id FROM document_series
+       WHERE branch_id = $1 AND series_type = $2 AND LOWER(prefix) = LOWER($3)
+         AND start_number <= $5 AND end_number >= $4
+       LIMIT 1`,
+      [branchId, seriesType, prefix, startNumber, endNumber]
+    );
+    if (overlap.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Ye range pehle se is branch me hai' });
+    }
+    await client.query(
+      'UPDATE document_series SET is_active = FALSE WHERE branch_id = $1 AND series_type = $2 AND is_active = TRUE',
+      [branchId, seriesType]
+    );
+    const inserted = await client.query(
+      `INSERT INTO document_series
+         (branch_id, series_type, prefix, start_number, end_number, digit_width, last_used_number, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, branch_id, series_type, prefix, start_number, end_number, digit_width, last_used_number, is_active`,
+      [branchId, seriesType, prefix, startNumber, endNumber,
+        String(startNumber).length, startNumber - 1, req.user.username || 'Unknown']
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ data: inserted.rows[0] });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch((rollbackError) =>
+      console.error('Document series rollback failed:', rollbackError.message)
+    );
+    console.error('Document series creation failed:', error.message);
+    res.status(500).json({ error: 'Unable to add this document series.' });
+  } finally {
+    client?.release();
+  }
+});
 
 app.get('/api/consignments/track', async (req, res) => {
   try {
@@ -2046,7 +2425,11 @@ app.get('/api/consignments/track', async (req, res) => {
 
 app.get('/api/consignments/next-number', authMiddleware, async (req, res) => {
   try {
-    res.json({ lr_no: await generateBiltyNo() });
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) return res.json({ lr_no: 'BTC-00001', fallback: true, branch_required: true });
+    const next = await getBranchDocumentNumber(pool, branchId, 'bilty');
+    res.json({ ...next, lr_no: next.number });
   } catch (err) {
     console.error('Consignment number generation error:', err.message);
     res.json({ lr_no: 'BTC-00001', fallback: true });
@@ -2055,7 +2438,11 @@ app.get('/api/consignments/next-number', authMiddleware, async (req, res) => {
 
 app.get('/api/next-lr', authMiddleware, async (req, res) => {
   try {
-    res.json({ lr_no: await generateBiltyNo() });
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) return res.json({ lr_no: 'BTC-00001', fallback: true, branch_required: true });
+    const next = await getBranchDocumentNumber(pool, branchId, 'bilty');
+    res.json({ ...next, lr_no: next.number });
   } catch (error) {
     console.error('LR number generation error:', error.message);
     res.json({ lr_no: 'BTC-00001', fallback: true });
@@ -2113,11 +2500,16 @@ app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, re
     const listCond = buildBranchCondition(consignmentBranch, 1);
     let result;
     if (lrNumber) {
-      if (isAdmin) {
-        result = await pool.query('SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1', [lrNumber]);
-      } else {
-        result = await pool.query('SELECT id, lr_no FROM consignments WHERE LOWER(lr_no) = LOWER($1) AND branch_id = $2 AND COALESCE(is_deleted, FALSE) = FALSE LIMIT 1', [lrNumber, userBranchId]);
+      if (isAdmin && !effectiveBranchId) {
+        return res.status(400).json({ error: 'Select a branch before looking up an LR number.' });
       }
+      const numberBranch = buildBranchCondition({ branchId: effectiveBranchId }, 2);
+      result = await pool.query(
+        `SELECT id, lr_no FROM consignments
+         WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE
+         ${numberBranch.sql ? `AND ${numberBranch.sql}` : ''} LIMIT 1`,
+        [lrNumber, ...numberBranch.params]
+      );
     } else if (isAdmin) {
       if (search) {
         result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${searchCond.sql ? `AND ${searchCond.sql}` : ''} AND lr_no ILIKE $1 ORDER BY (lr_no = $2) DESC, id DESC LIMIT 100`, [`%${search}%`, search, ...searchCond.params]);
@@ -2184,8 +2576,18 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     if (c.mr_active !== true) {
       for (const key of Object.keys(c)) { if (key.startsWith('mr_')) delete c[key]; }
     }
-    if (!c.branch_id) c.branch_id = req.user.branch_id;
-    if (!c.branch_code && req.user.branch_code) c.branch_code = req.user.branch_code;
+    if (req.user.role === 'admin') {
+      const selectedBranchId = await resolveAdminBranchId(req, res, c);
+      if (selectedBranchId === undefined) return;
+      if (!selectedBranchId) return res.status(400).json({ error: 'Select a branch before creating a Bilty.' });
+      c.branch_id = selectedBranchId;
+      const branchResult = await client.query('SELECT branch_code FROM branches WHERE id = $1', [selectedBranchId]);
+      c.branch_code = c.branch_code || branchResult.rows[0]?.branch_code || null;
+    } else {
+      c.branch_id = safeUserBranchId(req);
+      if (!c.branch_id) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+      if (!c.branch_code && req.user.branch_code) c.branch_code = req.user.branch_code;
+    }
     if (!c.status) c.status = 'Booked';
     if (!c.payment_status) c.payment_status = c.basis_booking === 'PAID' ? 'Paid' : 'Unpaid';
     if (!c.created_by) c.created_by = req.user.username;
@@ -2196,14 +2598,8 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     
     await client.query('BEGIN');
     transactionStarted = true;
-    await client.query('SELECT pg_advisory_xact_lock($1)', [823741905]);
-    if (!c.lr_no) c.lr_no = await generateBiltyNo(client);
-    const existing = await client.query('SELECT 1 FROM consignments WHERE LOWER(lr_no) = LOWER($1) LIMIT 1', [c.lr_no]);
-    if (existing.rowCount > 0) {
-      await client.query('ROLLBACK');
-      transactionStarted = false;
-      return res.status(409).json({ error: 'This Bilty No already exists' });
-    }
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`document-series:${c.branch_id}:bilty`]);
+    if (!c.lr_no) c.lr_no = (await getBranchDocumentNumber(client, c.branch_id, 'bilty')).number;
     const colRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'consignments'");
     const validCols = new Set(colRes.rows.map(r => r.column_name));
     const finalKeys = [];
@@ -2213,6 +2609,7 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     }
     const placeholders = finalKeys.map((_, i) => "$" + (i + 1)).join(", ");
     const result = await client.query("INSERT INTO consignments (" + finalKeys.join(", ") + ") VALUES (" + placeholders + ") RETURNING *", finalVals);
+    await recordDocumentSeriesUsage(client, c.branch_id, 'bilty', result.rows[0].lr_no);
     await useStock(client, 'bilty_book', result.rows[0].lr_no, req.user.username, c.branch_id);
     let stationeryWarning = null;
     if (c.branch_id) {
@@ -2266,7 +2663,6 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     if (transactionStarted) {
       try { await client.query('ROLLBACK'); } catch (rollbackErr) { console.error('Consignment transaction rollback failed:', rollbackErr.message); }
     }
-    if (err.code === '23505') return res.status(409).json({ error: 'This Bilty No already exists' });
     if (err.code === '42703') return res.status(400).json({ error: 'Invalid field in request. Please check the data.' });
     if (err.code === 'STATIONERY_STOCK_UNAVAILABLE') return res.status(409).json({ error: err.message });
     
@@ -2312,6 +2708,11 @@ app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
     if (branchId !== null) values.push(branchId);
     const result = await pool.query(`UPDATE consignments SET ${setClause} WHERE id = $${values.length - (branchId === null ? 0 : 1)}${branchCondition} RETURNING *`, values);
     if (!result.rows[0]) return res.status(404).json({ error: 'Bilty not found.' });
+    try {
+      await updateDocumentSeriesUsage(pool, result.rows[0].branch_id, 'bilty', result.rows[0].lr_no);
+    } catch (seriesError) {
+      console.error('Unable to update Bilty series usage after edit:', seriesError.message);
+    }
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -2780,8 +3181,12 @@ app.get(['/api/bills', '/api/bill-list'], authMiddleware, async (req, res) => {
 
 app.get('/api/bills/last-serial', authMiddleware, async (req, res) => {
   try {
-    const { lastSerial } = await getLastBillSerial();
-    res.json({ lastSerial });
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) return res.json({ lastSerial: 0, fallback: true, branch_required: true });
+    const next = await getBranchDocumentNumber(pool, branchId, 'bill');
+    const serial = next.number.match(/(\d+)$/);
+    res.json({ lastSerial: serial ? Number(serial[1]) - 1 : 0, branch_id: branchId });
   } catch (err) {
     console.error('Bill serial query failed; returning the first serial as a fallback:', err.message);
     res.json({ lastSerial: 0, fallback: true });
@@ -2843,57 +3248,44 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
   let client;
   try {
     client = await pool.connect();
-    await client.query('BEGIN');
-    await client.query('SELECT pg_advisory_xact_lock(260627001)');
     const bill = Object.fromEntries(Object.entries(req.body).filter(([key]) => billFields.includes(key)));
     const items = Array.isArray(req.body.items) ? req.body.items : [];
     if (req.user.role !== 'admin') {
       bill.branch_id = safeUserBranchId(req);
       if (!bill.branch_id) throw new Error('Your account is not assigned to a branch.');
-    } else if (!bill.branch_id && req.body.branch) {
-      const branchResult = await client.query(
-        `SELECT id, branch_code FROM branches
-         WHERE LOWER(COALESCE(url_slug, '')) = LOWER($1)
-            OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
-         LIMIT 1`,
-        [String(req.body.branch).trim()]
-      );
-      if (!branchResult.rows[0]) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'The selected branch was not found.' });
-      }
-      bill.branch_id = branchResult.rows[0].id;
-      bill.branch_code = branchResult.rows[0].branch_code;
-    } else if (!bill.branch_id) {
     } else {
       const selectedBranchId = await resolveAdminBranchId(req, res, req.body);
-      if (selectedBranchId === undefined) {
-        await client.query('ROLLBACK');
-        return;
-      }
+      if (selectedBranchId === undefined) return;
+      if (!selectedBranchId) return res.status(400).json({ error: 'Select a branch before creating a Bill.' });
       bill.branch_id = selectedBranchId;
+    }
+    if (!bill.branch_code) {
+      const branchResult = await client.query('SELECT branch_code FROM branches WHERE id = $1', [bill.branch_id]);
+      bill.branch_code = branchResult.rows[0]?.branch_code || null;
     }
     if (!bill.bill_date) bill.bill_date = new Date().toISOString().split('T')[0];
     if (!bill.status) bill.status = 'Pending';
     if (!bill.payment_status) bill.payment_status = 'Unpaid';
     bill.created_by = req.user.username;
     if (typeof bill.bill_no === 'string') bill.bill_no = bill.bill_no.trim();
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`document-series:${bill.branch_id}:bill`]);
     if (!bill.bill_no) {
-      const serialResult = await client.query(`SELECT COALESCE(MAX(SUBSTRING(bill_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial FROM bill_book WHERE bill_no LIKE 'BTC/BILL/%'`);
-      bill.bill_no = `BTC/BILL/${String(Number(serialResult.rows[0].last_serial) + 1).padStart(5, '0')}`;
+      bill.bill_no = (await getBranchDocumentNumber(client, bill.branch_id, 'bill')).number;
     }
     const fields = Object.keys(bill);
     const values = Object.values(bill);
     const result = await client.query(`INSERT INTO bill_book (${fields.join(', ')}) VALUES (${fields.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     await insertBillItems(client, result.rows[0].id, items);
+    await recordDocumentSeriesUsage(client, bill.branch_id, 'bill', result.rows[0].bill_no);
     await useStock(client, 'bill_book', result.rows[0].bill_no, req.user.username, bill.branch_id);
     await client.query('COMMIT');
     res.status(201).json({ ...result.rows[0], items });
   } catch (err) {
     if (client) await client.query('ROLLBACK').catch((rollbackError) => console.error('Bill transaction rollback failed:', rollbackError.message));
     console.error('POST /api/bills error:', err.message);
-    res.status(err.code === '23505' ? 409 : err.message === 'Your account is not assigned to a branch.' ? 403 : 500)
-      .json({ error: err.code === '23505' ? 'Bill number already exists' : err.message });
+    res.status(err.message === 'Your account is not assigned to a branch.' ? 403 : 500)
+      .json({ error: err.message });
   } finally { client?.release(); }
 });
 
@@ -2926,11 +3318,12 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
       [req.params.id]
     );
     await insertBillItems(client, req.params.id, items);
+    await recordDocumentSeriesUsage(client, result.rows[0].branch_id, 'bill', result.rows[0].bill_no);
     await client.query('COMMIT');
     res.json({ ...result.rows[0], items });
   } catch (err) {
     await client.query('ROLLBACK');
-    res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Bill number already exists' : err.message });
+    res.status(500).json({ error: err.message });
   } finally { client.release(); }
 });
 
@@ -3953,7 +4346,7 @@ app.get('/api/backup/export', authMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can backup data' });
     console.log('📦 Starting full database backup...');
     await ensureBranchPaymentsSchema();
-    const tables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records', 'branch_payments', 'branch_ledger'];
+    const tables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'document_series', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records', 'branch_payments', 'branch_ledger'];
     const backupData = { backup_date: new Date().toISOString(), software_version: '6.0', taken_by: req.user.username, data: {} };
     for (const table of tables) {
       try {
@@ -3978,7 +4371,7 @@ app.post('/api/backup/import', authMiddleware, async (req, res) => {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can restore data' });
     const backupData = req.body.data;
     await ensureBranchPaymentsSchema();
-    const backupTables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records', 'branch_payments', 'branch_ledger'];
+    const backupTables = ['branches', 'users', 'parties', 'customers', 'drivers', 'vehicles', 'freight_rates', 'materials', 'routes', 'consignments', 'bill_book', 'document_series', 'bill_items', 'money_receipts', 'party_ledger', 'expenses', 'claims', 'commissions', 'audit_logs', 'gate_passes', 'gadi_challans', 'trips', 'rate_contracts', 'manifests', 'manifest_items', 'pod_records', 'branch_payments', 'branch_ledger'];
     if (!backupData || !backupData.data || typeof backupData.data !== 'object' || Array.isArray(backupData.data)) {
       return res.status(400).json({ error: 'Invalid backup file format' });
     }
@@ -4092,39 +4485,29 @@ app.post('/api/migrate/fix-branches', authMiddleware, async (req, res) => {
 // ==========================================
 // BILL NUMBER GENERATION ENDPOINTS
 // ==========================================
-function getBillNumberPrefix() {
-  return 'BTC/BILL/';
-}
-
-async function getLastBillSerial() {
-  const prefix = getBillNumberPrefix();
-  const result = await pool.query(
-    `SELECT COALESCE(MAX(SUBSTRING(bill_no FROM '[0-9]+$')::BIGINT), 0) AS last_serial
-     FROM bill_book
-     WHERE bill_no LIKE $1 AND bill_no ~ $2`,
-    [`${prefix}%`, `^${prefix}[0-9]+$`]
-  );
-  return { prefix, lastSerial: Number(result.rows[0].last_serial) || 0 };
-}
-
 app.get('/api/bills/next-number', authMiddleware, async (req, res) => {
   try {
-    const { prefix, lastSerial } = await getLastBillSerial();
-    res.json({ bill_no: `${prefix}${String(lastSerial + 1).padStart(5, '0')}` });
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) return res.json({ bill_no: 'BTC/BILL/00001', fallback: true, branch_required: true });
+    const next = await getBranchDocumentNumber(pool, branchId, 'bill');
+    res.json({ ...next, bill_no: next.number });
   } catch (err) {
-    const prefix = getBillNumberPrefix();
     console.error('Bill number query failed; returning the first serial as a fallback:', err.message);
-    res.json({ bill_no: `${prefix}00001`, fallback: true });
+    res.json({ bill_no: 'BTC/BILL/00001', fallback: true });
   }
 });
 
 app.get('/api/next-bill', authMiddleware, async (req, res) => {
   try {
-    const { prefix, lastSerial } = await getLastBillSerial();
-    res.json({ bill_no: `${prefix}${String(lastSerial + 1).padStart(5, '0')}` });
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    if (!branchId) return res.json({ bill_no: 'BTC/BILL/00001', fallback: true, branch_required: true });
+    const next = await getBranchDocumentNumber(pool, branchId, 'bill');
+    res.json({ ...next, bill_no: next.number });
   } catch (error) {
     console.error('Bill number query failed; returning the first serial:', error.message);
-    res.json({ bill_no: `${getBillNumberPrefix()}00001`, fallback: true });
+    res.json({ bill_no: 'BTC/BILL/00001', fallback: true });
   }
 });
 

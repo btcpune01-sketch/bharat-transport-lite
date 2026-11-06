@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import api from '../../api'
+import api, { documentSeriesAPI } from '../../api'
 
 const bookTypes = [
   { key: 'bilty_book', label: 'Bilty Book' },
@@ -50,6 +50,13 @@ export default function StationeryStockBranch({ branchCode }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [documentSeries, setDocumentSeries] = useState([])
+  const [seriesForm, setSeriesForm] = useState({
+    series_type: 'bilty',
+    prefix: 'BTC-',
+    start_number: '',
+    end_number: ''
+  })
 
   async function loadStock() {
     setError('')
@@ -68,6 +75,42 @@ export default function StationeryStockBranch({ branchCode }) {
   useEffect(() => {
     if (branchSlug) loadStock()
   }, [branchSlug])
+
+  async function loadDocumentSeries() {
+    try {
+      const response = await documentSeriesAPI.getStatus({ branch: branchSlug })
+      if (!Array.isArray(response.data?.data)) throw new Error('The server returned invalid document series data.')
+      setDocumentSeries(response.data.data)
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || requestError.message || 'Unable to load Bilty / Bill series status.')
+    }
+  }
+
+  useEffect(() => {
+    if (branchSlug) loadDocumentSeries()
+  }, [branchSlug])
+
+  async function submitDocumentSeries(event) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setNotice('')
+    try {
+      await documentSeriesAPI.add({
+        ...seriesForm,
+        branch: branchSlug,
+        start_number: Number(seriesForm.start_number),
+        end_number: Number(seriesForm.end_number)
+      })
+      setNotice('Series saved and activated for this branch.')
+      setSeriesForm(previous => ({ ...previous, start_number: '', end_number: '' }))
+      await loadDocumentSeries()
+    } catch (requestError) {
+      setError(requestError.response?.data?.error || requestError.message || 'Unable to save this document series.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const history = useMemo(() => stock
     .flatMap((item) => (item.history || []).map((entry) => ({
@@ -153,6 +196,70 @@ export default function StationeryStockBranch({ branchCode }) {
 
         {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         {notice && <p role="status" className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{notice}</p>}
+
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900">Bilty / Bill Series Status</h2>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-[900px] w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                  {['Branch Name', 'Series Type', 'Series Start', 'Series End', 'Last Used', 'Next Number', 'Remaining', 'Status'].map(label => <th key={label} className="px-3 py-3">{label}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {documentSeries.map(row => (
+                  <tr key={`${row.branch_id}-${row.series_type}`}>
+                    <td className="px-3 py-3 font-semibold">{row.branch_name} ({row.branch_code})</td>
+                    <td className="px-3 py-3">{row.series_type === 'bilty' ? 'Bilty' : 'Bill'}</td>
+                    <td className="px-3 py-3">{row.series_start || '—'}</td>
+                    <td className="px-3 py-3">{row.series_end || '—'}</td>
+                    <td className="px-3 py-3">{row.last_used || '—'}</td>
+                    <td className="px-3 py-3 font-semibold">{row.next_number || '—'}</td>
+                    <td className="px-3 py-3">{row.remaining ?? '—'}</td>
+                    <td className="px-3 py-3">
+                      <span className={`rounded-full px-2 py-1 text-xs font-bold ${
+                        row.status === 'Khatam' ? 'bg-red-100 text-red-700'
+                          : row.status === 'Khatam Hone Wala' ? 'bg-amber-100 text-amber-800'
+                            : row.status === 'Active' ? 'bg-green-100 text-green-700'
+                              : 'bg-slate-100 text-slate-600'
+                      }`}>{row.status}</span>
+                    </td>
+                  </tr>
+                ))}
+                {!documentSeries.length && <tr><td colSpan={8} className="px-3 py-6 text-center text-slate-500">No branch series found.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <form onSubmit={submitDocumentSeries} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900">Add New Printed Series</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-sm font-semibold text-slate-700">
+              Series Type
+              <select value={seriesForm.series_type} onChange={event => setSeriesForm(previous => ({ ...previous, series_type: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+                <option value="bilty">Bilty</option>
+                <option value="bill">Bill</option>
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-700">
+              Series Prefix
+              <input required value={seriesForm.prefix} onChange={event => setSeriesForm(previous => ({ ...previous, prefix: event.target.value }))} placeholder="BTC-" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+            <label className="text-sm font-semibold text-slate-700">
+              Start Number
+              <input required type="number" min="1" value={seriesForm.start_number} onChange={event => setSeriesForm(previous => ({ ...previous, start_number: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+            <label className="text-sm font-semibold text-slate-700">
+              End Number
+              <input required type="number" min="1" value={seriesForm.end_number} onChange={event => setSeriesForm(previous => ({ ...previous, end_number: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+            </label>
+          </div>
+          <p className="mt-2 text-xs text-blue-700">This series will be added to {branchSlug} branch only.</p>
+          <button type="submit" disabled={saving} className="mt-4 rounded-lg bg-blue-700 px-5 py-2 font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save Series'}
+          </button>
+        </form>
 
         <section aria-label="Assigned stationery stock" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {bookTypes.map((book) => {

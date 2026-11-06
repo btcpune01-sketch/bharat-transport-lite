@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import api from '../api'
+import api, { documentSeriesAPI } from '../api'
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
 import toast from 'react-hot-toast'
-import { getNextSerialNumber } from '../utils/billSerial'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
@@ -23,6 +22,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
   const [historyDate, setHistoryDate] = useState('')
   const [printOption, setPrintOption] = useState('original')
   const backupInputRef = useRef(null)
+  const billNumberRequest = useRef(0)
+  const [branches, setBranches] = useState([])
+  const [selectedBranchCode, setSelectedBranchCode] = useState('')
   
   const [lrSearch, setLrSearch] = useState('')
   const [biltyLoading, setBiltyLoading] = useState(false)
@@ -60,18 +62,45 @@ export default function BillEntry({ branchMode = false, branchCode }) {
 
   useEffect(() => {
     if (id) loadBill(id)
-    else fetchNextBillNo()
     fetchHistory()
   }, [id])
 
-  const fetchNextBillNo = async () => {
+  useEffect(() => {
+    if (branchMode) return
+    api.get('/branches')
+      .then(response => {
+        const branchList = response.data?.data
+        if (!Array.isArray(branchList)) throw new Error('The server returned an invalid branch list.')
+        setBranches(branchList)
+      })
+      .catch(error => console.error('Unable to load branches for Bill entry:', error))
+  }, [branchMode])
+
+  useEffect(() => {
+    if (id) return
+    const branch = branchMode ? branchCode : selectedBranchCode
+    if (!branch) {
+      billNumberRequest.current += 1
+      setBillData(previous => ({ ...previous, invNo: '' }))
+      return
+    }
+    setBillData(previous => ({ ...previous, invNo: '' }))
+    fetchNextBillNo(branch)
+  }, [id, branchMode, branchCode, selectedBranchCode])
+
+  const fetchNextBillNo = async (branch = (branchMode ? branchCode : selectedBranchCode)) => {
+    const requestId = ++billNumberRequest.current
+    if (!branch) return
     try {
-      const nextSerial = await getNextSerialNumber()
-      setBillData(prev => prev.invNo ? prev : ({ ...prev, invNo: nextSerial }))
+      const response = await documentSeriesAPI.getNextNumber('bill', branch)
+      const nextSerial = response.data?.bill_no || response.data?.number
+      if (!nextSerial) throw new Error('The server returned an invalid bill number.')
+      if (requestId !== billNumberRequest.current) return
+      setBillData(prev => ({ ...prev, invNo: nextSerial }))
     } catch (error) {
-      console.warn('Unable to query the next bill number; using a local fallback:', error)
-      setBillData(prev => prev.invNo ? prev : ({ ...prev, invNo: getLocalBillNumber() }))
-      toast('Database unavailable. A local bill number was generated; check it before saving.', { icon: '⚠️' })
+      if (requestId !== billNumberRequest.current) return
+      console.warn('Unable to query the branch bill series; using a local fallback:', error)
+      setBillData(prev => ({ ...prev, invNo: getLocalBillNumber() }))
     }
   }
 
@@ -133,6 +162,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     try {
       const res = await api.get(`/bills/${billId}`)
       setBillData(prev => ({ ...prev, ...mapBillToForm(res.data) }))
+      if (res.data.branch_code) setSelectedBranchCode(res.data.branch_code)
     } catch (err) {
       alert(err.response?.data?.error || 'Unable to load bill for editing.')
       navigate(branchPath('bill-list'))
@@ -307,14 +337,33 @@ export default function BillEntry({ branchMode = false, branchCode }) {
 
   const saveInvoice = async () => {
     if (!billData.partyName) { alert("Party Name zaroori hai!"); return }
+    const branch = branchMode ? branchCode : selectedBranchCode
+    if (!branch) { alert('Select a branch before saving this Bill.'); return }
+    if (billData.invNo.trim()) {
+      try {
+        const duplicateCheck = await documentSeriesAPI.validate({
+          type: 'bill',
+          number: billData.invNo.trim(),
+          branch,
+          exclude_id: id || undefined
+        })
+        if (duplicateCheck.data?.duplicate &&
+            !window.confirm('Ye number is branch me pehle use ho chuka hai, kya aap aage badhna chahte ho? Yes / No')) return
+      } catch (validationError) {
+        console.warn('Bill duplicate check unavailable; continuing with save:', validationError)
+      }
+    }
     setLoading(true)
     try {
       const calculated = calculate(billData)
       const payload = {
-        ...(branchMode ? {
-          branch: branchCode,
-          branch_code: JSON.parse(localStorage.getItem('branch_session') || 'null')?.branch?.branch_code
-        } : {}),
+        branch,
+        branch_code: branchMode
+          ? JSON.parse(localStorage.getItem('branch_session') || 'null')?.branch?.branch_code
+          : branches.find(item => item.branch_code === selectedBranchCode)?.branch_code,
+        branch_id: branchMode
+          ? JSON.parse(localStorage.getItem('branch_session') || 'null')?.branch?.id
+          : branches.find(item => item.branch_code === selectedBranchCode)?.id,
         bill_no: billData.invNo,
         bill_date: billData.billDate,
         party_name: billData.partyName,
@@ -403,7 +452,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
         rows: [{ date: '', lr: '', inv: '', from: '', to: '', wt: '', load: '', unload: '', oth: '', freight: '', total: '0.00' }]
       })
       setLrSearch('')
-      fetchNextBillNo()
+      fetchNextBillNo(branchMode ? branchCode : selectedBranchCode)
       setAddedBilts([])
     }
   }
@@ -624,6 +673,15 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       {/* NO PRINT CONTROLS */}
       <div className="no-print">
         <div style={{color:'white', fontSize:'12px', fontWeight:'bold', marginRight:'10px'}}>BTC MANAGER</div>
+        {branchMode
+          ? <span className="text-sm font-bold text-white">{`Branch: ${branchCode}`}</span>
+          : <label className="flex items-center gap-2 text-sm font-bold text-white">
+              Branch
+              <select value={selectedBranchCode} onChange={(event) => setSelectedBranchCode(event.target.value)} required className="rounded px-2 py-1 text-slate-900">
+                <option value="">Select branch</option>
+                {branches.map(branch => <option key={branch.id} value={branch.branch_code}>{branch.branch_code} - {branch.branch_name}</option>)}
+              </select>
+            </label>}
         {loading && <span style={{color:'yellow', fontWeight:'bold'}}>Loading...</span>}
         <button className="btn" style={{background:'#2e7d32'}} onClick={addRow}>+ Row</button>
         <button className="btn" style={{background:'#4caf50'}} onClick={newBill}>New Bill</button>

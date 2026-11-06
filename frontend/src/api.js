@@ -123,7 +123,7 @@ export const itemAPI = {
 }
 
 export const biltyAPI = {
-  getAll: (params) => api.get('/consignments', { params }), getNextNumber: () => api.get('/consignments/next-number'),
+  getAll: (params) => api.get('/consignments', { params }), getNextNumber: (params) => api.get('/document-series/next-number', { params: { ...params, type: 'bilty' } }),
   getById: (id) => api.get(`/consignments/${id}`), getOne: (lr_no) => api.get(`/consignments/${lr_no}`),
   search: (query) => api.get('/consignments', { params: { search: query } }),
   getByBranch: (branch) => api.get('/consignments', { params: { branch } }),
@@ -135,6 +135,13 @@ export const billAPI = {
   getAll: (params) => api.get('/bills', { params }), getOne: (bill_no) => api.get(`/bills/${bill_no}`),
   create: (data) => api.post('/bills', data), update: (id, data) => api.put(`/bills/${id}`, data),
   addPayment: (id, data) => api.post(`/bills/${id}/payments`, data), delete: (id, config) => api.delete(`/bills/${id}`, config)
+}
+
+export const documentSeriesAPI = {
+  getNextNumber: (type, branch) => api.get('/document-series/next-number', { params: { type, ...(branch ? { branch } : {}) } }),
+  validate: (params) => api.get('/document-series/validate', { params }),
+  getStatus: (params) => api.get('/document-series/status', { params }),
+  add: (data) => api.post('/document-series', data)
 }
 
 export const podAPI = { getAll: () => api.get('/pod'), getByLR: (lr_no) => api.get(`/pod/${lr_no}`), create: (data) => api.post('/pod', data) }

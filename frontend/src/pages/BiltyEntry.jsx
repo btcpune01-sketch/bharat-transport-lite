@@ -72,14 +72,12 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
   const navigate = useNavigate()
   const { id } = useParams()
   const [branchCode, setBranchCode] = useState('')
+  const [branchName, setBranchName] = useState('')
   const [branchId, setBranchId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [numberLoading, setNumberLoading] = useState(true)
-  const [numberError, setNumberError] = useState(false)
+  const lrGenerationRequest = useRef(0)
   const [isLrEditable, setIsLrEditable] = useState(false)
-  const [lrError, setLrError] = useState('')
-  const [lrChecking, setLrChecking] = useState(false)
-  const lrCheckRequest = useRef(0)
   const [mrActive, setMrActive] = useState(false)
   const [customers, setCustomers] = useState([])
 
@@ -117,6 +115,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
         if (!active || !branch?.id || !branch?.branch_code) throw new Error('The selected branch could not be loaded.')
         setBranchId(Number(branch.id))
         setBranchCode(branch.branch_code)
+        setBranchName(branch.branch_name || branch.name || '')
         setFormData(previous => ({ ...previous, branch_id: Number(branch.id), branch_code: branch.branch_code }))
       }
       loadBranch().catch(error => {
@@ -135,7 +134,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
   useEffect(() => {
     fetchCustomers()
     if (!id) {
-      generateLRNo()
       return
     }
     setNumberLoading(true)
@@ -173,6 +171,9 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
           grand_total: total,
           amount_in_words: numberToWords(total)
         }))
+        setBranchId(Number(data.branch_id) || null)
+        setBranchCode(data.branch_code || '')
+        setBranchName(data.branch_name || data.branch_code || '')
         setIsLrEditable(true)
         setMrActive(Boolean(data.mr_active))
       })
@@ -182,6 +183,16 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       })
       .finally(() => setNumberLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (id) return
+    if (!branchCode) {
+      setNumberLoading(false)
+      setFormData(previous => ({ ...previous, lr_no: '' }))
+      return
+    }
+    generateLRNo(branchCode)
+  }, [id, branchCode])
 
   const fetchCustomers = async () => {
     try {
@@ -195,66 +206,34 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
     }
   }
 
-  const generateLRNo = async () => {
-    setNumberLoading(true); setNumberError(false)
+  const generateLRNo = async (selectedBranch = branchCode) => {
+    const requestId = ++lrGenerationRequest.current
+    if (!selectedBranch) {
+      setNumberLoading(false)
+      setFormData(prev => ({ ...prev, lr_no: '' }))
+      return
+    }
+    setNumberLoading(true)
     try {
-      const response = await biltyAPI.getNextNumber()
+      const response = await biltyAPI.getNextNumber({ branch: selectedBranch })
       const nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
       if (!nextLrNo) throw new Error('invalid')
+      if (requestId !== lrGenerationRequest.current) return
       setFormData(prev => ({ ...prev, lr_no: nextLrNo }))
-      if (response.data?.fallback) {
-        setNumberError(true)
-        setIsLrEditable(true)
-        toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '⚠️' })
-      } else {
-        setIsLrEditable(false)
-      }
+      if (response.data?.branch_id) setBranchId(Number(response.data.branch_id))
+      setIsLrEditable(Boolean(response.data?.fallback))
     } catch (err) {
-      console.warn('Unable to query the next LR number; using a local fallback:', err)
+      if (requestId !== lrGenerationRequest.current) return
+      console.warn('Unable to query the branch LR series; using a local fallback:', err)
       setFormData(prev => ({ ...prev, lr_no: getLocalLrNumber() }))
       setIsLrEditable(true)
-      setNumberError(true)
-      toast('Database unavailable. A local LR number was generated; check it before saving.', { icon: '⚠️' })
-    } finally { setNumberLoading(false) }
-  }
-
-  const validateLRNo = async (lrNo) => {
-    const normalizedLrNo = lrNo.trim()
-    if (!normalizedLrNo) { setLrError('LR Number required hai'); return false }
-    if (!/^[A-Za-z0-9/-]+$/.test(normalizedLrNo)) { setLrError('Only letters, numbers, -, / allowed'); return false }
-    const requestId = ++lrCheckRequest.current; setLrChecking(true)
-    try {
-      const response = await biltyAPI.getAll({ lrNumber: normalizedLrNo })
-      const consignments = Array.isArray(response.data)
-        ? response.data
-        : Array.isArray(response.data?.data)
-          ? response.data.data
-          : Array.isArray(response.data?.consignments)
-            ? response.data.consignments
-            : null
-      if (!consignments) throw new Error('The server returned an invalid LR number check response')
-      const duplicate = consignments.some(item =>
-        String(item.id) !== String(id || '') &&
-        String(item.lr_no || '').trim().toLowerCase() === normalizedLrNo.toLowerCase()
-      )
-      if (requestId === lrCheckRequest.current) { setLrError(duplicate ? 'This Bilty No already exists - Dusra number dalo' : ''); setLrChecking(false) }
-      return !duplicate
-    } catch (err) {
-      console.error('LR No validation error:', err)
-      if (requestId === lrCheckRequest.current) { setLrError('Unable to validate LR number. Please try again.'); setLrChecking(false) }
-      return false
+    } finally {
+      if (requestId === lrGenerationRequest.current) setNumberLoading(false)
     }
   }
 
-  useEffect(() => {
-    if (!isLrEditable || !formData.lr_no.trim()) return
-    const timeout = setTimeout(() => validateLRNo(formData.lr_no), 600)
-    return () => clearTimeout(timeout)
-  }, [formData.lr_no, isLrEditable])
-
   const handleChange = (e) => {
     const { name, value } = e.target
-    if (name === 'lr_no') setLrError('')
     setFormData(prev => {
       const newData = { ...prev, [name]: value }
       if (name === 'method_of_packing' || name === 'package_type') {
@@ -297,8 +276,14 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
   }
 
   const handleBranchSelect = (type, branch) => {
+    if (type === 'branch') {
+      setBranchCode(branch.code)
+      setBranchName(branch.name || '')
+      setBranchId(Number(branch.id) || null)
+    }
     setFormData(prev => {
       const next = { ...prev, [`${type}_code`]: branch.code }
+      if (type === 'branch' && branch.id) next.branch_id = Number(branch.id)
       if (type === 'from' || type === 'to') next[`${type}_name`] = branch.name
       return next
     })
@@ -307,12 +292,26 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!formData.consignor_name || !formData.consignee_name) { toast.error('Consignor और Consignee का नाम required है'); return }
-    if (!formData.lr_no) { toast.error('LR number is still generating. Please retry.'); return }
-    if (!numberError && !await validateLRNo(formData.lr_no)) { toast.error(lrError || 'Please check LR number'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) {
       toast.error('Enter a valid GSTIN for the Third Party')
       return
+    }
+    if (formData.lr_no.trim()) {
+      try {
+        const duplicateCheck = await api.get('/document-series/validate', {
+          params: {
+            type: 'bilty',
+            number: formData.lr_no.trim(),
+            branch: branchMode ? branchSlug : formData.branch_code,
+            exclude_id: id || undefined
+          }
+        })
+        if (duplicateCheck.data?.duplicate &&
+            !window.confirm('Ye number is branch me pehle use ho chuka hai, kya aap aage badhna chahte ho? Yes / No')) return
+      } catch (validationError) {
+        console.warn('LR duplicate check unavailable; continuing with save:', validationError)
+      }
     }
     setLoading(true)
     try {
@@ -366,9 +365,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       navigate('/consignments')
     } catch (err) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
-      if (errorMsg.toLowerCase().includes('already exists') || errorMsg.toLowerCase().includes('duplicate')) {
-        setLrError('This Bilty No already exists'); setIsLrEditable(true); toast.error('This Bilty No already exists')
-      } else if (isDatabaseUnavailable(err)) {
+      if (isDatabaseUnavailable(err)) {
         try {
           const draft = saveLocalDraft('bilty', { ...formData, lr_no: formData.lr_no })
           toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
@@ -414,14 +411,12 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
               <div>
                 <label className="block text-gray-300 text-sm font-medium mb-1">LR Number / Bilty Number *</label>
                 <div className="flex gap-2 items-center">
-                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} required placeholder={numberLoading ? "Generating..." : "BTC-00012"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-white/10 border-white/20 text-white'}`} style={isLrEditable ? {background:'#ffffff', color:'#000000'} : {}} />
+                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} placeholder={numberLoading ? "Loading branch series..." : "BTC-00012"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-white/10 border-white/20 text-white'}`} style={isLrEditable ? {background:'#ffffff', color:'#000000'} : {}} />
                   <button type="button" onClick={() => setIsLrEditable(!isLrEditable)} className={`shrink-0 px-4 py-2 rounded-lg font-bold transition-all ${isLrEditable ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}>{isLrEditable ? '🔒 Lock' : '✏️ Edit'}</button>
                 </div>
-                {numberError && <button type="button" onClick={generateLRNo} className="mt-2 px-3 py-1 bg-yellow-500 text-black rounded text-sm">Retry Generate</button>}
-                {lrChecking && <p className="mt-1 text-sm text-yellow-300 animate-pulse">Checking LR number...</p>}
-                {lrError && <p className="mt-1 text-sm text-red-400 font-bold">⚠️ {lrError}</p>}
-                {!isLrEditable && !lrError && <p className="mt-1 text-xs text-gray-400">Auto generated hai. Change karna hai to Edit dabao.</p>}
-                {isLrEditable && !lrError && <p className="mt-1 text-xs text-green-400">✓ Ab khud ka number type kar sakte ho</p>}
+                <p className="mt-1 text-xs text-blue-600">Ye series {[formData.branch_code || branchCode, branchName].filter(Boolean).join(' - ') || 'selected'} branch ka hai. Duplicate check sirf isi branch me hota hai.</p>
+                {!isLrEditable && <p className="mt-1 text-xs text-gray-400">Auto generated hai. Change karna hai to Edit dabao.</p>}
+                {isLrEditable && <p className="mt-1 text-xs text-green-600">✓ Apni branch series ka number enter kar sakte ho</p>}
               </div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">LR Date *</label><input type="date" name="lr_date" value={formData.lr_date} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               {branchMode ? (
@@ -584,7 +579,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
 
           <div className="flex justify-end gap-4 pt-6">
             <button type="button" onClick={() => navigate('/dashboard')} className="px-6 py-2 bg-white border border-[#c2cddf] text-[#1e293b] rounded-lg hover:bg-slate-50 transition">Cancel</button>
-            <button type="submit" disabled={loading || numberLoading} className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition font-bold text-lg disabled:opacity-50">{loading ? (id ? 'Updating...' : 'Saving...') : numberLoading ? (id ? 'Loading Bilty...' : 'Generating LR...') : id ? 'Update Bilty' : `Save Bilty ${formData.lr_no}`}</button>
+            <button type="submit" disabled={loading} className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition font-bold text-lg disabled:opacity-50">{loading ? (id ? 'Updating...' : 'Saving...') : id ? 'Update Bilty' : `Save Bilty ${formData.lr_no}`}</button>
           </div>
         </form>
       </div>

@@ -183,8 +183,9 @@ CREATE TABLE IF NOT EXISTS rate_chart (
 -- 10. CONSIGNMENTS (LR / Bilty)
 CREATE TABLE IF NOT EXISTS consignments (
     id SERIAL PRIMARY KEY,
-    lr_no VARCHAR(30) UNIQUE NOT NULL,
+    lr_no VARCHAR(30) NOT NULL,
     lr_date DATE NOT NULL,
+    branch_id INTEGER REFERENCES branches(id) ON DELETE RESTRICT,
     branch_code VARCHAR(20),
     
     -- Consignor
@@ -312,8 +313,9 @@ CREATE INDEX IF NOT EXISTS idx_consignments_consignee_mobile ON consignments(con
 -- 11. BILL BOOK (Invoice)
 CREATE TABLE IF NOT EXISTS bill_book (
     id SERIAL PRIMARY KEY,
-    bill_no VARCHAR(30) UNIQUE NOT NULL,
+    bill_no VARCHAR(30) NOT NULL,
     bill_date DATE NOT NULL,
+    branch_id INTEGER REFERENCES branches(id) ON DELETE RESTRICT,
     branch_code VARCHAR(20),
     customer_id INTEGER REFERENCES customers(id) ON DELETE RESTRICT,
     party_name TEXT,
@@ -343,6 +345,26 @@ CREATE TABLE IF NOT EXISTS bill_book (
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
     deleted_at TIMESTAMPTZ
 );
+
+-- Branch-scoped printed Bilty and Bill number ranges
+CREATE TABLE IF NOT EXISTS document_series (
+    id SERIAL PRIMARY KEY,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE RESTRICT,
+    series_type TEXT NOT NULL CHECK (series_type IN ('bilty', 'bill')),
+    prefix TEXT NOT NULL,
+    start_number BIGINT NOT NULL CHECK (start_number > 0),
+    end_number BIGINT NOT NULL CHECK (end_number >= start_number),
+    digit_width INTEGER NOT NULL DEFAULT 1 CHECK (digit_width > 0),
+    last_used_number BIGINT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS document_series_branch_type_idx ON document_series (branch_id, series_type);
+CREATE UNIQUE INDEX IF NOT EXISTS document_series_one_active_branch_type_idx
+    ON document_series (branch_id, series_type) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS consignments_branch_lr_number_idx ON consignments (branch_id, LOWER(lr_no));
+CREATE INDEX IF NOT EXISTS bill_book_branch_bill_number_idx ON bill_book (branch_id, LOWER(bill_no));
 
 -- 12. BILL ITEMS
 CREATE TABLE IF NOT EXISTS bill_items (

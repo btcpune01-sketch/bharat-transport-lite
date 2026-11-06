@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, Navigate } from 'react-router-dom'
 import { formatDate } from '../utils/dateFormatter'
 import api from '../api'
+import { documentSeriesAPI } from '../api'
 
 const getAuthConfig = () => {
   const token = localStorage.getItem('token')
@@ -82,7 +83,7 @@ export default function StockManagement({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
   
-  if (user.role !== 'admin') {
+  if (user.role !== 'admin' && !branchMode) {
     return <Navigate to="/dashboard" replace />
   }
 
@@ -108,6 +109,18 @@ export default function StockManagement({ branchMode = false, branchCode }) {
   const [branchHistoryFilters, setBranchHistoryFilters] = useState({ branch: '', bookType: '', from: '', to: '' })
   const [branchHistoryLoading, setBranchHistoryLoading] = useState(false)
   const branchHistoryRef = useRef(null)
+  const [documentSeries, setDocumentSeries] = useState([])
+  const [documentSeriesLoading, setDocumentSeriesLoading] = useState(false)
+  const [documentSeriesError, setDocumentSeriesError] = useState('')
+  const [documentSeriesMessage, setDocumentSeriesMessage] = useState('')
+  const [seriesBranches, setSeriesBranches] = useState([])
+  const [seriesForm, setSeriesForm] = useState({
+    branch_id: '',
+    series_type: 'bilty',
+    prefix: 'BTC-',
+    start_number: '',
+    end_number: ''
+  })
 
   useEffect(() => {
     setActiveTab(branchMode ? 'branch-stock' : 'overview')
@@ -262,6 +275,11 @@ export default function StockManagement({ branchMode = false, branchCode }) {
 
   useEffect(() => {
     let active = true
+    if (branchMode && user.role !== 'admin') {
+      setBranchOverviewLoading(false)
+      setBranchOverviewError('')
+      return () => { active = false }
+    }
     setBranchOverviewLoading(true)
     setBranchOverviewError('')
     if (branchMode && !branchCode) {
@@ -284,6 +302,58 @@ export default function StockManagement({ branchMode = false, branchCode }) {
       .finally(() => { if (active) setBranchOverviewLoading(false) })
     return () => { active = false }
   }, [activeTab, branchMode, branchCode])
+
+  useEffect(() => {
+    if (!branchMode && user.role === 'admin') {
+      api.get('/branches')
+        .then(response => {
+          const branches = response.data?.data
+          if (!Array.isArray(branches)) throw new Error('The server returned an invalid branch list.')
+          setSeriesBranches(branches)
+        })
+        .catch(error => console.error('Unable to load branches for document series:', error))
+    }
+  }, [branchMode, user.role])
+
+  useEffect(() => {
+    if (activeTab !== 'branch-stock') return undefined
+    let active = true
+    setDocumentSeriesLoading(true)
+    setDocumentSeriesError('')
+    documentSeriesAPI.getStatus(branchMode && branchCode ? { branch: branchCode } : undefined)
+      .then(response => {
+        const rows = response.data?.data
+        if (!Array.isArray(rows)) throw new Error('The server returned invalid document series data.')
+        if (active) setDocumentSeries(rows)
+      })
+      .catch(error => {
+        if (active) setDocumentSeriesError(error.response?.data?.error || error.message || 'Unable to load series status.')
+      })
+      .finally(() => { if (active) setDocumentSeriesLoading(false) })
+    return () => { active = false }
+  }, [activeTab, branchMode, branchCode])
+
+  const saveDocumentSeries = async (event) => {
+    event.preventDefault()
+    setDocumentSeriesError('')
+    setDocumentSeriesMessage('')
+    try {
+      const payload = {
+        ...seriesForm,
+        ...(branchMode ? { branch: branchCode } : {}),
+        start_number: Number(seriesForm.start_number),
+        end_number: Number(seriesForm.end_number)
+      }
+      await documentSeriesAPI.add(payload)
+      setDocumentSeriesMessage('Series saved and activated for this branch.')
+      setSeriesForm(previous => ({ ...previous, start_number: '', end_number: '' }))
+      const response = await documentSeriesAPI.getStatus(branchMode && branchCode ? { branch: branchCode } : undefined)
+      if (!Array.isArray(response.data?.data)) throw new Error('The server returned invalid document series data.')
+      setDocumentSeries(response.data.data)
+    } catch (error) {
+      setDocumentSeriesError(error.response?.data?.error || error.message || 'Unable to save this series.')
+    }
+  }
 
   useEffect(() => {
     if (activeTab !== 'branch-stock') return undefined
@@ -657,7 +727,7 @@ export default function StockManagement({ branchMode = false, branchCode }) {
               <button onClick={() => setActiveTab('stationery')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'stationery' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📦 Stationery ({stationeryItems.length})</button>
               <button onClick={() => setActiveTab('history')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'history' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📜 History ({history.length})</button>
             </>}
-            {user.role === 'admin' && (
+            {(user.role === 'admin' || branchMode) && (
               <button onClick={() => setActiveTab('branch-stock')} className={`relative px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'branch-stock' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>
                 🏢 {branchMode ? 'Selected Branch Stock' : `Branch Stock (${branchCount})`}
                 {branchOverview.branches.some(branchHasLowStock) && <span aria-label="Branch stock is low" className="absolute right-3 top-2 h-2 w-2 rounded-full bg-red-600" />}
@@ -753,6 +823,101 @@ export default function StockManagement({ branchMode = false, branchCode }) {
               </div>
             )}
           </div>
+        )}
+
+        {activeTab === 'branch-stock' && (user.role === 'admin' || branchMode) && (
+          <section className="mb-6 space-y-5">
+            <div className="rounded-2xl bg-white p-5 shadow-lg">
+              <div className="mb-4">
+                <h2 className="text-xl font-bold text-gray-800">Bilty / Bill Series Status</h2>
+                <p className="mt-1 text-sm text-gray-500">Branch-wise printed document ranges, last used numbers, and next available serials.</p>
+              </div>
+              {documentSeriesError && <p role="alert" className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">{documentSeriesError}</p>}
+              {documentSeriesMessage && <p role="status" className="mb-4 rounded-lg border border-green-300 bg-green-50 p-3 text-sm text-green-800">{documentSeriesMessage}</p>}
+              {documentSeriesLoading ? <p className="py-6 text-center text-gray-500">Loading branch series…</p> : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[1100px] w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                      <tr>
+                        {['Branch Name', 'Series Type', 'Series Start', 'Series End', 'Last Used', 'Next Number', 'Remaining', 'Status'].map(label => <th key={label} className="px-3 py-3">{label}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {documentSeries
+                        .filter(row => branchMode || !branchFilter || String(row.branch_id) === branchFilter)
+                        .map(row => {
+                          const statusStyle = row.status === 'Khatam'
+                            ? 'bg-red-100 text-red-700'
+                            : row.status === 'Khatam Hone Wala'
+                              ? 'bg-amber-100 text-amber-800'
+                              : row.status === 'Active'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-slate-100 text-slate-600'
+                          return (
+                            <tr key={`${row.branch_id}-${row.series_type}`} className="hover:bg-slate-50">
+                              <td className="px-3 py-3 font-semibold">{row.branch_name} ({row.branch_code})</td>
+                              <td className="px-3 py-3 capitalize">{row.series_type === 'bilty' ? 'Bilty' : 'Bill'}</td>
+                              <td className="px-3 py-3">{row.series_start || '-'}</td>
+                              <td className="px-3 py-3">{row.series_end || '-'}</td>
+                              <td className="px-3 py-3">{row.last_used || '-'}</td>
+                              <td className="px-3 py-3 font-semibold">{row.next_number || '-'}</td>
+                              <td className="px-3 py-3">{row.remaining ?? '-'}</td>
+                              <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${statusStyle}`}>{row.status}</span></td>
+                            </tr>
+                          )
+                        })}
+                      {!documentSeries.length && <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-500">No branches or series configured.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <form onSubmit={saveDocumentSeries} className="rounded-2xl bg-white p-5 shadow-lg">
+              <h3 className="mb-4 text-lg font-bold text-gray-800">Add New Printed Series</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {!branchMode && (
+                  <label className="text-sm font-semibold text-gray-700">
+                    Branch
+                    <select
+                      required
+                      value={seriesForm.branch_id}
+                      onChange={event => setSeriesForm(previous => ({ ...previous, branch_id: event.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                    >
+                      <option value="">Select branch</option>
+                      {seriesBranches.map(branch => (
+                        <option key={branch.id || branch.branch_code} value={branch.id || branch.branch_code}>
+                          {branch.branch_code} - {branch.branch_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="text-sm font-semibold text-gray-700">
+                  Series Type
+                  <select value={seriesForm.series_type} onChange={event => setSeriesForm(previous => ({ ...previous, series_type: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+                    <option value="bilty">Bilty</option>
+                    <option value="bill">Bill</option>
+                  </select>
+                </label>
+                <label className="text-sm font-semibold text-gray-700">
+                  Series Prefix
+                  <input required value={seriesForm.prefix} onChange={event => setSeriesForm(previous => ({ ...previous, prefix: event.target.value }))} placeholder="BTC-" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+                </label>
+                <label className="text-sm font-semibold text-gray-700">
+                  Start Number
+                  <input required type="number" min="1" value={seriesForm.start_number} onChange={event => setSeriesForm(previous => ({ ...previous, start_number: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+                </label>
+                <label className="text-sm font-semibold text-gray-700">
+                  End Number
+                  <input required type="number" min="1" value={seriesForm.end_number} onChange={event => setSeriesForm(previous => ({ ...previous, end_number: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" />
+                </label>
+              </div>
+              {branchMode && <p className="mt-2 text-xs text-blue-700">This series will be added to {branchCode} branch only.</p>}
+              <button type="submit" className="mt-4 rounded-lg bg-blue-700 px-5 py-2 font-semibold text-white hover:bg-blue-800">Save Series</button>
+            </form>
+          </section>
         )}
 
         {activeTab === 'branch-stock' && user.role === 'admin' && (
