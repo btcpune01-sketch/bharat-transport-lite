@@ -1340,14 +1340,14 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
     };
 
     const globalMasterCount = (table, condition) => {
-      if (isAdmin) return pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition} AND COALESCE(is_deleted, FALSE) = FALSE`);
-      if (['drivers', 'vehicles'].includes(table) && userBranchId) {
+      const branchOwnedTables = ['customers', 'drivers', 'vehicles'];
+      if (branchOwnedTables.includes(table) && effectiveBranchId) {
         return pool.query(
           `SELECT COUNT(*) as count FROM ${table} ${condition} AND COALESCE(is_deleted, FALSE) = FALSE AND branch_id = $1`,
-          [userBranchId]
+          [effectiveBranchId]
         );
       }
-      return Promise.resolve({ rows: [{ count: 0 }] });
+      return pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition} AND COALESCE(is_deleted, FALSE) = FALSE`);
     };
 
     const queries = [
