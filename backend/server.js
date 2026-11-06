@@ -1347,6 +1347,7 @@ app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
           [effectiveBranchId]
         );
       }
+      if (!isAdmin) return Promise.resolve({ rows: [{ count: 0 }] });
       return pool.query(`SELECT COUNT(*) as count FROM ${table} ${condition} AND COALESCE(is_deleted, FALSE) = FALSE`);
     };
 
