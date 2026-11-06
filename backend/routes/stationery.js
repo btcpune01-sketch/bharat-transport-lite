@@ -150,10 +150,18 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
     if (!pool) return res.status(503).json({ error: 'Branch stationery stock is unavailable while the database is offline.' })
     if (!isAdmin(req, res)) return
     try {
+      const selectedBranch = req.query.branch ? await findBranch(pool, req.query.branch) : null
+      if (req.query.branch && !selectedBranch) return res.status(404).json({ error: 'Branch not found.' })
+      const branchId = selectedBranch?.id
+      const branchesCondition = branchId ? 'AND id = $1' : ''
+      const branchHistoryCondition = branchId ? 'WHERE history.branch_id = $1' : ''
+      const branchStockCondition = branchId ? 'WHERE branch_id = $1' : ''
+      const branchParams = branchId ? [branchId] : []
       const [branchesResult, masterResult, historyResult] = await Promise.all([
         pool.query(
           `SELECT id AS branch_id, branch_name, branch_code, url_slug
-           FROM branches WHERE COALESCE(is_active, TRUE) = TRUE ORDER BY branch_name`
+           FROM branches WHERE COALESCE(is_active, TRUE) = TRUE ${branchesCondition} ORDER BY branch_name`,
+          branchParams
         ),
         pool.query(
           `SELECT books.book_type,
@@ -172,14 +180,17 @@ function registerStationeryRoutes(app, { pool, authMiddleware }) {
                   history.current_running_serial, history.bilty_no, history.created_at
            FROM stationery_stock_history AS history
            JOIN branches ON branches.id = history.branch_id
+           ${branchHistoryCondition}
            ORDER BY history.created_at DESC, history.id DESC
-           LIMIT 1000`
+           LIMIT 1000`,
+          branchParams
         )
       ])
       const branchStockResult = await pool.query(
         `SELECT branch_id, book_type, total_assigned, used, remaining,
                 start_serial, end_serial, current_running_serial, supplier, cost, created_at, updated_at
-         FROM stationery_stocks ORDER BY branch_id, book_type`
+         FROM stationery_stocks ${branchStockCondition} ORDER BY branch_id, book_type`,
+        branchParams
       )
       const masterByType = new Map(masterResult.rows.map((item) => [item.book_type, item]))
       const branchStocks = new Map()
