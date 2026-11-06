@@ -1313,6 +1313,66 @@ function buildBranchCondition({ branchId, branchCode }, startIndex = 1) {
   return { sql: parts.length ? `(${parts.join(' OR ')})` : '', params };
 }
 
+app.get('/api/dashboard/pending-amount', authMiddleware, async (req, res) => {
+  try {
+    const scope = resolveDashboardBranch(req);
+    if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const branch = buildBranchCondition(scope);
+    const result = await pool.query(
+      `SELECT id, lr_no, lr_date, consignor_name, consignee_name, grand_total, branch_code
+       FROM consignments
+       WHERE COALESCE(payment_status, 'Unpaid') = 'Unpaid'
+         AND COALESCE(is_deleted, FALSE) = FALSE
+         ${branch.sql ? `AND ${branch.sql}` : ''}
+       ORDER BY lr_date DESC NULLS LAST, id DESC
+       LIMIT 100`,
+      branch.params
+    );
+    return res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('GET /api/dashboard/pending-amount error:', error.message);
+    return res.status(503).json({ error: 'Pending amounts are temporarily unavailable.' });
+  }
+});
+
+app.patch('/api/dashboard/pending-amount/:id', authMiddleware, async (req, res) => {
+  const role = String(req.user?.role || '').toLowerCase();
+  if (!['admin', 'manager'].includes(role)) {
+    return res.status(403).json({ error: 'Only admins and managers can clear pending amounts.' });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid pending amount entry.' });
+
+  try {
+    const scope = resolveDashboardBranch(req);
+    if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const branch = buildBranchCondition(scope, 2);
+    const result = await pool.query(
+      `UPDATE consignments
+       SET payment_status = 'Cleared', updated_at = NOW()
+       WHERE id = $1
+         AND COALESCE(payment_status, 'Unpaid') = 'Unpaid'
+         AND COALESCE(is_deleted, FALSE) = FALSE
+         ${branch.sql ? `AND ${branch.sql}` : ''}
+       RETURNING id, lr_no, grand_total, branch_id`,
+      [id, ...branch.params]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Pending amount entry not found.' });
+    await logAudit(
+      'CLEAR',
+      'consignments',
+      id,
+      `Cleared pending amount for ${result.rows[0].lr_no || 'consignment'}`,
+      req.user.username || 'user',
+      result.rows[0].branch_id
+    );
+    return res.json({ success: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('PATCH /api/dashboard/pending-amount/:id error:', error.message);
+    return res.status(503).json({ error: 'Unable to clear this pending amount.' });
+  }
+});
+
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
     const scope = resolveDashboardBranch(req);

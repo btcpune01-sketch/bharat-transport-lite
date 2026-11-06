@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import {
-  Activity, ArrowDownToLine, Bell, Calculator, ChevronDown, FilePlus2,
-  LogOut, Receipt, Search, Truck, Wallet
+  Activity, ArrowDownToLine, Bell, Calculator, CheckCircle2, ChevronDown, FilePlus2,
+  LogOut, Receipt, Search, Truck, Wallet, X
 } from 'lucide-react'
 import api, { branchAPI, dashboardAPI } from '../../api'
 import { useAuth } from '../../AuthContext'
+import toast from 'react-hot-toast'
 
 const navigation = [
   {
@@ -192,9 +193,14 @@ export default function TMSDashboard({ branch }) {
     : routeParams.branchSlug || routeParams.branchCode || ''
   const isBranchDashboard = Boolean(branchSlug && branchSlug !== 'global')
   const isAdminUser = currentUser?.role === 'admin'
+  const canClearPending = ['admin', 'manager'].includes(String(currentUser?.role || '').toLowerCase())
   const canAdminViewBranch = isBranchDashboard && isAdminUser
   const [stats, setStats] = useState(null)
   const [stock, setStock] = useState([])
+  const [pendingRows, setPendingRows] = useState([])
+  const [pendingError, setPendingError] = useState('')
+  const [pendingToClear, setPendingToClear] = useState(null)
+  const [clearingPending, setClearingPending] = useState(false)
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
@@ -279,10 +285,11 @@ export default function TMSDashboard({ branch }) {
 
     Promise.allSettled([
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
-      api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query })
+      api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query }),
+      api.get('/dashboard/pending-amount', { params: query })
     ]).then((results) => {
       if (!active) return
-      const [statsResult, stockResult] = results
+      const [statsResult, stockResult, pendingResult] = results
       if (statsResult.status === 'fulfilled' && statsResult.value.data?.success !== false) {
         setStats(getData(statsResult.value))
         setStatsUnavailable(false)
@@ -295,6 +302,15 @@ export default function TMSDashboard({ branch }) {
         setStock(Array.isArray(data) ? data : [])
       } else {
         setStock([])
+      }
+      if (pendingResult.status === 'fulfilled') {
+        const data = getData(pendingResult.value)
+        setPendingRows(Array.isArray(data) ? data : [])
+        setPendingError('')
+      } else {
+        console.error('Unable to load dashboard pending amounts:', pendingResult.reason)
+        setPendingRows([])
+        setPendingError(pendingResult.reason?.response?.data?.error || 'Pending amounts could not be loaded.')
       }
     }).finally(() => {
       if (active) setLoading(false)
@@ -399,6 +415,27 @@ export default function TMSDashboard({ branch }) {
       setTrackResult(response.data)
     } catch (error) {
       setTrackError(error.response?.data?.error || 'Unable to track this bilty.')
+    }
+  }
+
+  async function clearPendingAmount() {
+    if (!pendingToClear) return
+    setClearingPending(true)
+    const params = {}
+    if (isBranchDashboard) {
+      params.branch = branchSlug
+      if (activeBranch?.id) params.branch_id = activeBranch.id
+    }
+    try {
+      await api.patch(`/dashboard/pending-amount/${pendingToClear.id}`, null, { params })
+      toast.success(`Pending amount for ${pendingToClear.lr_no} cleared.`)
+      setPendingToClear(null)
+      setRefreshKey((key) => key + 1)
+    } catch (error) {
+      console.error('Unable to clear dashboard pending amount:', error)
+      toast.error(error.response?.data?.error || 'Unable to clear this pending amount.')
+    } finally {
+      setClearingPending(false)
     }
   }
 
@@ -660,6 +697,42 @@ export default function TMSDashboard({ branch }) {
           </Link>
         </section>
 
+        <section aria-labelledby="pending-amounts-title" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <h2 id="pending-amounts-title" className="text-base font-bold text-slate-900">Pending Amount Entries</h2>
+            <span className="text-xs text-slate-500">Showing up to 100 unpaid bilties</span>
+            {loading && <span className="text-xs text-slate-500">Updating…</span>}
+          </div>
+          {pendingError ? (
+            <p role="alert" className="text-sm text-amber-800">{pendingError}</p>
+          ) : pendingRows.length === 0 ? (
+            <p className="text-sm text-slate-500">No pending bilty amounts found.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {pendingRows.map((entry) => (
+                <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900">{entry.lr_no || 'Bilty'} <span className="font-normal text-slate-500">· {entry.consignor_name || entry.consignee_name || 'Customer not specified'}</span></p>
+                    <p className="text-xs text-slate-500">{entry.lr_date || 'Date unavailable'}{entry.branch_code ? ` · ${entry.branch_code}` : ''}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <strong className="text-sm text-red-700">{money(entry.grand_total)}</strong>
+                    {canClearPending && (
+                      <button
+                        type="button"
+                        onClick={() => setPendingToClear(entry)}
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />Clear
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
             <ArrowDownToLine className="h-5 w-5 text-indigo-600" />
@@ -682,6 +755,53 @@ export default function TMSDashboard({ branch }) {
           </div>
         </section>
       </div>
+      {pendingToClear && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="clear-pending-title"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4"
+        >
+          <section className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="clear-pending-title" className="text-lg font-bold text-slate-900">Clear pending amount?</h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Are you sure you want to clear the pending amount for {pendingToClear.lr_no} ({money(pendingToClear.grand_total)})?
+                  This marks the bilty as cleared; it does not create a payment receipt.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close confirmation"
+                disabled={clearingPending}
+                onClick={() => setPendingToClear(null)}
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={clearingPending}
+                onClick={() => setPendingToClear(null)}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={clearingPending}
+                onClick={clearPendingAmount}
+                className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {clearingPending ? 'Clearing…' : 'Confirm clear'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }
