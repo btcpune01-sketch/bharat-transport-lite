@@ -4,7 +4,7 @@ import { formatDate, formatDateLong } from '../utils/dateFormatter'
 import toast from 'react-hot-toast'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
-export default function GatePass() {
+export default function GatePass({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
     lr_no: '',
@@ -41,6 +41,7 @@ export default function GatePass() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {}),
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(formData)
@@ -74,8 +75,8 @@ export default function GatePass() {
       <div className="bg-red-700 text-white p-4">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <h1 className="text-2xl font-bold">BHARAT TRANSPORT COMPANY</h1>
-          <button onClick={() => navigate('/')} className="bg-white text-red-700 px-4 py-2 rounded font-bold">
-            ← Back to Home
+          <button onClick={() => navigate(branchMode ? `/branch/${branchCode}/dashboard` : '/')} className="bg-white text-red-700 px-4 py-2 rounded font-bold">
+            ← {branchMode ? 'Back to Branch' : 'Back to Home'}
           </button>
         </div>
       </div>
