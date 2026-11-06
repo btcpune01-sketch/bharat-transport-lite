@@ -6,7 +6,7 @@ import { getLocalDocumentNumber, getLocalDrafts, isDatabaseUnavailable, saveLoca
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
-export default function GadiChallan() {
+export default function GadiChallan({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const { currentUser } = useAuth()
   const canDelete = canDeleteRecords(currentUser?.role)
@@ -49,7 +49,7 @@ export default function GadiChallan() {
   useEffect(() => {
     fetchData()
     fetchBilties()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchData = async () => {
     try {
@@ -58,7 +58,8 @@ export default function GadiChallan() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/gadi-challan`, { headers })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/gadi-challan${branchQuery}`, { headers })
       if (res.ok) {
         const data = await res.json()
         setChallans([...getLocalDrafts('challan'), ...(data.data || [])])
@@ -81,7 +82,8 @@ export default function GadiChallan() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/consignments`, { headers })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/consignments${branchQuery}`, { headers })
       if (res.ok) {
         const data = await res.json()
         const activeBilties = (data.data || []).filter(b => 
@@ -99,7 +101,8 @@ export default function GadiChallan() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = import.meta.env.VITE_API_URL || '/api'
-      const response = await fetch(`${apiUrl}/gadi-challan/${challan.id}`, {
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const response = await fetch(`${apiUrl}/gadi-challan/${challan.id}${branchQuery}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, ...recordDeletionHeaders }
       })
@@ -178,7 +181,8 @@ export default function GadiChallan() {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
 
-      const url = editId ? `${apiUrl}/gadi-challan/${editId}` : `${apiUrl}/gadi-challan`
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const url = editId ? `${apiUrl}/gadi-challan/${editId}${branchQuery}` : `${apiUrl}/gadi-challan${branchQuery}`
       const method = editId ? 'PUT' : 'POST'
 
       const res = await fetch(url, {
@@ -187,7 +191,7 @@ export default function GadiChallan() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
       })
 
       const result = await res.json()
@@ -256,7 +260,7 @@ export default function GadiChallan() {
       <nav className="bg-gradient-to-r from-lime-700 to-lime-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">📋 Gadi Challan Management</h1>
               <p className="text-xs text-lime-200">Broker Settlement & Trip Expenses</p>
