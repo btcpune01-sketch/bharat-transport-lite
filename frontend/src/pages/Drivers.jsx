@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 
-export default function Drivers() {
+export default function Drivers({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
+  const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
   const [drivers, setDrivers] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -29,14 +30,14 @@ export default function Drivers() {
   useEffect(() => {
     fetchDrivers()
     fetchExpiryAlerts()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchDrivers = async () => {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/drivers`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const res = await fetch(`${apiUrl}/drivers${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setDrivers(data.data || [])
     } catch (err) {
@@ -50,7 +51,7 @@ export default function Drivers() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const res = await fetch(`${apiUrl}/vehicles/expiring${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setExpiryAlerts(data.data || [])
     } catch (err) {
@@ -74,16 +75,16 @@ export default function Drivers() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       let res
       if (editingDriver) {
-        res = await fetch(`${apiUrl}/drivers/${editingDriver.id}`, {
+        res = await fetch(`${apiUrl}/drivers/${editingDriver.id}${branchQuery}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({ ...formData, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
         })
       } else {
-        res = await fetch(`${apiUrl}/drivers`, {
+        res = await fetch(`${apiUrl}/drivers${branchQuery}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({ ...formData, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
         })
       }
       if (res.ok) {
@@ -124,7 +125,7 @@ export default function Drivers() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      await fetch(`${apiUrl}/drivers/${driver.id}`, {
+      await fetch(`${apiUrl}/drivers/${driver.id}${branchQuery}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ ...driver, status: driver.status === 'Active' ? 'Inactive' : 'Active' })
@@ -184,7 +185,7 @@ export default function Drivers() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => { resetForm(); setEditingDriver(null); setShowForm(true) }} className="bg-white text-teal-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-teal-50">+ Add Driver</button>
-            <button onClick={() => navigate('/')} className="bg-teal-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-teal-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
           </div>
         </div>
       </nav>
