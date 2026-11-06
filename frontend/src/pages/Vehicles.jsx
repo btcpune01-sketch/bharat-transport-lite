@@ -4,8 +4,9 @@ import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
-export default function Vehicles() {
+export default function Vehicles({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
+  const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
   const { currentUser } = useAuth()
   const canDelete = canDeleteRecords(currentUser?.role)
   const [vehicles, setVehicles] = useState([])
@@ -32,14 +33,14 @@ export default function Vehicles() {
   useEffect(() => {
     fetchVehicles()
     fetchExpiryAlerts()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchVehicles = async () => {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/vehicles`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const res = await fetch(`${apiUrl}/vehicles${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setVehicles(data.data || [])
     } catch (err) {
@@ -53,7 +54,7 @@ export default function Vehicles() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/vehicles/expiring`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const res = await fetch(`${apiUrl}/vehicles/expiring${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setExpiryAlerts(data.data || [])
     } catch (err) {
@@ -77,16 +78,16 @@ export default function Vehicles() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       let res
       if (editingVehicle) {
-        res = await fetch(`${apiUrl}/vehicles/${editingVehicle.id}`, {
+        res = await fetch(`${apiUrl}/vehicles/${editingVehicle.id}${branchQuery}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({ ...formData, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
         })
       } else {
-        res = await fetch(`${apiUrl}/vehicles`, {
+        res = await fetch(`${apiUrl}/vehicles${branchQuery}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify(formData)
+          body: JSON.stringify({ ...formData, ...(branchMode && branchCode ? { branch: branchCode } : {}) })
         })
       }
       if (res.ok) {
@@ -127,7 +128,7 @@ export default function Vehicles() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      await fetch(`${apiUrl}/vehicles/${vehicle.id}`, {
+      await fetch(`${apiUrl}/vehicles/${vehicle.id}${branchQuery}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ ...vehicle, status: vehicle.status === 'Active' ? 'Inactive' : 'Active' })
@@ -143,7 +144,7 @@ export default function Vehicles() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = import.meta.env.VITE_API_URL || '/api'
-      const response = await fetch(`${apiUrl}/vehicles/${vehicle.id}`, {
+      const response = await fetch(`${apiUrl}/vehicles/${vehicle.id}${branchQuery}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}`, ...recordDeletionHeaders }
       })
@@ -216,7 +217,7 @@ export default function Vehicles() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => { resetForm(); setEditingVehicle(null); setShowForm(true) }} className="bg-white text-blue-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-50">+ Add Vehicle</button>
-            <button onClick={() => navigate('/')} className="bg-blue-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-blue-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
           </div>
         </div>
       </nav>
