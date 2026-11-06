@@ -83,14 +83,14 @@ for (const label of [
   'Branch Management',
   'Global User Management',
   'Backup & Restore',
-  'Global Stationery Stock',
+  'Stationery Stock Management',
   'System Settings',
   'Audit Logs',
   'Database Management'
 ]) {
   if (!adminMenu.includes(label)) failures.push(`Admin menu is missing "${label}".`)
 }
-for (const label of ['Branch User Management', 'Stationery Stock (Branch)', 'Branch Settings']) {
+for (const label of ['Branch User Management', 'Branch Stationery Stock', 'Branch Settings']) {
   if (!branchMenu.includes(label)) failures.push(`Branch menu is missing "${label}".`)
 }
 for (const label of ['Branch Management', 'Global User Management', 'Backup & Restore']) {

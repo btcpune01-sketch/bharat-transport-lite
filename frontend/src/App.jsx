@@ -145,8 +145,12 @@ const branchPages = {
 
 function BranchModuleRoute() {
   const { module, branchCode, id } = useParams()
+  const { currentUser } = useAuth()
   const Page = module === 'money-receipt' && id === 'create' ? MRCreate : branchPages[module]
   if (Page) {
+    if (module === 'stock-entry' && ['branch', 'branch_user'].includes(currentUser?.role)) {
+      return <BranchStationeryStock branchCode={branchCode} />
+    }
     return module === 'dashboard'
       ? <Page branch={branchCode} isMainAdmin={false} />
       : <Page branchMode branchCode={branchCode} />

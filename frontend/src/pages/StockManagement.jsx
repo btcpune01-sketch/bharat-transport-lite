@@ -78,7 +78,7 @@ const normalizeBranchOverview = (responseData) => {
   }
 }
 
-export default function StockManagement() {
+export default function StockManagement({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const user = JSON.parse(localStorage.getItem('user') || '{}')
   
@@ -88,7 +88,7 @@ export default function StockManagement() {
 
   const [stock, setStock] = useState([])
   const [history, setHistory] = useState([])
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(branchMode ? 'branch-stock' : 'overview')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showRemoveModal, setShowRemoveModal] = useState(false)
   const [selectedItem, setSelectedItem] = useState(null)
@@ -108,6 +108,19 @@ export default function StockManagement() {
   const [branchHistoryFilters, setBranchHistoryFilters] = useState({ branch: '', bookType: '', from: '', to: '' })
   const [branchHistoryLoading, setBranchHistoryLoading] = useState(false)
   const branchHistoryRef = useRef(null)
+
+  useEffect(() => {
+    setActiveTab(branchMode ? 'branch-stock' : 'overview')
+    setBranchOverview({ branches: [], masterStock: [], history: [] })
+    setBranchHistory([])
+    setBranchFilter('')
+    setBranchBookTypeFilter('')
+    setBranchSearch('')
+    setBranchHistoryFilters({ branch: '', bookType: '', from: '', to: '' })
+    setShowAddModal(false)
+    setShowRemoveModal(false)
+    setSelectedItem(null)
+  }, [branchMode, branchCode])
 
   const defaultStock = [
     { id: 'bilty', documentType: 'bilty', name: 'Bilty Book (BTC)', category: 'document', currentStock: 100, totalStock: 100, threshold: 10, unit: 'Pages', used: 0, running: 0, pending: 0 },
@@ -159,6 +172,13 @@ export default function StockManagement() {
 
   useEffect(() => {
     const initializeStock = async () => {
+      if (branchMode) {
+        setStock([])
+        setHistory([])
+        setDocumentStockLoading(false)
+        return
+      }
+
       let savedStationery = defaultStock.filter(item => item.category === 'stationery')
       const savedStock = localStorage.getItem('btc_stock_final')
       if (savedStock) {
@@ -238,13 +258,20 @@ export default function StockManagement() {
     }
 
     initializeStock()
-  }, [])
+  }, [branchMode])
 
   useEffect(() => {
     let active = true
     setBranchOverviewLoading(true)
     setBranchOverviewError('')
-    api.get('/stationery-stock/branch-overview')
+    if (branchMode && !branchCode) {
+      setBranchOverviewError('A selected branch is required to view branch stock.')
+      setBranchOverviewLoading(false)
+      return () => { active = false }
+    }
+    api.get('/stationery-stock/branch-overview', {
+      params: branchMode && branchCode ? { branch: branchCode } : undefined
+    })
       .then((response) => {
         const data = normalizeBranchOverview(response.data)
         if (active) {
@@ -256,13 +283,19 @@ export default function StockManagement() {
       })
       .finally(() => { if (active) setBranchOverviewLoading(false) })
     return () => { active = false }
-  }, [activeTab])
+  }, [activeTab, branchMode, branchCode])
 
   useEffect(() => {
     if (activeTab !== 'branch-stock') return undefined
     let active = true
     setBranchHistoryLoading(true)
+    if (branchMode && !branchCode) {
+      setBranchOverviewError('A selected branch is required to view branch stock history.')
+      setBranchHistoryLoading(false)
+      return () => { active = false }
+    }
     const params = Object.fromEntries(Object.entries(branchHistoryFilters).filter(([, value]) => value))
+    if (branchMode && branchCode) params.branch = branchCode
     api.get('/stationery-stock/branch-history', { params })
       .then((response) => {
         const data = response.data?.data
@@ -274,7 +307,7 @@ export default function StockManagement() {
       })
       .finally(() => { if (active) setBranchHistoryLoading(false) })
     return () => { active = false }
-  }, [activeTab, branchHistoryFilters])
+  }, [activeTab, branchHistoryFilters, branchMode, branchCode])
 
   const saveStock = (newStock) => {
     setStock(newStock)
@@ -427,7 +460,10 @@ export default function StockManagement() {
   const branchCount = branchOverview.branches.length
 
   const downloadBranchReport = (rows, filename) => {
-    const columns = ['Date', 'Branch', 'Book Type', 'Action', 'Quantity', 'Source', 'By', 'Branch Remaining', 'Master Remaining']
+    const columns = [
+      'Date', 'Branch', 'Book Type', 'Action', 'Quantity', 'Source', 'By', 'Branch Remaining',
+      ...(!branchMode ? ['Master Remaining'] : [])
+    ]
     const escapeCsv = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
     const csv = [
       columns.map(escapeCsv).join(','),
@@ -440,7 +476,7 @@ export default function StockManagement() {
         row.source,
         row.performed_by,
         row.remaining,
-        row.master_remaining
+        ...(!branchMode ? [row.master_remaining] : [])
       ].map(escapeCsv).join(','))
     ].join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
@@ -452,7 +488,11 @@ export default function StockManagement() {
   }
 
   const downloadBranchInventory = (branches, filename) => {
-    const columns = ['Branch', 'Branch Code', 'Book Type', 'Total Assigned', 'Used', 'Remaining', 'Master Remaining', 'Unit']
+    const columns = [
+      'Branch', 'Branch Code', 'Book Type', 'Total Assigned', 'Used', 'Remaining',
+      ...(!branchMode ? ['Master Remaining'] : []),
+      'Unit'
+    ]
     const escapeCsv = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`
     const csv = [
       columns.map(escapeCsv).join(','),
@@ -463,7 +503,7 @@ export default function StockManagement() {
         item.total_assigned,
         item.used,
         item.remaining,
-        item.master_available,
+        ...(!branchMode ? [item.master_available] : []),
         item.unit
       ].map(escapeCsv).join(','))
       )
@@ -551,22 +591,23 @@ export default function StockManagement() {
         {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800"> Stock Management</h1>
-            <p className="text-gray-500 mt-1">Bilty, Bill, MR, Challan aur Stationery ka hisab</p>
+            <h1 className="text-3xl font-bold text-gray-800">{branchMode ? 'Branch Stock Management' : 'Stock Management'}</h1>
+            <p className="text-gray-500 mt-1">{branchMode ? `Selected branch: ${branchCode || 'not selected'}` : 'Bilty, Bill, MR, Challan aur Stationery ka hisab'}</p>
           </div>
           <div className="flex gap-3 flex-wrap">
-            <button onClick={() => setActiveTab('history')} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">📜 History</button>
-            <button onClick={() => navigate('/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">← Dashboard</button>
+            {!branchMode && <button onClick={() => setActiveTab('history')} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium">📜 History</button>}
+            <button onClick={() => navigate(branchMode && branchCode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">← Dashboard</button>
           </div>
         </div>
 
-        {documentStockError && (
+        {!branchMode && documentStockError && (
           <div className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4 text-red-800">
             <p className="font-bold">Unable to load document stock</p>
             <p className="text-sm">{documentStockError}</p>
           </div>
         )}
 
+        {!branchMode && <>
         {/* STATS CARDS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-2xl p-5 shadow-lg">
@@ -605,17 +646,20 @@ export default function StockManagement() {
             </div>
           </div>
         )}
+        </>}
 
         {/* TABS */}
         <div className="bg-white rounded-2xl shadow-lg mb-6">
           <div className="flex border-b overflow-x-auto">
-            <button onClick={() => setActiveTab('overview')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'overview' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📊 Overview</button>
-            <button onClick={() => setActiveTab('document')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'document' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📄 Document Books ({documentItems.length})</button>
-            <button onClick={() => setActiveTab('stationery')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'stationery' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📦 Stationery ({stationeryItems.length})</button>
-            <button onClick={() => setActiveTab('history')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'history' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📜 History ({history.length})</button>
+            {!branchMode && <>
+              <button onClick={() => setActiveTab('overview')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'overview' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📊 Overview</button>
+              <button onClick={() => setActiveTab('document')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'document' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📄 Document Books ({documentItems.length})</button>
+              <button onClick={() => setActiveTab('stationery')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'stationery' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📦 Stationery ({stationeryItems.length})</button>
+              <button onClick={() => setActiveTab('history')} className={`px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'history' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>📜 History ({history.length})</button>
+            </>}
             {user.role === 'admin' && (
               <button onClick={() => setActiveTab('branch-stock')} className={`relative px-6 py-3 font-bold whitespace-nowrap transition ${activeTab === 'branch-stock' ? 'text-blue-700 border-b-4 border-blue-700 bg-blue-50' : 'text-gray-600 hover:bg-gray-50'}`}>
-                🏢 Branch Stock ({branchCount})
+                🏢 {branchMode ? 'Selected Branch Stock' : `Branch Stock (${branchCount})`}
                 {branchOverview.branches.some(branchHasLowStock) && <span aria-label="Branch stock is low" className="absolute right-3 top-2 h-2 w-2 rounded-full bg-red-600" />}
               </button>
             )}
@@ -623,7 +667,7 @@ export default function StockManagement() {
         </div>
 
         {/* SEARCH BAR */}
-        {activeTab !== 'history' && activeTab !== 'branch-stock' && (
+        {!branchMode && activeTab !== 'history' && activeTab !== 'branch-stock' && (
           <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="md:col-span-2">
@@ -644,7 +688,7 @@ export default function StockManagement() {
         )}
 
         {/* OVERVIEW TAB */}
-        {activeTab === 'overview' && (
+        {!branchMode && activeTab === 'overview' && (
           <div>
             <div className="mb-8">
               <h2 className="text-xl font-bold text-gray-800 mb-4"> Document Books ({documentItems.length})</h2>
@@ -660,19 +704,19 @@ export default function StockManagement() {
         )}
 
         {/* DOCUMENT TAB */}
-        {activeTab === 'document' && (
+        {!branchMode && activeTab === 'document' && (
           documentStockLoading ? <p className="py-8 text-center text-gray-500">Loading document stock...</p> : renderDocumentTable()
         )}
 
         {/* STATIONERY TAB */}
-        {activeTab === 'stationery' && (
+        {!branchMode && activeTab === 'stationery' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {stationeryItems.map(renderStockCard)}
           </div>
         )}
 
         {/* HISTORY TAB */}
-        {activeTab === 'history' && (
+        {!branchMode && activeTab === 'history' && (
           <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
             <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
               <h2 className="text-xl font-bold text-gray-800"> Stock History ({history.length})</h2>
@@ -708,8 +752,10 @@ export default function StockManagement() {
                 </table>
               </div>
             )}
+          </div>
+        )}
 
-            {activeTab === 'branch-stock' && user.role === 'admin' && (
+        {activeTab === 'branch-stock' && user.role === 'admin' && (
               <div className="space-y-6">
                 {branchOverviewError && (
                   <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800">
@@ -724,7 +770,7 @@ export default function StockManagement() {
                   <article className="rounded-2xl bg-gradient-to-br from-green-500 to-green-700 p-5 text-white shadow-lg">
                     <p className="text-xs font-medium uppercase text-green-100">Remaining Stock</p>
                     <p className="mt-2 text-3xl font-bold">{branchOverviewLoading ? '…' : branchSummary.remaining}</p>
-                    <p className="mt-1 text-xs text-green-100">Across all branches</p>
+                    <p className="mt-1 text-xs text-green-100">{branchMode ? 'Selected branch' : 'Across all branches'}</p>
                   </article>
                   <article className="rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 p-5 text-white shadow-lg">
                     <p className="text-xs font-medium uppercase text-orange-100">Low Stock</p>
@@ -740,27 +786,27 @@ export default function StockManagement() {
                 <section className="rounded-2xl bg-white p-5 shadow-lg">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-xl font-bold text-gray-800">All Branch Stocks - Admin View Only</h2>
-                      <p className="mt-1 text-sm text-gray-500">Each branch updates its own stock. Admin monitors series, serials, and remaining balances.</p>
+                      <h2 className="text-xl font-bold text-gray-800">{branchMode ? 'Selected Branch Stock' : 'All Branch Stocks - Admin View Only'}</h2>
+                      <p className="mt-1 text-sm text-gray-500">{branchMode ? 'Stock balances, serials, and history for this branch.' : 'Each branch updates its own stock. Admin monitors series, serials, and remaining balances.'}</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => downloadBranchInventory(branchOverview.branches, 'branch-stock-report.csv')}
+                      onClick={() => downloadBranchInventory(branchOverview.branches, branchMode ? 'selected-branch-stock-report.csv' : 'branch-stock-report.csv')}
                       className="rounded-lg bg-slate-700 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                     >
-                      Export All Branch Stock Report CSV
+                      {branchMode ? 'Export Branch Stock CSV' : 'Export All Branch Stock Report CSV'}
                     </button>
                   </div>
                   <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <select aria-label="Filter branch stock by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                    {!branchMode && <select aria-label="Filter branch stock by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                       <option value="">All branches</option>
                       {branchOverview.branches.map((branch) => <option key={branch.branch_id} value={String(branch.branch_id)}>{branch.branch_name}</option>)}
-                    </select>
+                    </select>}
                     <select aria-label="Filter branch stock by book type" value={branchBookTypeFilter} onChange={(event) => setBranchBookTypeFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                       <option value="">All book types</option>
                       {branchStockTypes.map((book) => <option key={book.key} value={book.key}>{book.label}</option>)}
                     </select>
-                    <input type="search" aria-label="Search branch stock" placeholder="Search branch..." value={branchSearch} onChange={(event) => setBranchSearch(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    {!branchMode && <input type="search" aria-label="Search branch stock" placeholder="Search branch..." value={branchSearch} onChange={(event) => setBranchSearch(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />}
                   </div>
                   {branchOverviewLoading ? (
                     <p className="py-8 text-center text-gray-500">Loading branch stock…</p>
@@ -803,7 +849,7 @@ export default function StockManagement() {
                                       setBranchHistoryFilters((current) => ({ ...current, branch: row.branch.url_slug, bookType: row.book_type }))
                                       branchHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                                     }} className="font-semibold text-blue-700 hover:underline">View History</button>
-                                    <button type="button" onClick={() => navigate(`/branch/${row.branch.url_slug}/stationery-stock`)} className="font-semibold text-slate-700 hover:underline">View Branch Page</button>
+                                    {!branchMode && <button type="button" onClick={() => navigate(`/branch/${row.branch.url_slug}/stationery-stock`)} className="font-semibold text-slate-700 hover:underline">View Branch Page</button>}
                                   </div>
                                 </td>
                               </tr>
@@ -823,15 +869,15 @@ export default function StockManagement() {
                         <h2 className="text-xl font-bold text-gray-800">Branch Stock History</h2>
                         <p className="mt-1 text-sm text-gray-500">Allocations, usage, and requests recorded by branch.</p>
                       </div>
-                      <button type="button" onClick={() => downloadBranchReport(branchHistory, 'branch-stock-history.csv')} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white">
+                      <button type="button" onClick={() => downloadBranchReport(branchHistory, branchMode ? 'selected-branch-stock-history.csv' : 'branch-stock-history.csv')} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white">
                         Export Filtered History
                       </button>
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <select aria-label="Filter history by branch" value={branchHistoryFilters.branch} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, branch: event.target.value })} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+                      {!branchMode && <select aria-label="Filter history by branch" value={branchHistoryFilters.branch} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, branch: event.target.value })} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
                         <option value="">All branches</option>
                         {branchOverview.branches.map((branch) => <option key={branch.branch_id} value={branch.url_slug}>{branch.branch_name}</option>)}
-                      </select>
+                      </select>}
                       <select aria-label="Filter history by book type" value={branchHistoryFilters.bookType} onChange={(event) => setBranchHistoryFilters({ ...branchHistoryFilters, bookType: event.target.value })} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
                         <option value="">All book types</option>
                         {branchStockTypes.map((book) => <option key={book.key} value={book.key}>{book.label}</option>)}
@@ -844,7 +890,7 @@ export default function StockManagement() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-100">
                         <tr>
-                          {['Date', 'Branch', 'Book Type', 'Action', 'Qty', 'Source', 'By', 'Branch Remaining', 'Master Remaining'].map((label) => <th key={label} className="px-4 py-3 text-left text-xs font-bold uppercase text-gray-600">{label}</th>)}
+                          {['Date', 'Branch', 'Book Type', 'Action', 'Qty', 'Source', 'By', 'Branch Remaining', ...(!branchMode ? ['Master Remaining'] : [])].map((label) => <th key={label} className="px-4 py-3 text-left text-xs font-bold uppercase text-gray-600">{label}</th>)}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -858,19 +904,17 @@ export default function StockManagement() {
                             <td className="px-4 py-3 text-sm capitalize">{entry.source || '—'}</td>
                             <td className="px-4 py-3 text-sm">{entry.performed_by || '—'}</td>
                             <td className="px-4 py-3 text-sm">{entry.remaining ?? '—'}</td>
-                            <td className="px-4 py-3 text-sm">{entry.master_remaining ?? '—'}</td>
+                            {!branchMode && <td className="px-4 py-3 text-sm">{entry.master_remaining ?? '—'}</td>}
                           </tr>
                         ))}
-                        {!branchHistoryLoading && !branchHistory.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No branch stock history matches these filters.</td></tr>}
-                        {branchHistoryLoading && <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">Loading branch stock history…</td></tr>}
+                        {!branchHistoryLoading && !branchHistory.length && <tr><td colSpan={branchMode ? 8 : 9} className="px-4 py-8 text-center text-slate-500">No branch stock history matches these filters.</td></tr>}
+                        {branchHistoryLoading && <tr><td colSpan={branchMode ? 8 : 9} className="px-4 py-8 text-center text-slate-500">Loading branch stock history…</td></tr>}
                       </tbody>
                     </table>
                   </div>
                 </section>
               </div>
             )}
-          </div>
-        )}
 
         {/* ADD STOCK MODAL */}
         {showAddModal && selectedItem && (
