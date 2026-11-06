@@ -10,9 +10,12 @@ import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '.
 
 const getLocalBillNumber = () => getLocalDocumentNumber('bill', 'BTC/BILL/')
 
-export default function BillEntry({ branchMode = false }) {
+export default function BillEntry({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const { id } = useParams()
+  const branchPath = (path) => branchMode
+    ? `/branch/${encodeURIComponent(branchCode)}/${path}`
+    : `/${path}`
   const [loading, setLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [historyList, setHistoryList] = useState([])
@@ -132,7 +135,7 @@ export default function BillEntry({ branchMode = false }) {
       setBillData(prev => ({ ...prev, ...mapBillToForm(res.data) }))
     } catch (err) {
       alert(err.response?.data?.error || 'Unable to load bill for editing.')
-      navigate('/bills')
+      navigate(branchPath('bill-list'))
     } finally {
       setLoading(false)
     }
@@ -309,6 +312,7 @@ export default function BillEntry({ branchMode = false }) {
       const calculated = calculate(billData)
       const payload = {
         ...(branchMode ? {
+          branch: branchCode,
           branch_code: JSON.parse(localStorage.getItem('branch_session') || 'null')?.branch?.branch_code
         } : {}),
         bill_no: billData.invNo,
@@ -364,7 +368,9 @@ export default function BillEntry({ branchMode = false }) {
       }
       await fetchHistory()
       toast.success(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
-      navigate(`/bills/${savedBill.id}/print`)
+      navigate(branchMode
+        ? `/branch/${encodeURIComponent(branchCode)}/bill-print/${savedBill.id}`
+        : `/bills/${savedBill.id}/print`)
     } catch (err) {
       if (isDatabaseUnavailable(err)) {
         try {
@@ -385,7 +391,7 @@ export default function BillEntry({ branchMode = false }) {
   const newBill = () => {
     if (window.confirm("Generate New Bill?")) {
       if (id) {
-        navigate('/bill/new')
+        navigate(branchPath('bill-entry'))
         return
       }
       setBillData({
@@ -624,7 +630,7 @@ export default function BillEntry({ branchMode = false }) {
         <button className="btn" style={{background:'#1976d2'}} onClick={saveInvoice}>Save to List</button>
         <button className="btn" style={{background:'#f57c00'}} onClick={() => setShowHistory(true)}>History + CA</button>
         <button className="btn" style={{background:'var(--accent)'}} onClick={validateAndPrint}>Print</button>
-        <button className="btn" style={{background:'#666'}} onClick={() => navigate('/bills')}>Back to List</button>
+        <button className="btn" style={{background:'#666'}} onClick={() => navigate(branchPath('bill-list'))}>Back to List</button>
       </div>
 
       {/* HISTORY MODAL */}

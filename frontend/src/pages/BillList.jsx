@@ -3,21 +3,30 @@ import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
 
-export default function BillList() {
+export default function BillList({ branchMode = false, branchCode }) {
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [search, setSearch] = useState('')
   const navigate = useNavigate()
 
+  const branchPath = (path) => branchMode
+    ? `/branch/${encodeURIComponent(branchCode)}/${path}`
+    : `/${path}`
+
   useEffect(() => {
-    loadBills()
-  }, [])
+    const refresh = () => loadBills()
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [branchMode, branchCode])
 
   const loadBills = async () => {
     try {
       setLoading(true)
-      const res = await api.get('/bills')
+      const res = await api.get('/bills', {
+        params: branchMode && branchCode ? { branch: branchCode } : undefined
+      })
       const billsData = res.data?.data || res.data || []
       if (!Array.isArray(billsData)) throw new Error('The server returned an invalid bill list.')
       setBills(billsData)
@@ -51,8 +60,8 @@ export default function BillList() {
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <h1 className="font-bold text-lg">📋 Bill List ({bills.length})</h1>
           <div className="flex gap-2">
-            <Link to="/bill-entry" className="bg-white text-red-700 px-4 py-2 rounded-lg text-sm font-medium">+ New Bill</Link>
-            <button onClick={() => navigate('/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg text-sm">← Back</button>
+            <Link to={branchPath('bill-entry')} className="bg-white text-red-700 px-4 py-2 rounded-lg text-sm font-medium">+ New Bill</Link>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg text-sm">← Back</button>
           </div>
         </div>
       </header>
@@ -108,13 +117,17 @@ export default function BillList() {
                   </td>
                   <td className="px-4 py-3 text-center">
                     <Link
-                      to={`/bill-edit/${bill.id}`}
+                      to={branchMode
+                        ? `/branch/${encodeURIComponent(branchCode)}/bill-entry/${bill.id}`
+                        : `/bill-edit/${bill.id}`}
                       className="ml-2 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 text-sm font-medium inline-block"
                     >
                       Edit
                     </Link>
                     <Link
-                      to={`/bill-print/${bill.id}`}
+                      to={branchMode
+                        ? `/branch/${encodeURIComponent(branchCode)}/bill-print/${bill.id}`
+                        : `/bill-print/${bill.id}`}
                       className="ml-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium inline-block"
                     >
                       Print

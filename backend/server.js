@@ -1791,7 +1791,7 @@ app.get('/api/next-lr', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/consignments', authMiddleware, async (req, res) => {
+app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, res) => {
   try {
     const userRole = String(req.user.role || '').toLowerCase();
     const isAdmin = userRole === 'admin';
@@ -2270,14 +2270,31 @@ app.post('/api/parties', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/bills', authMiddleware, async (req, res) => {
+app.get(['/api/bills', '/api/bill-list'], authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
-    const result = await pool.query(`SELECT * FROM bill_book ${branchCondition} ORDER BY id DESC`);
+    let scope = resolveDashboardBranch(req);
+    if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
+    const selectedBranch = String(req.query.branch || '').trim();
+    if (isAdmin && selectedBranch && !req.query.branch_id && !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())) {
+      const branchResult = await pool.query(
+        `SELECT id FROM branches
+         WHERE LOWER(COALESCE(url_slug, '')) = LOWER($1)
+            OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
+         LIMIT 1`,
+        [selectedBranch]
+      );
+      if (!branchResult.rows[0]) return res.status(404).json({ error: 'The selected branch was not found.' });
+      scope = { branchId: Number(branchResult.rows[0].id), branchCode: null };
+    }
+    const branch = buildBranchCondition(scope);
+    const result = await pool.query(
+      `SELECT * FROM bill_book ${branch.sql ? `WHERE ${branch.sql}` : ''} ORDER BY id DESC`,
+      branch.params
+    );
     res.json({ data: result.rows });
   } catch (err) {
-    console.error('GET /api/bills error:', err.message);
+    console.error('GET bill list error:', err.message);
     res.status(503).json({
       error: 'Bills are temporarily unavailable because the database could not be queried.',
       details: err.message,
@@ -2340,13 +2357,33 @@ const insertBillItems = async (client, billId, items) => {
 };
 
 app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async (req, res) => {
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(260627001)');
     const bill = Object.fromEntries(Object.entries(req.body).filter(([key]) => billFields.includes(key)));
     const items = Array.isArray(req.body.items) ? req.body.items : [];
-    if (!bill.branch_id) bill.branch_id = req.user.branch_id;
+    if (req.user.role !== 'admin') {
+      bill.branch_id = safeUserBranchId(req);
+      if (!bill.branch_id) throw new Error('Your account is not assigned to a branch.');
+    } else if (!bill.branch_id && req.body.branch) {
+      const branchResult = await client.query(
+        `SELECT id, branch_code FROM branches
+         WHERE LOWER(COALESCE(url_slug, '')) = LOWER($1)
+            OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
+         LIMIT 1`,
+        [String(req.body.branch).trim()]
+      );
+      if (!branchResult.rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'The selected branch was not found.' });
+      }
+      bill.branch_id = branchResult.rows[0].id;
+      bill.branch_code = branchResult.rows[0].branch_code;
+    } else if (!bill.branch_id) {
+      bill.branch_id = req.user.branch_id;
+    }
     if (!bill.bill_date) bill.bill_date = new Date().toISOString().split('T')[0];
     if (!bill.status) bill.status = 'Pending';
     if (!bill.payment_status) bill.payment_status = 'Unpaid';
@@ -2364,9 +2401,11 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
     await client.query('COMMIT');
     res.status(201).json({ ...result.rows[0], items });
   } catch (err) {
-    await client.query('ROLLBACK');
-    res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Bill number already exists' : err.message });
-  } finally { client.release(); }
+    if (client) await client.query('ROLLBACK').catch((rollbackError) => console.error('Bill transaction rollback failed:', rollbackError.message));
+    console.error('POST /api/bills error:', err.message);
+    res.status(err.code === '23505' ? 409 : err.message === 'Your account is not assigned to a branch.' ? 403 : 500)
+      .json({ error: err.code === '23505' ? 'Bill number already exists' : err.message });
+  } finally { client?.release(); }
 });
 
 app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, async (req, res) => {

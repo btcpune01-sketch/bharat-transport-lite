@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
 
-const BillPrint = () => {
+const BillPrint = ({ branchMode = false, branchCode }) => {
   const { id } = useParams()
   const [bills, setBills] = useState([])
   const [selectedBill, setSelectedBill] = useState(null)
@@ -65,7 +65,9 @@ const BillPrint = () => {
 
     const fetchBills = async () => {
       try {
-        const res = await api.get('/bills')
+        const res = await api.get('/bills', {
+          params: branchMode && branchCode ? { branch: branchCode } : undefined
+        })
         const data = res.data?.data || res.data?.bills || res.data || []
         const rows = Array.isArray(data) ? data.map(normalizeBill) : []
         if (!active) return
@@ -87,7 +89,7 @@ const BillPrint = () => {
 
     fetchBills()
     return () => { active = false }
-  }, [id])
+  }, [id, branchMode, branchCode])
 
   const handlePrint = async (bill) => {
     try {
