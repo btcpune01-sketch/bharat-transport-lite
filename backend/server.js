@@ -1429,18 +1429,9 @@ function resolveDashboardBranch(req) {
   return { branchId: null, branchCode: selected };
 }
 
-function buildBranchCondition({ branchId, branchCode }, startIndex = 1) {
-  const params = [];
-  const parts = [];
-  if (branchId) {
-    params.push(branchId);
-    parts.push(`branch_id = $${startIndex + params.length - 1}`);
-  }
-  if (branchCode) {
-    params.push(branchCode);
-    parts.push(`(branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($${startIndex + params.length - 1})))`);
-  }
-  return { sql: parts.length ? `(${parts.join(' OR ')})` : '', params };
+function buildBranchCondition({ branchId }, startIndex = 1) {
+  if (!branchId) return { sql: '', params: [] };
+  return { sql: `branch_id = $${startIndex}`, params: [branchId] };
 }
 
 async function resolveAdminBranchId(req, res, source = req.query) {
