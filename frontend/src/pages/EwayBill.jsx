@@ -4,7 +4,7 @@ import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import toast from 'react-hot-toast'
 import { getLocalDrafts, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
-export default function EwayBill() {
+export default function EwayBill({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
@@ -19,7 +19,7 @@ export default function EwayBill() {
 
   useEffect(() => {
     fetchBills()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchBills = async () => {
     let localDrafts = []
@@ -30,7 +30,8 @@ export default function EwayBill() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/eway-bills`, { headers })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/eway-bills${branchQuery}`, { headers })
       if (res.ok) {
         const data = await res.json()
         setBills([...localDrafts, ...(data.data || [])])
@@ -66,8 +67,9 @@ export default function EwayBill() {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
       
-      const res = await fetch(`${apiUrl}/eway-bills/${editId}`, {
+      const res = await fetch(`${apiUrl}/eway-bills/${editId}${branchQuery}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -130,7 +132,7 @@ export default function EwayBill() {
       <nav className="bg-gradient-to-r from-indigo-700 to-indigo-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">📄 E-Way Bill Generator</h1>
               <p className="text-xs text-indigo-200">Smart GST Compliance (₹50K Inter-state / ₹1L Intra-state)</p>
