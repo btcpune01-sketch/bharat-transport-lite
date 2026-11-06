@@ -44,7 +44,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Branch-Slug', 'X-Confirm-Permanent-Delete']
 }));
 
 // Handle OPTIONS preflight requests explicitly
@@ -903,6 +903,19 @@ function authMiddleware(req, res, next) {
   } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+}
+
+function requireManualDeleteConfirmation(req, res, next) {
+  if (req.headers['x-confirm-permanent-delete'] !== 'true') {
+    return res.status(428).json({
+      error: 'Confirm this permanent deletion explicitly before retrying.'
+    });
+  }
+  const role = String(req.user?.role || '').toLowerCase();
+  if (!['admin', 'manager'].includes(role)) {
+    return res.status(403).json({ error: 'Only admins or authorized managers can delete records.' });
+  }
+  return next();
 }
 
 registerStationeryRoutes(app, { pool, authMiddleware });
@@ -1768,7 +1781,7 @@ app.put('/api/branches/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/branches/:id', authMiddleware, async (req, res) => {
+app.delete('/api/branches/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can delete branches.' });
     await pool.query('UPDATE branches SET is_active = FALSE WHERE id = $1', [req.params.id]);
@@ -2164,7 +2177,7 @@ app.put('/api/consignments/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/consignments/:id', authMiddleware, async (req, res) => {
+app.delete('/api/consignments/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
     const result = await pool.query('UPDATE consignments SET is_deleted = TRUE WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE RETURNING id', [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: 'Bilty not found' });
@@ -2621,7 +2634,7 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
   } finally { client.release(); }
 });
 
-app.delete('/api/bills/:id', authMiddleware, async (req, res) => {
+app.delete('/api/bills/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
     const result = await pool.query('DELETE FROM bill_book WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
@@ -2739,7 +2752,7 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
   } finally { client.release(); }
 });
 
-app.delete('/api/mr/:id', authMiddleware, async (req, res) => {
+app.delete('/api/mr/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -2856,7 +2869,7 @@ app.put('/api/customers/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.delete('/api/customers/:id', authMiddleware, async (req, res) => {
+app.delete('/api/customers/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
     const result = await pool.query('UPDATE customers SET is_active = FALSE WHERE id = $1 RETURNING id', [req.params.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
@@ -3232,7 +3245,7 @@ app.put('/api/rates/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/rates/:id', authMiddleware, async (req, res) => {
+app.delete('/api/rates/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try { await pool.query('DELETE FROM rate_contracts WHERE id = $1', [req.params.id]); res.json({ success: true }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -3372,7 +3385,7 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/users/:id', authMiddleware, async (req, res) => {
+app.delete('/api/users/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only admin can delete users' });
     const id = req.params.id;

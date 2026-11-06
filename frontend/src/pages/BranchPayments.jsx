@@ -76,17 +76,6 @@ export default function BranchPayments() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('क्या आप यह Payment Delete करना चाहते हैं?')) return;
-    try {
-      await api.delete(`/branch-payments/${id}`);
-      alert('Payment Delete हो गई!');
-      fetchPayments();
-    } catch (err) {
-      alert(err.response?.data?.error || 'Delete करने में Error!');
-    }
-  };
-
   if (loading) {
     return (
       <div className="p-8 text-center">
@@ -223,13 +212,12 @@ export default function BranchPayments() {
                     <th className="px-4 py-3 text-right">Amount</th>
                     <th className="px-4 py-3">Mode</th>
                     <th className="px-4 py-3">Reference</th>
-                    <th className="px-4 py-3">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {payments.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                      <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
                         No payments found.
                       </td>
                     </tr>
@@ -249,14 +237,6 @@ export default function BranchPayments() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{p.reference || '—'}</td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => handleDelete(p.id)}
-                            className="text-red-600 hover:text-red-800 text-sm font-medium"
-                          >
-                            Delete
-                          </button>
-                        </td>
                       </tr>
                     ))
                   )}

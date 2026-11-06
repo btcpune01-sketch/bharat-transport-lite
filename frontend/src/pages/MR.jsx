@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import { useAuth } from '../AuthContext'
+import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
 
 export default function MR() {
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [mrs, setMrs] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -29,13 +33,13 @@ export default function MR() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('क्या आप इस MR को delete करना चाहते हैं?')) return
+    if (!confirmPermanentDelete()) return
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const response = await fetch(`${apiUrl}/mr/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}`, ...permanentDeleteHeaders }
       })
       if (!response.ok) {
         const result = await response.json()
@@ -167,13 +171,13 @@ export default function MR() {
                           >
                             🖨️
                           </button>
-                          <button 
+                          {canDelete && <button 
                             onClick={() => handleDelete(mr.id)} 
                             className="bg-red-600 text-white px-2 py-1 rounded text-xs hover:bg-red-700"
                             title="Delete MR"
                           >
                             🗑️
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>

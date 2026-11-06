@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import { useAuth } from '../AuthContext'
+import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
 
 export default function Rates() {
   const navigate = useNavigate()
+  const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [rates, setRates] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -119,7 +123,7 @@ export default function Rates() {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this rate contract?')) return
+    if (!confirmPermanentDelete()) return
     
     try {
       const token = localStorage.getItem('token')
@@ -127,7 +131,7 @@ export default function Rates() {
       
       const res = await fetch(`${apiUrl}/rates/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${token}`, ...permanentDeleteHeaders }
       })
 
       if (res.ok) {
@@ -401,9 +405,11 @@ export default function Rates() {
                           <button onClick={() => handleEdit(r)} className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs font-bold hover:bg-yellow-200">
                             ✏️
                           </button>
-                          <button onClick={() => handleDelete(r.id)} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200">
-                            🗑️
-                          </button>
+                          {canDelete && (
+                            <button onClick={() => handleDelete(r.id)} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200">
+                              🗑️
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}

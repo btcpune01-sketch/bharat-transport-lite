@@ -79,12 +79,12 @@ export const authAPI = {
 
 export const customerAPI = {
   getAll: (params) => api.get('/customers', { params }), getOne: (id) => api.get(`/customers/${id}`),
-  create: (data) => api.post('/customers', data), update: (id, data) => api.put(`/customers/${id}`, data), delete: (id) => api.delete(`/customers/${id}`)
+  create: (data) => api.post('/customers', data), update: (id, data) => api.put(`/customers/${id}`, data), delete: (id, config) => api.delete(`/customers/${id}`, config)
 }
 
 export const branchAPI = {
   getAll: (params) => api.get('/branches', { params }), getOne: (id) => api.get(`/branches/${id}`),
-  create: (data) => api.post('/branches', data), update: (id, data) => api.put(`/branches/${id}`, data), delete: (id) => api.delete(`/branches/${id}`)
+  create: (data) => api.post('/branches', data), update: (id, data) => api.put(`/branches/${id}`, data), delete: (id, config) => api.delete(`/branches/${id}`, config)
 }
 
 export const branchPaymentsAPI = {
@@ -115,13 +115,13 @@ export const biltyAPI = {
   search: (query) => api.get('/consignments', { params: { search: query } }),
   getByBranch: (branch) => api.get('/consignments', { params: { branch } }),
   create: (data) => api.post('/consignments', data), update: (id, data) => api.put(`/consignments/${id}`, data),
-  updateStatus: (id, data) => api.patch(`/consignments/${id}/status`, data), delete: (id) => api.delete(`/consignments/${id}`)
+  updateStatus: (id, data) => api.patch(`/consignments/${id}/status`, data), delete: (id, config) => api.delete(`/consignments/${id}`, config)
 }
 
 export const billAPI = {
   getAll: (params) => api.get('/bills', { params }), getOne: (bill_no) => api.get(`/bills/${bill_no}`),
   create: (data) => api.post('/bills', data), update: (id, data) => api.put(`/bills/${id}`, data),
-  addPayment: (id, data) => api.post(`/bills/${id}/payments`, data), delete: (id) => api.delete(`/bills/${id}`)
+  addPayment: (id, data) => api.post(`/bills/${id}/payments`, data), delete: (id, config) => api.delete(`/bills/${id}`, config)
 }
 
 export const podAPI = { getAll: () => api.get('/pod'), getByLR: (lr_no) => api.get(`/pod/${lr_no}`), create: (data) => api.post('/pod', data) }

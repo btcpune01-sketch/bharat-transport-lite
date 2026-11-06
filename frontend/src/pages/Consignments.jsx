@@ -3,8 +3,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Truck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api';
+import { useAuth } from '../AuthContext';
+import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion';
 
 const Consignments = () => {
+  const { currentUser } = useAuth();
+  const canDelete = canDeleteRecords(currentUser?.role);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [consignments, setConsignments] = useState([]);
@@ -75,10 +79,10 @@ const Consignments = () => {
   });
 
   const handleDelete = async (id, lr_no) => {
-    if (!window.confirm(`Delete Bilty ${lr_no}?`)) return;
+    if (!confirmPermanentDelete()) return;
 
     try {
-      await api.delete(`/consignments/${id}`);
+      await api.delete(`/consignments/${id}`, { headers: permanentDeleteHeaders });
       toast.success('Deleted');
       await fetchConsignments();
     } catch (err) {
@@ -210,14 +214,14 @@ const Consignments = () => {
                         >
                           ✏️
                         </button>
-                        <button
+                        {canDelete && <button
                           type="button"
                           onClick={() => handleDelete(c.id, c.lr_no)}
                           className="text-red-600 hover:text-red-800 p-1 transition"
                           title="Delete"
                         >
                           🗑️
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>

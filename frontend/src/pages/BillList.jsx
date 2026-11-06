@@ -2,8 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
+import { useAuth } from '../AuthContext'
+import { canDeleteRecords, confirmPermanentDelete, permanentDeleteHeaders } from '../utils/recordDeletion'
 
 export default function BillList({ branchMode = false, branchCode }) {
+  const { currentUser } = useAuth()
+  const canDelete = canDeleteRecords(currentUser?.role)
   const [bills, setBills] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -64,9 +68,9 @@ export default function BillList({ branchMode = false, branchCode }) {
   }
 
   const deleteBill = async (bill) => {
-    if (!window.confirm(`Delete bill ${bill.bill_no || ''}? This cannot be undone.`)) return
+    if (!confirmPermanentDelete()) return
     try {
-      await api.delete(`/bills/${bill.id}`)
+      await api.delete(`/bills/${bill.id}`, { headers: permanentDeleteHeaders })
       setBills(current => current.filter(item => item.id !== bill.id))
       setTotalBills((current) => Math.max(0, current - 1))
     } catch (err) {
@@ -157,13 +161,15 @@ export default function BillList({ branchMode = false, branchCode }) {
                     >
                       Print
                     </Link>
-                    <button
-                      type="button"
-                      onClick={() => deleteBill(bill)}
-                      className="ml-2 bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-sm font-medium"
-                    >
-                      Delete
-                    </button>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => deleteBill(bill)}
+                        className="ml-2 bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-sm font-medium"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
