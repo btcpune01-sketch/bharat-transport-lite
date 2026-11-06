@@ -47,6 +47,7 @@ export default function BillList({ branchMode = false, branchCode }) {
       })
       const billsData = res.data?.data || res.data || []
       if (!Array.isArray(billsData)) throw new Error('The server returned an invalid bill list.')
+      console.info(`Received ${billsData.length} bills from API`)
       if (requestId !== requestSequence.current) return
       setBills((current) => offset === 0 ? billsData : [
         ...current,

@@ -2609,6 +2609,7 @@ app.get(['/api/bills', '/api/bill-list'], authMiddleware, async (req, res) => {
       }`,
       pageParams
     );
+    console.info(`Found ${total} bills in bill_book; returning ${result.rows.length}`);
     res.json({
       data: result.rows,
       total,
