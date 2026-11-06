@@ -3617,11 +3617,19 @@ async function ensureAdminUser() {
       console.warn('Initial admin bootstrap skipped: set INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD to create one.');
       return;
     }
-    const result = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-    if (result.rows.length === 0) {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      await pool.query(`INSERT INTO users (username, password, email, full_name, role, is_active) VALUES ($1, $2, $3, $4, $5, TRUE)`, [username, hashedPassword, email, 'Administrator', 'admin']);
+    const existingAdmin = await pool.query(
+      `SELECT id FROM users WHERE LOWER(role) = 'admin' LIMIT 1`
+    );
+    if (existingAdmin.rows.length > 0) {
+      console.info('Initial admin bootstrap skipped because an admin account already exists.');
+      return;
     }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await pool.query(
+      `INSERT INTO users (username, password, email, full_name, role, is_active)
+       VALUES ($1, $2, $3, $4, $5, TRUE)`,
+      [username, hashedPassword, email, 'Administrator', 'admin']
+    );
   } catch (err) { console.error('Admin setup error:', err.message); }
 }
 
