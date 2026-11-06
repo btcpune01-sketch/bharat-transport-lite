@@ -2665,7 +2665,21 @@ app.post('/api/commissions', authMiddleware, async (req, res) => {
 // PARTIES, BILLS, MONEY RECEIPTS
 // ==========================================
 app.get('/api/parties', authMiddleware, async (req, res) => {
-  try { const result = await pool.query('SELECT * FROM parties WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE ORDER BY party_name'); res.json({ data: result.rows }); }
+  try {
+    const branchId = await resolveRequestBranchId(req, res);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null
+      ? ''
+      : 'AND EXISTS (SELECT 1 FROM party_ledger ledger WHERE ledger.party_code = parties.party_code AND ledger.branch_id = $1)';
+    const result = await pool.query(
+      `SELECT * FROM parties
+       WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE
+         ${branchCondition}
+       ORDER BY party_name`,
+      branchId === null ? [] : [branchId]
+    );
+    res.json({ data: result.rows });
+  }
   catch (err) { console.error('GET /api/parties error:', err.message); res.status(503).json({ error: 'Parties are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
