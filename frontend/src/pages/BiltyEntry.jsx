@@ -7,30 +7,54 @@ import { isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 import { formatDateForInput } from '../utils/dateFormatter'
 import CreatableBranchSelect from '../components/CreatableBranchSelect'
 
-function CustomSelect({ label, value, onChange, options = [], name, required }) {
+function CustomSelect({ label, value, onChange, options = [], name, required, searchable = false }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [searchText, setSearchText] = useState('')
   const ref = useRef(null)
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) setIsOpen(false)
+      if (ref.current && !ref.current.contains(event.target)) {
+        setIsOpen(false)
+        setSearchText('')
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
   const safeOptions = Array.isArray(options) ? options : []
   const selectedLabel = safeOptions.find(o => o.value === value)?.label || (label.includes('Select') ? label : `Select ${label}`)
+  const visibleOptions = searchable
+    ? safeOptions.filter(option => option.label.toLowerCase().includes(searchText.toLowerCase()))
+    : safeOptions
   return (
     <div className="relative" ref={ref}>
       <label className="block text-[#1e293b] text-sm font-medium mb-1">{label}{required && ' *'}</label>
-      <div onClick={() => setIsOpen(!isOpen)} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] cursor-pointer flex justify-between items-center hover:bg-slate-50 transition">
+      <div onClick={() => {
+        setIsOpen(!isOpen)
+        if (isOpen) setSearchText('')
+      }} className="w-full px-4 py-2 bg-white border border-[#c2cddf] rounded-lg text-[#0f172a] cursor-pointer flex justify-between items-center hover:bg-slate-50 transition">
         <span>{selectedLabel}</span>
         <svg className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
       </div>
       {isOpen && (
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-60 overflow-auto">
-          {safeOptions.map((option) => (
-            <div key={option.value} onClick={() => { onChange({ target: { name, value: option.value } }); setIsOpen(false) }} className={`px-4 py-2 cursor-pointer text-black hover:bg-blue-100 ${value === option.value ? 'bg-blue-500 text-white' : 'bg-white'}`}>{option.label}</div>
-          ))}
+          {searchable && <input
+            type="search"
+            value={searchText}
+            onChange={event => setSearchText(event.target.value)}
+            onClick={event => event.stopPropagation()}
+            placeholder="Search Party"
+            className="sticky top-0 w-full border-b border-gray-200 bg-white px-4 py-2 text-black outline-none"
+          />}
+          {visibleOptions.length
+            ? visibleOptions.map((option) => (
+              <div key={option.value} onClick={() => {
+                onChange({ target: { name, value: option.value } })
+                setIsOpen(false)
+                setSearchText('')
+              }} className={`px-4 py-2 cursor-pointer text-black hover:bg-blue-100 ${value === option.value ? 'bg-blue-500 text-white' : 'bg-white'}`}>{option.label}</div>
+            ))
+            : <div className="px-4 py-2 text-gray-500">Party nahi mili</div>}
         </div>
       )}
     </div>
@@ -249,7 +273,19 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       const res = await customerAPI.getAll()
       const data = Array.isArray(res.data) ? res.data : res.data?.data
       if (!Array.isArray(data)) throw new Error('Customer API returned an invalid response')
-      setCustomers(data)
+      setCustomers(data.map(customer => {
+        const id = customer.id ?? customer.customer_id
+        const customerCode = customer.customer_code || customer.party_code || customer.code || ''
+        return {
+          ...customer,
+          id,
+          customer_name: customer.customer_name || customer.party_name || customer.name || '',
+          customer_code: customerCode || (id ? `CUST-${String(id).padStart(3, '0')}` : ''),
+          address: customer.address || customer.party_address || '',
+          mobile: customer.mobile || customer.phone || '',
+          gst_no: customer.gst_no || customer.gst || customer.party_gst || ''
+        }
+      }))
     } catch (err) {
       console.error('Failed to load customers:', err)
       setCustomers([])
@@ -313,15 +349,15 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
   }
 
   const handleCustomerSelect = (type, customerId) => {
-    const customer = customers.find(c => c.id === parseInt(customerId))
+    const customer = customers.find(c => String(c.id) === String(customerId))
     if (customer) {
       setFormData(prev => ({
         ...prev,
-        [`${type}_name`]: customer.customer_name || customer.name,
-        [`${type}_address`]: customer.address || '',
-        [`${type}_mobile`]: customer.mobile || '',
-        [`${type}_gst`]: customer.gst_no || '',
-        [`customer_code_${type}`]: customer.customer_code || ''
+        [`${type}_name`]: customer.customer_name || customer.party_name || customer.name || '',
+        [`${type}_address`]: customer.address || customer.party_address || '',
+        [`${type}_mobile`]: customer.mobile || customer.phone || '',
+        [`${type}_gst`]: customer.gst_no || customer.gst || customer.party_gst || '',
+        [`customer_code_${type}`]: customer.customer_code || customer.party_code || customer.code || ''
       }))
     }
   }
@@ -445,8 +481,8 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
         : formData.bill_to_party === 'PAID' ? 'Paid' : ''
   const loadTypeOptions = [{ value: 'Full Load', label: 'Full Load' }, { value: 'Part Load', label: 'Part Load' }]
   const insuranceOptions = [{ value: 'Not Insured', label: 'Not Insured' }, { value: 'Insured', label: 'Insured' }]
-  const consignorOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: c.customer_name || c.name }))]
-  const consigneeOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: c.customer_name || c.name }))]
+  const consignorOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: `${c.customer_name || c.name}${c.customer_code ? ` (${c.customer_code})` : ''}` }))]
+  const consigneeOptions = [{ value: '', label: 'Select Party' }, ...customers.map(c => ({ value: c.id, label: `${c.customer_name || c.name}${c.customer_code ? ` (${c.customer_code})` : ''}` }))]
 
   return (
     <div className="min-h-screen p-6 w-full bg-[#eef2f7]">
@@ -492,7 +528,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
 
           <div className="border-b border-white/10 pb-6">
             <h3 className="text-xl font-bold text-white mb-4"> Section 2: Consignor (भेजने वाला)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><CustomSelect label="Select Party" name="consignor_select" value="" onChange={(e) => handleCustomerSelect('consignor', e.target.value)} options={consignorOptions} /></div></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><CustomSelect label="Select Party" name="consignor_select" value="" onChange={(e) => handleCustomerSelect('consignor', e.target.value)} options={consignorOptions} searchable /></div></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignor Name *</label><input type="text" name="consignor_name" value={formData.consignor_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignor Mobile *</label><input type="text" name="consignor_mobile" value={formData.consignor_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
@@ -504,7 +540,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
 
           <div className="border-b border-white/10 pb-6">
             <h3 className="text-xl font-bold text-white mb-4"> Section 3: Consignee (लेने वाला)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><CustomSelect label="Select Party" name="consignee_select" value="" onChange={(e) => handleCustomerSelect('consignee', e.target.value)} options={consigneeOptions} /></div></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"><div><CustomSelect label="Select Party" name="consignee_select" value="" onChange={(e) => handleCustomerSelect('consignee', e.target.value)} options={consigneeOptions} searchable /></div></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignee Name *</label><input type="text" name="consignee_name" value={formData.consignee_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Consignee Mobile *</label><input type="text" name="consignee_mobile" value={formData.consignee_mobile} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>

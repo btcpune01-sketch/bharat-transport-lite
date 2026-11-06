@@ -3225,31 +3225,114 @@ app.post('/api/commissions', authMiddleware, async (req, res) => {
 // ==========================================
 // PARTIES, BILLS, MONEY RECEIPTS
 // ==========================================
+async function nextPartyMasterCode(db, table) {
+  const codeColumn = table === 'parties' ? 'party_code' : 'customer_code';
+  const result = await db.query(
+    `SELECT COALESCE(MAX(SUBSTRING(${codeColumn} FROM '[0-9]+$')::BIGINT), 0) AS last_serial
+     FROM ${table}
+     WHERE ${codeColumn} ~* '^CUST-?[0-9]+$'`
+  );
+  const nextSerial = BigInt(result.rows[0]?.last_serial || 0) + 1n;
+  return `CUST${nextSerial.toString().padStart(4, '0')}`;
+}
+
+async function backfillPartyMasterCodes(db, table) {
+  const codeColumn = table === 'parties' ? 'party_code' : 'customer_code';
+  const result = await db.query(
+    `WITH serial AS (
+       SELECT COALESCE(MAX(SUBSTRING(${codeColumn} FROM '[0-9]+$')::BIGINT), 0) AS last_serial
+       FROM ${table}
+       WHERE ${codeColumn} ~* '^CUST-?[0-9]+$'
+     ),
+     missing AS (
+       SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS sequence
+       FROM ${table}
+       WHERE NULLIF(BTRIM(${codeColumn}), '') IS NULL
+     )
+     UPDATE ${table} AS master
+     SET ${codeColumn} = 'CUST' || LPAD(
+       (serial.last_serial + missing.sequence)::TEXT,
+       GREATEST(4, LENGTH((serial.last_serial + missing.sequence)::TEXT)),
+       '0'
+     )
+     FROM serial, missing
+     WHERE master.id = missing.id`
+  );
+  return result.rowCount;
+}
+
 app.get('/api/parties', authMiddleware, async (req, res) => {
+  let client;
+  let transactionStarted = false;
   try {
     const branchId = await resolveRequestBranchId(req, res);
     if (branchId === undefined) return;
     const branchCondition = branchId === null
       ? ''
       : 'AND EXISTS (SELECT 1 FROM party_ledger ledger WHERE ledger.party_code = parties.party_code AND ledger.branch_id = $1)';
-    const result = await pool.query(
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await client.query('SELECT pg_advisory_xact_lock(260627004)');
+    await backfillPartyMasterCodes(client, 'parties');
+    const result = await client.query(
       `SELECT * FROM parties
        WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE
          ${branchCondition}
        ORDER BY party_name`,
       branchId === null ? [] : [branchId]
     );
-    res.json({ data: result.rows });
+    await client.query('COMMIT');
+    transactionStarted = false;
+    res.json({ data: result.rows.map(party => ({
+      ...party,
+      code: party.party_code,
+      customer_code: party.party_code
+    })) });
   }
-  catch (err) { console.error('GET /api/parties error:', err.message); res.status(503).json({ error: 'Parties are temporarily unavailable.', details: err.message, code: err.code || null }); }
+  catch (err) {
+    if (transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Party list rollback failed:', rollbackError.message); }
+    }
+    console.error('GET /api/parties error:', err.message);
+    res.status(503).json({ error: 'Parties are temporarily unavailable.', details: err.message, code: err.code || null });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 app.post('/api/parties', authMiddleware, async (req, res) => {
+  let client;
+  let transactionStarted = false;
   try {
-    const { party_code, party_name, address, gst_no, email, phone } = req.body;
-    const result = await pool.query(`INSERT INTO parties (party_code, party_name, address, gst_no, email, phone) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT(party_code) DO UPDATE SET party_name=EXCLUDED.party_name, address=EXCLUDED.address, gst_no=EXCLUDED.gst_no RETURNING *`, [party_code, party_name, address || '', gst_no || '', email || '', phone || '']);
-    res.json({ success: true, data: result.rows[0] });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const { party_name, address, gst_no, email, phone } = req.body;
+    if (!String(party_name || '').trim()) return res.status(400).json({ error: 'Party name is required.' });
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await client.query('SELECT pg_advisory_xact_lock(260627004)');
+    const partyCode = String(req.body.party_code || req.body.customer_code || req.body.code || '').trim()
+      || await nextPartyMasterCode(client, 'parties');
+    const result = await client.query(
+      `INSERT INTO parties (party_code, party_name, address, gst_no, email, phone)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT(party_code) DO UPDATE SET party_name=EXCLUDED.party_name,
+         address=EXCLUDED.address, gst_no=EXCLUDED.gst_no
+       RETURNING *`,
+      [partyCode, party_name, address || '', gst_no || '', email || '', phone || '']
+    );
+    await client.query('COMMIT');
+    transactionStarted = false;
+    const party = result.rows[0];
+    res.json({ success: true, data: { ...party, code: party.party_code, customer_code: party.party_code } });
+  } catch (err) {
+    if (transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Party save rollback failed:', rollbackError.message); }
+    }
+    res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Party code already exists.' : err.message });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 app.delete('/api/parties/:id', authMiddleware, requireManualDeleteConfirmation, async (req, res) => {
@@ -3695,22 +3778,45 @@ app.get('/api/audit', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/customers', authMiddleware, async (req, res) => {
+  let client;
+  let transactionStarted = false;
   try {
     const isAdmin = req.user.role === 'admin';
     const branchId = isAdmin ? await resolveAdminBranchId(req, res) : safeUserBranchId(req);
     if (branchId === undefined) return;
     const branchCondition = branchId === null ? '' : 'AND branch_id = $1';
     const params = branchId === null ? [] : [Number(branchId)];
-    const result = await pool.query(
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await client.query('SELECT pg_advisory_xact_lock(260627003)');
+    const updatedCount = await backfillPartyMasterCodes(client, 'customers');
+    if (updatedCount) console.info(`Assigned customer codes to ${updatedCount} legacy Party records.`);
+    const result = await client.query(
       `SELECT * FROM customers
        WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE
          ${branchCondition}
        ORDER BY customer_name`,
       params
     );
-    res.json(result.rows);
+    await client.query('COMMIT');
+    transactionStarted = false;
+    res.json(result.rows.map(customer => ({
+      ...customer,
+      customer_code: customer.customer_code || (customer.id ? `CUST-${String(customer.id).padStart(3, '0')}` : ''),
+      party_code: customer.customer_code || (customer.id ? `CUST-${String(customer.id).padStart(3, '0')}` : ''),
+      code: customer.customer_code || (customer.id ? `CUST-${String(customer.id).padStart(3, '0')}` : '')
+    })));
   }
-  catch (err) { console.error('GET /api/customers error:', err.message); res.status(503).json({ error: 'Customers are temporarily unavailable.', details: err.message, code: err.code || null }); }
+  catch (err) {
+    if (transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Customer list rollback failed:', rollbackError.message); }
+    }
+    console.error('GET /api/customers error:', err.message);
+    res.status(503).json({ error: 'Customers are temporarily unavailable.', details: err.message, code: err.code || null });
+  } finally {
+    if (client) client.release();
+  }
 });
 
 app.get('/api/customers/:id', authMiddleware, async (req, res) => {
@@ -3730,29 +3836,30 @@ app.get('/api/customers/:id', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/customers', authMiddleware, async (req, res) => {
+  const customerName = String(req.body.customer_name || req.body.name || '').trim();
+  const mobile = String(req.body.mobile || req.body.phone || '').trim();
+  if (!customerName || !mobile) return res.status(400).json({ error: 'Customer name and mobile are required.' });
   const client = await pool.connect();
+  let transactionStarted = false;
   try {
-    const customerName = String(req.body.customer_name || req.body.name || '').trim();
-    const mobile = String(req.body.mobile || req.body.phone || '').trim();
-    if (!customerName || !mobile) return res.status(400).json({ error: 'Customer name and mobile are required.' });
-
     await client.query('BEGIN');
+    transactionStarted = true;
     await client.query('SELECT pg_advisory_xact_lock(260627003)');
     let customerCode = String(req.body.customer_code || '').trim();
-    if (!customerCode) {
-      const codeResult = await client.query(`SELECT COALESCE(MAX(SUBSTRING(customer_code FROM '[0-9]+$')::INTEGER), 0) AS last_serial FROM customers WHERE customer_code ~ '^CUST[0-9]+$'`);
-      customerCode = `CUST${String(Number(codeResult.rows[0].last_serial) + 1).padStart(4, '0')}`;
-    }
+    if (!customerCode) customerCode = await nextPartyMasterCode(client, 'customers');
     const branchId = req.user.role === 'admin' ? req.body.branch_id || null : safeUserBranchId(req);
     const result = await client.query(
       `INSERT INTO customers (customer_code, customer_name, mobile, phone, whatsapp, email, address, city, state, pincode, gst_no, pan_no, customer_type, credit_limit, credit_days, opening_balance, branch_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
       [customerCode, customerName, mobile, mobile, req.body.whatsapp || mobile, req.body.email || null, req.body.address || null, req.body.city || null, req.body.state || null, req.body.pincode || null, req.body.gst_no || null, req.body.pan_no || null, req.body.customer_type || 'Cash', Number(req.body.credit_limit) || 0, Number(req.body.credit_days) || 0, Number(req.body.opening_balance) || 0, branchId]
     );
     await client.query('COMMIT');
+    transactionStarted = false;
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Customer save rollback failed:', rollbackError.message); }
+    }
     res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Customer code already exists.' : err.message });
   } finally { client.release(); }
 });
@@ -3769,23 +3876,49 @@ app.put('/api/customers/:id', authMiddleware, async (req, res) => {
     state: req.body.state, pincode: req.body.pincode, gst_no: req.body.gst_no, pan_no: req.body.pan_no, customer_type: req.body.customer_type,
     credit_limit: req.body.credit_limit, credit_days: req.body.credit_days, opening_balance: req.body.opening_balance, is_active: req.body.is_active
   };
-  const updates = Object.entries(fields).filter(([, value]) => value !== undefined);
   if (!String(req.body.customer_name || req.body.name || '').trim() || !String(req.body.mobile || req.body.phone || '').trim()) {
     return res.status(400).json({ error: 'Customer name and mobile are required.' });
   }
-  if (updates.length === 0) return res.status(400).json({ error: 'No customer fields provided.' });
 
+  let client;
+  let transactionStarted = false;
   try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    transactionStarted = true;
+    await client.query('SELECT pg_advisory_xact_lock(260627003)');
+    const customerBranchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const currentCustomer = await client.query(
+      `SELECT customer_code FROM customers
+       WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${customerBranchCondition}
+       FOR UPDATE`,
+      branchId === null ? [req.params.id] : [req.params.id, branchId]
+    );
+    if (!currentCustomer.rows[0]) {
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return res.status(404).json({ error: 'Customer not found.' });
+    }
+    const requestedCode = String(req.body.customer_code || '').trim();
+    fields.customer_code = requestedCode || String(currentCustomer.rows[0].customer_code || '').trim()
+      || await nextPartyMasterCode(client, 'customers');
+    const updates = Object.entries(fields).filter(([, value]) => value !== undefined);
     const values = updates.map(([, value]) => value);
     const assignments = updates.map(([field], index) => `${field} = $${index + 1}`);
     const branchCondition = branchId === null ? '' : ` AND branch_id = $${values.length + 2}`;
     const params = [...values, req.params.id];
     if (branchId !== null) params.push(branchId);
-    const result = await pool.query(`UPDATE customers SET ${assignments.join(', ')} WHERE id = $${values.length + 1} AND COALESCE(is_deleted, FALSE) = FALSE${branchCondition} RETURNING *`, params);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
+    const result = await client.query(`UPDATE customers SET ${assignments.join(', ')} WHERE id = $${values.length + 1} AND COALESCE(is_deleted, FALSE) = FALSE${branchCondition} RETURNING *`, params);
+    await client.query('COMMIT');
+    transactionStarted = false;
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
+    if (transactionStarted) {
+      try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Customer update rollback failed:', rollbackError.message); }
+    }
     res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Customer code already exists.' : err.message });
+  } finally {
+    if (client) client.release();
   }
 });
 
