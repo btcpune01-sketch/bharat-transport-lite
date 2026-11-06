@@ -1411,7 +1411,7 @@ function safeUserBranchId(req) {
 }
 
 const ALL_BRANCH_VALUES = new Set(['', 'all', 'all branches', 'all_branches', 'undefined', 'null']);
-function resolveDashboardBranch(req) {
+async function resolveDashboardBranch(req, res) {
   const isAdmin = (req.user?.role || 'operator') === 'admin';
   const toId = (value) => {
     const parsed = parseInt(value, 10);
@@ -1422,12 +1422,9 @@ function resolveDashboardBranch(req) {
     if (!branchId) return { forbidden: true };
     return { branchId, branchCode: req.user?.branch_code ? String(req.user.branch_code).trim() : null };
   }
-  const raw = req.query.branch_id ?? req.query.branch ?? '';
-  const selected = String(raw).trim();
-  if (ALL_BRANCH_VALUES.has(selected.toLowerCase())) return { branchId: null, branchCode: null };
-  const branchId = toId(selected);
-  if (branchId) return { branchId, branchCode: null };
-  return { branchId: null, branchCode: selected };
+  const branchId = await resolveAdminBranchId(req, res);
+  if (branchId === undefined) return null;
+  return { branchId, branchCode: null };
 }
 
 function buildBranchCondition({ branchId }, startIndex = 1) {
@@ -1457,7 +1454,8 @@ async function resolveAdminBranchId(req, res, source = req.query) {
 
 app.get('/api/dashboard/pending-amount', authMiddleware, async (req, res) => {
   try {
-    const scope = resolveDashboardBranch(req);
+    const scope = await resolveDashboardBranch(req, res);
+    if (!scope) return;
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);
     const result = await pool.query(
@@ -1479,30 +1477,9 @@ app.get('/api/dashboard/pending-amount', authMiddleware, async (req, res) => {
 
 app.get('/api/dashboard/monthly-stats', authMiddleware, async (req, res) => {
   try {
-    let scope = resolveDashboardBranch(req);
+    const scope = await resolveDashboardBranch(req, res);
+    if (!scope) return;
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
-    const selectedBranch = String(req.query.branch || req.query.branch_id || '').trim();
-    if (
-      req.user.role === 'admin' &&
-      selectedBranch &&
-      !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())
-    ) {
-      const branchResult = await pool.query(
-        `SELECT id, branch_code FROM branches
-         WHERE (LOWER(COALESCE(url_slug, '')) = LOWER($1)
-           OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
-           OR id::TEXT = $1)
-           AND COALESCE(is_active, TRUE) = TRUE
-         LIMIT 1`,
-        [selectedBranch]
-      );
-      if (!branchResult.rows[0]) return res.status(404).json({ error: 'The selected branch was not found.' });
-      scope = {
-        branchId: Number(branchResult.rows[0].id),
-        branchCode: branchResult.rows[0].branch_code || null
-      };
-    }
-
     const branch = buildBranchCondition(scope);
     const branchFilter = branch.sql ? `AND ${branch.sql}` : '';
     const monthlyQuery = (table, dateColumn) => pool.query(
@@ -1549,7 +1526,8 @@ app.patch('/api/dashboard/pending-amount/:id', authMiddleware, async (req, res) 
   if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid pending amount entry.' });
 
   try {
-    const scope = resolveDashboardBranch(req);
+    const scope = await resolveDashboardBranch(req, res);
+    if (!scope) return;
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope, 2);
     const result = await pool.query(
@@ -1586,7 +1564,8 @@ app.patch('/api/dashboard/pending-amount/:id', authMiddleware, async (req, res) 
 
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
-    const scope = resolveDashboardBranch(req);
+    const scope = await resolveDashboardBranch(req, res);
+    if (!scope) return;
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);
     const where = (...conditions) => {
@@ -1617,7 +1596,8 @@ app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
 
 app.get('/api/dashboard/top-parties', authMiddleware, async (req, res) => {
   try {
-    const scope = resolveDashboardBranch(req);
+    const scope = await resolveDashboardBranch(req, res);
+    if (!scope) return;
     if (scope.forbidden) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });
     const branch = buildBranchCondition(scope);
     const conditions = [branch.sql, 'COALESCE(is_deleted, FALSE) = FALSE', 'consignor_name IS NOT NULL'].filter(Boolean);
