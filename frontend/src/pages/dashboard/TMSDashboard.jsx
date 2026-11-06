@@ -444,7 +444,7 @@ export default function TMSDashboard({ branch }) {
       if (activeBranch?.id) params.branch_id = activeBranch.id
     }
     try {
-      await api.patch(`/dashboard/pending-amount/${pendingToClear.id}`, null, { params })
+      await api.patch(`/dashboard/pending-amount/${pendingToClear.id}`, {}, { params })
       toast.success(`Pending amount for ${pendingToClear.lr_no} cleared.`)
       setPendingToClear(null)
       setRefreshKey((key) => key + 1)

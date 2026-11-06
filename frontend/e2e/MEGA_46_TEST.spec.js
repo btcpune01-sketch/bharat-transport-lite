@@ -632,3 +632,47 @@ test('Bill and branch payment empty and network-error states are clear', async (
   await expect(page.getByRole('heading', { name: 'Monthly Bill Count' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Monthly Bilty Count' })).toBeVisible()
 })
+
+test('Clearing a pending amount sends JSON and handles a successful response', async ({ page }) => {
+  let pendingCleared = false
+  let clearRequestBody
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'playwright-admin-test-token')
+    localStorage.setItem('user', JSON.stringify({ id: 1, username: 'admin', role: 'admin' }))
+  })
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    const path = url.pathname.replace(/^\/api/, '')
+    if (path === '/dashboard/pending-amount' && request.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        json: { data: pendingCleared ? [] : [{ id: 12306, lr_no: 'BTC-12306', grand_total: 38000 }] }
+      })
+    }
+    if (path === '/dashboard/pending-amount/12306' && request.method() === 'PATCH') {
+      clearRequestBody = request.postDataJSON()
+      pendingCleared = true
+      return route.fulfill({
+        status: 200,
+        json: {
+          success: true,
+          message: 'Pending amount cleared successfully.',
+          biltyId: 'BTC-12306',
+          amount: 38000,
+          data: { id: 12306, lr_no: 'BTC-12306', grand_total: '38000', payment_status: 'Cleared' }
+        }
+      })
+    }
+    return route.fulfill({ status: 200, json: { success: true, data: [] } })
+  })
+
+  await page.goto('/#/admin/dashboard')
+  const pendingRow = page.getByText('BTC-12306').locator('..').locator('..')
+  await expect(pendingRow).toBeVisible()
+  await pendingRow.getByRole('button', { name: 'Clear' }).click()
+  await page.getByRole('button', { name: 'Confirm clear' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByText('No pending bilty amounts found.')).toBeVisible()
+  expect(clearRequestBody).toEqual({})
+})

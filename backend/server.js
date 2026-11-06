@@ -1550,7 +1550,13 @@ app.patch('/api/dashboard/pending-amount/:id', authMiddleware, async (req, res) 
       req.user.username || 'user',
       result.rows[0].branch_id
     );
-    return res.json({ success: true, data: result.rows[0] });
+    return res.json({
+      success: true,
+      message: 'Pending amount cleared successfully.',
+      biltyId: result.rows[0].lr_no,
+      amount: Number(result.rows[0].grand_total) || 0,
+      data: result.rows[0]
+    });
   } catch (error) {
     console.error('PATCH /api/dashboard/pending-amount/:id error:', error.message);
     return res.status(503).json({ error: 'Unable to clear this pending amount.' });
