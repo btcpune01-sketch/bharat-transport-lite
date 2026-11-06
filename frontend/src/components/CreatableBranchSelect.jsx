@@ -96,8 +96,8 @@ export default function CreatableBranchSelect({
       })
       .catch(error => {
         if (active) {
-          console.warn('Unable to load branches from the server; using local branch options:', error)
-          setApiBranches(null)
+          console.warn('Unable to load the branch list from the server:', error)
+          setApiBranches([])
         }
       })
     return () => { active = false }
@@ -168,6 +168,7 @@ export default function CreatableBranchSelect({
       <input
         type="text"
         value={isOpen && inputValue ? inputValue : selectedBranch?.label || ''}
+        required={required}
         onChange={(event) => {
           setInputValue(event.target.value)
           setIsOpen(true)
@@ -186,7 +187,6 @@ export default function CreatableBranchSelect({
         }}
         placeholder={placeholder}
         autoComplete="off"
-        required={required}
         role="combobox"
         aria-expanded={isOpen}
         aria-autocomplete="list"

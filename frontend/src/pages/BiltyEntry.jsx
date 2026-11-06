@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
 import toast from 'react-hot-toast'
-import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
+import { isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 import { formatDateForInput } from '../utils/dateFormatter'
 import CreatableBranchSelect from '../components/CreatableBranchSelect'
 
@@ -64,8 +64,11 @@ const preferStoredMeasurement = (primary, legacy) => {
   return primary ?? legacy ?? 0;
 };
 
-const getLocalLrNumber = () => {
-  return getLocalDocumentNumber('bilty', 'BTC-')
+const LAST_BILTY_BRANCH_KEY = 'btc_last_bilty_branch'
+
+function canonicalBranchCode(value) {
+  const code = String(value || '').trim().toUpperCase()
+  return ({ PUN: 'PUNE', MUM: 'MUMBAI', DEL: 'DLH', AHM: 'AHMD' })[code] || code
 }
 
 export default function BiltyEntry({ branchMode = false, branchCode: branchSlug }) {
@@ -117,6 +120,11 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
         setBranchCode(branch.branch_code)
         setBranchName(branch.branch_name || branch.name || '')
         setFormData(previous => ({ ...previous, branch_id: Number(branch.id), branch_code: branch.branch_code }))
+        try {
+          localStorage.setItem(LAST_BILTY_BRANCH_KEY, branch.branch_code)
+        } catch (error) {
+          console.warn('Unable to remember the assigned Bilty branch:', error)
+        }
       }
       loadBranch().catch(error => {
         if (active) {
@@ -130,6 +138,48 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
     }
     return () => { active = false }
   }, [branchMode, branchSlug])
+
+  useEffect(() => {
+    if (branchMode || id) return undefined
+    let active = true
+    api.get('/branches/public')
+      .then(response => {
+        const branches = response.data?.data
+        if (!Array.isArray(branches)) throw new Error('The server returned an invalid branch list.')
+        let user = {}
+        try {
+          user = JSON.parse(localStorage.getItem('user') || '{}')
+        } catch (error) {
+          console.warn('Unable to read the current user branch preference:', error)
+        }
+        const userBranchId = String(user.branch_id || user.branchId || '')
+        const userBranchCode = canonicalBranchCode(user.branch_code || user.branchCode || '')
+        const lastBranch = localStorage.getItem(LAST_BILTY_BRANCH_KEY) || ''
+        const findByCode = code => branches.find(branch =>
+          canonicalBranchCode(branch.branch_code) === canonicalBranchCode(code) ||
+          String(branch.id) === String(code) ||
+          String(branch.url_slug || '').toLowerCase() === String(code).toLowerCase()
+        )
+        const selectedBranch = branches.find(branch => userBranchId && String(branch.id) === userBranchId)
+          || (userBranchCode ? findByCode(userBranchCode) : null)
+          || (lastBranch ? findByCode(lastBranch) : null)
+        if (!active || !selectedBranch) return
+        const code = String(selectedBranch.branch_code).toUpperCase()
+        setBranchId(Number(selectedBranch.id))
+        setBranchCode(code)
+        setBranchName(selectedBranch.branch_name || selectedBranch.name || '')
+        setFormData(previous => ({
+          ...previous,
+          branch_id: Number(selectedBranch.id),
+          branch_code: code
+        }))
+        localStorage.setItem(LAST_BILTY_BRANCH_KEY, code)
+      })
+      .catch(error => {
+        if (active) console.warn('Unable to initialize the Bilty branch selection:', error)
+      })
+    return () => { active = false }
+  }, [branchMode, id])
 
   useEffect(() => {
     fetchCustomers()
@@ -214,6 +264,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       return
     }
     setNumberLoading(true)
+    setFormData(prev => ({ ...prev, lr_no: '' }))
     try {
       const response = await biltyAPI.getNextNumber({ branch: selectedBranch })
       const nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
@@ -224,8 +275,8 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       setIsLrEditable(Boolean(response.data?.fallback))
     } catch (err) {
       if (requestId !== lrGenerationRequest.current) return
-      console.warn('Unable to query the branch LR series; using a local fallback:', err)
-      setFormData(prev => ({ ...prev, lr_no: getLocalLrNumber() }))
+      console.warn('Unable to query the branch LR series; save will request a database-generated number:', err)
+      setFormData(prev => ({ ...prev, lr_no: '' }))
       setIsLrEditable(true)
     } finally {
       if (requestId === lrGenerationRequest.current) setNumberLoading(false)
@@ -280,6 +331,13 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       setBranchCode(branch.code)
       setBranchName(branch.name || '')
       setBranchId(Number(branch.id) || null)
+      if (branch.id) {
+        try {
+          localStorage.setItem(LAST_BILTY_BRANCH_KEY, branch.code)
+        } catch (error) {
+          console.warn('Unable to remember the last selected Bilty branch:', error)
+        }
+      }
     }
     setFormData(prev => {
       const next = { ...prev, [`${type}_code`]: branch.code }
@@ -291,27 +349,15 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!branchCode || (!branchMode && !branchId)) {
+      toast.error('Bilty save karne se pehle branch select karo')
+      return
+    }
     if (!formData.consignor_name || !formData.consignee_name) { toast.error('Consignor और Consignee का नाम required है'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) {
       toast.error('Enter a valid GSTIN for the Third Party')
       return
-    }
-    if (formData.lr_no.trim()) {
-      try {
-        const duplicateCheck = await api.get('/document-series/validate', {
-          params: {
-            type: 'bilty',
-            number: formData.lr_no.trim(),
-            branch: branchMode ? branchSlug : formData.branch_code,
-            exclude_id: id || undefined
-          }
-        })
-        if (duplicateCheck.data?.duplicate &&
-            !window.confirm('Ye number is branch me pehle use ho chuka hai, kya aap aage badhna chahte ho? Yes / No')) return
-      } catch (validationError) {
-        console.warn('LR duplicate check unavailable; continuing with save:', validationError)
-      }
     }
     setLoading(true)
     try {
@@ -361,12 +407,17 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
           navigate(`/bilty-print/${draft.localDraftId}`)
           return
         }
-        toast.success('Bilty Saved - ' + payload.lr_no)
+        toast.success('Bilty Saved - ' + (response.data?.lr_no || payload.lr_no))
         if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
       }
       navigate('/consignments')
     } catch (err) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
+      if (err.response?.status === 409) {
+        const suggestedNumber = err.response.data?.suggested_number
+        toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg)
+        return
+      }
       if (isDatabaseUnavailable(err)) {
         try {
           const draft = saveLocalDraft('bilty', { ...formData, lr_no: formData.lr_no })
@@ -413,8 +464,8 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
               <div>
                 <label className="block text-gray-300 text-sm font-medium mb-1">LR Number / Bilty Number *</label>
                 <div className="flex gap-2 items-center">
-                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} placeholder={numberLoading ? "Loading branch series..." : "BTC-00012"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-white/10 border-white/20 text-white'}`} style={isLrEditable ? {background:'#ffffff', color:'#000000'} : {}} />
-                  <button type="button" onClick={() => setIsLrEditable(!isLrEditable)} className={`shrink-0 px-4 py-2 rounded-lg font-bold transition-all ${isLrEditable ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}>{isLrEditable ? '🔒 Lock' : '✏️ Edit'}</button>
+                  <input type="text" name="lr_no" value={formData.lr_no} onChange={handleChange} disabled={!isLrEditable} placeholder={numberLoading ? "Loading branch series..." : branchCode ? "Enter LR number" : "Branch select karo"} className={`w-full px-4 py-2 border rounded-lg font-bold transition-all ${isLrEditable ? 'bg-white text-black border-green-400 ring-2 ring-green-400' : 'bg-white/10 border-white/20 text-white'}`} style={isLrEditable ? {background:'#ffffff', color:'#000000'} : {}} />
+                  <button type="button" disabled={!branchCode} onClick={() => setIsLrEditable(!isLrEditable)} className={`shrink-0 px-4 py-2 rounded-lg font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${isLrEditable ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'}`}>{isLrEditable ? '🔒 Lock' : '✏️ Edit'}</button>
                 </div>
                 <p className="mt-1 text-xs text-blue-600">Ye series {[formData.branch_code || branchCode, branchName].filter(Boolean).join(' - ') || 'selected'} branch ka hai. Duplicate check sirf isi branch me hota hai.</p>
                 {!isLrEditable && <p className="mt-1 text-xs text-gray-400">Auto generated hai. Change karna hai to Edit dabao.</p>}
@@ -581,7 +632,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
 
           <div className="flex justify-end gap-4 pt-6">
             <button type="button" onClick={() => navigate('/dashboard')} className="px-6 py-2 bg-white border border-[#c2cddf] text-[#1e293b] rounded-lg hover:bg-slate-50 transition">Cancel</button>
-            <button type="submit" disabled={loading} className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition font-bold text-lg disabled:opacity-50">{loading ? (id ? 'Updating...' : 'Saving...') : id ? 'Update Bilty' : `Save Bilty ${formData.lr_no}`}</button>
+            <button type="submit" disabled={loading} className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition font-bold text-lg disabled:opacity-50">{loading ? (id ? 'Updating...' : 'Saving...') : id ? 'Update Bilty' : `Save Bilty${formData.lr_no ? ` ${formData.lr_no}` : ''}`}</button>
           </div>
         </form>
       </div>

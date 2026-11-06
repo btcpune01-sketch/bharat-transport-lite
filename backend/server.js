@@ -941,7 +941,7 @@ function sendLocalStorageModeResponse(req, res) {
   console.warn('DB missing - returning empty for:', req.path);
 
   if (req.path === '/api/consignments/next-number') {
-    return res.json({ lr_no: 'BTC-00001', fallback: true });
+    return res.json({ lr_no: '', fallback: true, branch_required: true });
   }
   if (req.path === '/api/document-series') {
     const type = String(req.query.type || '').toLowerCase() === 'bill' ? 'bill' : 'bilty';
@@ -952,14 +952,12 @@ function sendLocalStorageModeResponse(req, res) {
       type,
       prefix,
       lastUsed: 0,
-      next: 1,
-      number: `${prefix}00001`,
-      ...(type === 'bilty' ? { lr_no: `${prefix}00001` } : { bill_no: `${prefix}00001` }),
+      next: null,
       fallback: true
     });
   }
   if (req.path === '/api/next-lr') {
-    return res.json({ lr_no: 'BTC-00001', fallback: true });
+    return res.json({ lr_no: '', fallback: true, branch_required: true });
   }
   if (req.path === '/api/bills/last-serial') {
     return res.json({ lastSerial: 0, fallback: true });
@@ -2206,12 +2204,17 @@ async function getBranchDocumentNumber(db, branchId, seriesType) {
   const column = seriesType === 'bilty' ? 'lr_no' : 'bill_no';
   const prefix = series?.prefix || (seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/');
   const pattern = `^${escapeRegex(prefix)}([0-9]+)$`;
+  const branch = await db.query('SELECT branch_code FROM branches WHERE id = $1', [branchId]);
+  const legacyBranchCodes = branchCodeAliases(branch.rows[0]?.branch_code);
   const lastResult = await db.query(
-    `SELECT COALESCE(MAX((regexp_match(${column}, $2))[1]::BIGINT), 0) AS last_serial
+    `SELECT COALESCE(MAX((regexp_match(${column}, $3))[1]::BIGINT), 0) AS last_serial
      FROM ${table}
-     WHERE branch_id = $1 AND ${column} ~* $2
-       AND ($3::BIGINT IS NULL OR (regexp_match(${column}, $2))[1]::BIGINT BETWEEN $3 AND $4)`,
-    [branchId, pattern, series?.start_number || null, series?.end_number || null]
+     WHERE (branch_id = $1 OR (
+       branch_id IS NULL
+       AND UPPER(TRIM(COALESCE(branch_code, ''))) = ANY($2::TEXT[])
+     ))
+       AND ${column} ~* $3`,
+    [branchId, legacyBranchCodes, pattern]
   );
   const storedLast = BigInt(series?.last_used_number || 0);
   const recordedLast = BigInt(lastResult.rows[0]?.last_serial || 0);
@@ -2235,18 +2238,23 @@ async function getBranchDocumentNumber(db, branchId, seriesType) {
 
 async function recordDocumentSeriesUsage(client, branchId, seriesType, documentNumber) {
   if (!branchId || !documentNumber) return;
+  await updateDocumentSeriesUsage(client, branchId, seriesType, documentNumber);
+}
+
+async function recordBillDocumentSeriesUsage(client, branchId, documentNumber) {
+  if (!branchId || !documentNumber) return;
   try {
-    await client.query('SAVEPOINT document_series_usage');
-    await updateDocumentSeriesUsage(client, branchId, seriesType, documentNumber);
-    await client.query('RELEASE SAVEPOINT document_series_usage');
+    await client.query('SAVEPOINT bill_document_series_usage');
+    await updateDocumentSeriesUsage(client, branchId, 'bill', documentNumber);
+    await client.query('RELEASE SAVEPOINT bill_document_series_usage');
   } catch (error) {
     try {
-      await client.query('ROLLBACK TO SAVEPOINT document_series_usage');
-      await client.query('RELEASE SAVEPOINT document_series_usage');
+      await client.query('ROLLBACK TO SAVEPOINT bill_document_series_usage');
+      await client.query('RELEASE SAVEPOINT bill_document_series_usage');
     } catch (rollbackError) {
-      console.error('Unable to roll back the document-series update savepoint:', rollbackError.message);
+      console.error('Unable to roll back the bill-series update savepoint:', rollbackError.message);
     }
-    console.error('Unable to update document series usage; document save will continue:', error.message);
+    console.error('Unable to update bill series usage; bill save will continue:', error.message);
   }
 }
 
@@ -2288,7 +2296,7 @@ async function updateDocumentSeriesUsage(db, branchId, seriesType, documentNumbe
   const match = String(documentNumber).match(new RegExp(`^${escapeRegex(series.prefix)}(\\d+)$`, 'i'));
   if (!match) return;
   const serial = BigInt(match[1]);
-  if (serial >= BigInt(series.start_number) && serial <= BigInt(series.end_number)) {
+  if (serial >= BigInt(series.start_number)) {
     await db.query(
       `UPDATE document_series SET last_used_number = GREATEST(last_used_number, $1)
        WHERE id = $2`,
@@ -2324,7 +2332,7 @@ app.get('/api/document-series', authMiddleware, async (req, res) => {
         return res.status(200).json({
           success: true, branch, type: seriesType,
           prefix: seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/',
-          lastUsed: 0, next: 1
+          lastUsed: 0, next: null
         });
       }
       branchId = Number(branchResult.rows[0].id);
@@ -2339,7 +2347,7 @@ app.get('/api/document-series', authMiddleware, async (req, res) => {
         type: seriesType,
         prefix: seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/',
         lastUsed: 0,
-        next: 1
+        next: null
       });
     }
     const [number, branchResult] = await Promise.all([
@@ -2365,18 +2373,7 @@ app.get('/api/document-series', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Branch document series lookup failed:', error.message);
-    const prefix = seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/';
-    res.json({
-      success: true,
-      branch: String(req.query.branch || ''),
-      type: seriesType,
-      prefix,
-      lastUsed: 0,
-      next: 1,
-      number: `${prefix}00001`,
-      ...(seriesType === 'bilty' ? { lr_no: `${prefix}00001` } : { bill_no: `${prefix}00001` }),
-      fallback: true
-    });
+    res.status(503).json({ success: false, error: 'Unable to load this branch series.' });
   }
 });
 
@@ -2388,7 +2385,7 @@ app.get('/api/document-series/next-number', authMiddleware, async (req, res) => 
     if (branchId === undefined) return;
     if (!branchId) {
       return res.json({
-        number: seriesType === 'bilty' ? 'BTC-00001' : 'BTC/BILL/00001',
+        number: null,
         fallback: true,
         branch_required: true,
         series_type: seriesType
@@ -2424,13 +2421,21 @@ app.get('/api/document-series/validate', authMiddleware, async (req, res) => {
     if (!branchId) return res.json({ duplicate: false });
     const [table, column] = documentSeriesSources[seriesType];
     const identifier = String(req.query.exclude_id || '').trim();
-    const params = [branchId, documentNumber];
-    const exclude = identifier ? `AND id::TEXT <> $3` : '';
+    const branchResult = await pool.query('SELECT branch_code FROM branches WHERE id = $1', [branchId]);
+    const params = [branchId, documentNumber, branchCodeAliases(branchResult.rows[0]?.branch_code)];
+    const exclude = identifier ? `AND id::TEXT <> $4` : '';
     if (identifier) params.push(identifier);
     const result = await pool.query(
       `SELECT EXISTS (
          SELECT 1 FROM ${table}
-         WHERE branch_id = $1 AND LOWER(${column}) = LOWER($2)
+         WHERE LOWER(${column}) = LOWER($2)
+           AND (
+             branch_id = $1
+             OR (
+               branch_id IS NULL
+               AND UPPER(TRIM(COALESCE(branch_code, ''))) = ANY($3::TEXT[])
+             )
+           )
            ${exclude}
        ) AS duplicate`,
       params
@@ -2561,12 +2566,12 @@ app.get('/api/consignments/next-number', authMiddleware, async (req, res) => {
   try {
     const branchId = await resolveRequestBranchId(req, res);
     if (branchId === undefined) return;
-    if (!branchId) return res.json({ lr_no: 'BTC-00001', fallback: true, branch_required: true });
+    if (!branchId) return res.json({ lr_no: '', fallback: true, branch_required: true });
     const next = await getBranchDocumentNumber(pool, branchId, 'bilty');
     res.json({ ...next, lr_no: next.number });
   } catch (err) {
     console.error('Consignment number generation error:', err.message);
-    res.json({ lr_no: 'BTC-00001', fallback: true });
+    res.status(503).json({ error: 'Unable to load this branch series.' });
   }
 });
 
@@ -2574,12 +2579,12 @@ app.get('/api/next-lr', authMiddleware, async (req, res) => {
   try {
     const branchId = await resolveRequestBranchId(req, res);
     if (branchId === undefined) return;
-    if (!branchId) return res.json({ lr_no: 'BTC-00001', fallback: true, branch_required: true });
+    if (!branchId) return res.json({ lr_no: '', fallback: true, branch_required: true });
     const next = await getBranchDocumentNumber(pool, branchId, 'bilty');
     res.json({ ...next, lr_no: next.number });
   } catch (error) {
     console.error('LR number generation error:', error.message);
-    res.json({ lr_no: 'BTC-00001', fallback: true });
+    res.status(503).json({ error: 'Unable to load this branch series.' });
   }
 });
 
@@ -2732,6 +2737,29 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
     transactionStarted = true;
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`document-series:${c.branch_id}:bilty`]);
     if (!c.lr_no) c.lr_no = (await getBranchDocumentNumber(client, c.branch_id, 'bilty')).number;
+    const duplicate = await client.query(
+      `SELECT lr_no
+       FROM consignments
+       WHERE LOWER(lr_no) = LOWER($1)
+         AND (
+           branch_id = $2
+           OR (
+             branch_id IS NULL
+             AND UPPER(TRIM(COALESCE(branch_code, ''))) = ANY($3::TEXT[])
+           )
+         )
+       LIMIT 1`,
+      [c.lr_no, c.branch_id, branchCodeAliases(c.branch_code)]
+    );
+    if (duplicate.rows.length) {
+      const suggestedNumber = (await getBranchDocumentNumber(client, c.branch_id, 'bilty')).number;
+      await client.query('ROLLBACK');
+      transactionStarted = false;
+      return res.status(409).json({
+        error: `LR number ${c.lr_no} already exists in this branch.`,
+        suggested_number: suggestedNumber
+      });
+    }
     const colRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'consignments'");
     const validCols = new Set(colRes.rows.map(r => r.column_name));
     const finalKeys = [];
@@ -3409,7 +3437,7 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
     const values = Object.values(bill);
     const result = await client.query(`INSERT INTO bill_book (${fields.join(', ')}) VALUES (${fields.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     await insertBillItems(client, result.rows[0].id, items);
-    await recordDocumentSeriesUsage(client, bill.branch_id, 'bill', result.rows[0].bill_no);
+    await recordBillDocumentSeriesUsage(client, bill.branch_id, result.rows[0].bill_no);
     await useStock(client, 'bill_book', result.rows[0].bill_no, req.user.username, bill.branch_id);
     await client.query('COMMIT');
     res.status(201).json({ ...result.rows[0], items });
@@ -3450,7 +3478,7 @@ app.put('/api/bills/:id', authMiddleware, validateBill, checkBillValidation, asy
       [req.params.id]
     );
     await insertBillItems(client, req.params.id, items);
-    await recordDocumentSeriesUsage(client, result.rows[0].branch_id, 'bill', result.rows[0].bill_no);
+    await recordBillDocumentSeriesUsage(client, result.rows[0].branch_id, result.rows[0].bill_no);
     await client.query('COMMIT');
     res.json({ ...result.rows[0], items });
   } catch (err) {
