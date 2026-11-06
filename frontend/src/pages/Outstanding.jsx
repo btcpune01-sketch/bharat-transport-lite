@@ -1,21 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-export default function Outstanding() {
+export default function Outstanding({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    setData([])
+    fetchData()
+  }, [branchMode, branchCode])
 
   const fetchData = async () => {
     try {
       setLoading(true); setError(null)
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/outstanding`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/outstanding${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to fetch outstanding')
       const d = await res.json()
       setData(d.data || [])
@@ -53,7 +57,7 @@ export default function Outstanding() {
           </div>
           <div className="flex gap-2">
             <button onClick={exportCSV} className="bg-white text-orange-700 px-4 py-2 rounded-lg font-bold hover:bg-orange-50">📥 Export CSV</button>
-            <button onClick={() => navigate('/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
           </div>
         </div>
       </div>
@@ -123,7 +127,7 @@ export default function Outstanding() {
                       <td className="px-4 py-3 text-sm text-right font-bold text-red-600">{fmt(r.pending_amount)}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-700">{fmt(r.total_amount)}</td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={() => navigate(`/ledger`)} className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 font-medium">View Ledger</button>
+                        <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/ledger` : '/ledger')} className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded hover:bg-blue-200 font-medium">View Ledger</button>
                       </td>
                     </tr>
                   ))}
