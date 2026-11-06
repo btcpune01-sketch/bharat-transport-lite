@@ -123,7 +123,7 @@ export const itemAPI = {
 }
 
 export const biltyAPI = {
-  getAll: (params) => api.get('/consignments', { params }), getNextNumber: (params) => api.get('/document-series/next-number', { params: { ...params, type: 'bilty' } }),
+  getAll: (params) => api.get('/consignments', { params }), getNextNumber: (params) => api.get('/document-series', { params: { ...params, type: 'bilty' } }),
   getById: (id) => api.get(`/consignments/${id}`), getOne: (lr_no) => api.get(`/consignments/${lr_no}`),
   search: (query) => api.get('/consignments', { params: { search: query } }),
   getByBranch: (branch) => api.get('/consignments', { params: { branch } }),

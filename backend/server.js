@@ -954,6 +954,21 @@ function sendLocalStorageModeResponse(req, res) {
   if (req.path === '/api/consignments/next-number') {
     return res.json({ lr_no: 'BTC-00001', fallback: true });
   }
+  if (req.path === '/api/document-series') {
+    const type = String(req.query.type || '').toLowerCase() === 'bill' ? 'bill' : 'bilty';
+    const prefix = type === 'bill' ? 'BTC/BILL/' : 'BTC-';
+    return res.json({
+      success: true,
+      branch: String(req.query.branch || ''),
+      type,
+      prefix,
+      lastUsed: 0,
+      next: 1,
+      number: `${prefix}00001`,
+      ...(type === 'bilty' ? { lr_no: `${prefix}00001` } : { bill_no: `${prefix}00001` }),
+      fallback: true
+    });
+  }
   if (req.path === '/api/next-lr') {
     return res.json({ lr_no: 'BTC-00001', fallback: true });
   }
@@ -2222,14 +2237,39 @@ async function recordDocumentSeriesUsage(client, branchId, seriesType, documentN
 }
 
 async function updateDocumentSeriesUsage(db, branchId, seriesType, documentNumber) {
-  const activeResult = await db.query(
+  let activeResult = await db.query(
     `SELECT id, prefix, start_number, end_number
      FROM document_series
      WHERE branch_id = $1 AND series_type = $2 AND is_active = TRUE
      LIMIT 1`,
     [branchId, seriesType]
   );
-  const series = activeResult.rows[0];
+  let series = activeResult.rows[0];
+  if (!series) {
+    const match = String(documentNumber).match(/^(.*?)(\d+)$/);
+    if (!match || !/^[A-Za-z0-9/-]+$/.test(match[1]) || /\d$/.test(match[1])) return;
+    const serial = BigInt(match[2]);
+    const endNumber = serial > 99999n ? serial : 99999n;
+    const created = await db.query(
+      `INSERT INTO document_series
+         (branch_id, series_type, prefix, start_number, end_number, digit_width, last_used_number, created_by)
+       VALUES ($1, $2, $3, 1, $4, $5, $6, 'automatic')
+       ON CONFLICT DO NOTHING
+       RETURNING id, prefix, start_number, end_number`,
+      [branchId, seriesType, match[1], endNumber.toString(), match[2].length, serial.toString()]
+    );
+    series = created.rows[0];
+    if (!series) {
+      activeResult = await db.query(
+        `SELECT id, prefix, start_number, end_number
+         FROM document_series
+         WHERE branch_id = $1 AND series_type = $2 AND is_active = TRUE
+         LIMIT 1`,
+        [branchId, seriesType]
+      );
+      series = activeResult.rows[0];
+    }
+  }
   if (!series) return;
   const match = String(documentNumber).match(new RegExp(`^${escapeRegex(series.prefix)}(\\d+)$`, 'i'));
   if (!match) return;
@@ -2245,6 +2285,86 @@ async function updateDocumentSeriesUsage(db, branchId, seriesType, documentNumbe
 
 const documentSeriesTypes = new Set(['bilty', 'bill']);
 const documentSeriesSources = { bilty: ['consignments', 'lr_no'], bill: ['bill_book', 'bill_no'] };
+
+app.get('/api/document-series', authMiddleware, async (req, res) => {
+  const seriesType = String(req.query.type || '').toLowerCase();
+  if (!documentSeriesTypes.has(seriesType)) {
+    return res.status(400).json({ success: false, error: 'Series type must be bilty or bill.' });
+  }
+  try {
+    let branchId;
+    let branch = String(req.query.branch || '').trim();
+    if (req.user.role === 'admin') {
+      branch = String(req.headers['x-branch-slug'] || req.query.branch_id || req.query.branch || req.query.branch_code || '').trim();
+      const branchResult = branch
+        ? await pool.query(
+          `SELECT id, branch_code FROM branches
+           WHERE (id::TEXT = $1 OR LOWER(COALESCE(url_slug, '')) = LOWER($1)
+             OR LOWER(COALESCE(branch_code, '')) = LOWER($1))
+             AND COALESCE(is_active, TRUE) = TRUE
+           LIMIT 1`,
+          [branch]
+        )
+        : { rows: [] };
+      if (!branchResult.rows[0]) {
+        return res.status(200).json({
+          success: true, branch, type: seriesType,
+          prefix: seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/',
+          lastUsed: 0, next: 1
+        });
+      }
+      branchId = Number(branchResult.rows[0].id);
+      branch = branchResult.rows[0].branch_code || branch;
+    } else {
+      branchId = safeUserBranchId(req);
+    }
+    if (!branchId) {
+      return res.json({
+        success: true,
+        branch,
+        type: seriesType,
+        prefix: seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/',
+        lastUsed: 0,
+        next: 1
+      });
+    }
+    const [number, branchResult] = await Promise.all([
+      getBranchDocumentNumber(pool, branchId, seriesType),
+      pool.query('SELECT branch_code FROM branches WHERE id = $1', [branchId])
+    ]);
+    branch = branchResult.rows[0]?.branch_code || branch;
+    const lastUsed = BigInt(number.last_used_number || 0);
+    const serialMatch = number.number.match(/(\d+)$/);
+    const nextSerial = serialMatch ? BigInt(serialMatch[1]) : lastUsed + 1n;
+    const next = Number.isSafeInteger(Number(nextSerial)) ? Number(nextSerial) : String(nextSerial);
+    res.json({
+      success: true,
+      branch,
+      type: seriesType,
+      prefix: number.prefix,
+      lastUsed: Number.isSafeInteger(Number(lastUsed)) ? Number(lastUsed) : String(lastUsed),
+      next,
+      number: number.number,
+      ...(seriesType === 'bilty' ? { lr_no: number.number } : { bill_no: number.number }),
+      branch_id: branchId,
+      fallback: !number.series_id
+    });
+  } catch (error) {
+    console.error('Branch document series lookup failed:', error.message);
+    const prefix = seriesType === 'bilty' ? 'BTC-' : 'BTC/BILL/';
+    res.json({
+      success: true,
+      branch: String(req.query.branch || ''),
+      type: seriesType,
+      prefix,
+      lastUsed: 0,
+      next: 1,
+      number: `${prefix}00001`,
+      ...(seriesType === 'bilty' ? { lr_no: `${prefix}00001` } : { bill_no: `${prefix}00001` }),
+      fallback: true
+    });
+  }
+});
 
 app.get('/api/document-series/next-number', authMiddleware, async (req, res) => {
   try {
