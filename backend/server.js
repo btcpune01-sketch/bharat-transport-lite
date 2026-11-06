@@ -1576,10 +1576,16 @@ function buildBranchCondition({ branchId }, startIndex = 1) {
   return { sql: `branch_id = $${startIndex}`, params: [branchId] };
 }
 
+function canonicalBranchCode(value) {
+  const code = String(value || '').trim();
+  const aliases = { PUN: 'PUNE', MUM: 'MUMBAI', DEL: 'DLH', AHM: 'AHMD' };
+  return aliases[code.toUpperCase()] || code;
+}
+
 async function resolveAdminBranchId(req, res, source = req.query) {
-  const selected = String(
+  const selected = canonicalBranchCode(
     req.headers['x-branch-slug'] || source?.branch_id || source?.branch || source?.branch_code || ''
-  ).trim();
+  );
   if (!selected || ALL_BRANCH_VALUES.has(selected.toLowerCase()) || selected.toLowerCase() === 'global') return null;
   const result = await pool.query(
     `SELECT id FROM branches
@@ -2295,7 +2301,7 @@ app.get('/api/document-series', authMiddleware, async (req, res) => {
     let branchId;
     let branch = String(req.query.branch || '').trim();
     if (req.user.role === 'admin') {
-      branch = String(req.headers['x-branch-slug'] || req.query.branch_id || req.query.branch || req.query.branch_code || '').trim();
+      branch = canonicalBranchCode(req.headers['x-branch-slug'] || req.query.branch_id || req.query.branch || req.query.branch_code || '');
       const branchResult = branch
         ? await pool.query(
           `SELECT id, branch_code FROM branches
@@ -2702,7 +2708,7 @@ app.post('/api/consignments', authMiddleware, async (req, res) => {
       if (!selectedBranchId) return res.status(400).json({ error: 'Select a branch before creating a Bilty.' });
       c.branch_id = selectedBranchId;
       const branchResult = await client.query('SELECT branch_code FROM branches WHERE id = $1', [selectedBranchId]);
-      c.branch_code = c.branch_code || branchResult.rows[0]?.branch_code || null;
+      c.branch_code = branchResult.rows[0]?.branch_code || c.branch_code || null;
     } else {
       c.branch_id = safeUserBranchId(req);
       if (!c.branch_id) return res.status(403).json({ error: 'Your account is not assigned to a branch.' });

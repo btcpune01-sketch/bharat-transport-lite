@@ -325,7 +325,9 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
       const payload = {
         ...payloadData,
-        ...(branchMode ? { branch: branchSlug, branch_id: branchId, branch_code: branchCode } : {}),
+        ...(branchMode ? { branch: branchSlug } : {}),
+        ...(branchId ? { branch_id: branchId } : {}),
+        ...(branchCode ? { branch_code: branchCode } : {}),
         actual_weight: formData.actual_weight ?? formData.act_wt ?? 0,
         charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0,
         length: formData.length ?? 0,
@@ -425,7 +427,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug 
                   <input value={branchCode} readOnly required aria-readonly="true" className="w-full rounded-lg border border-white/10 bg-white/10 px-4 py-2 font-semibold text-white" />
                 </div>
               ) : (
-                <div><CreatableBranchSelect label="Branch" value={formData.branch_code} onChange={(branch) => handleBranchSelect('branch', branch)} required /></div>
+                <div><CreatableBranchSelect label="Branch" value={formData.branch_code} onChange={(branch) => handleBranchSelect('branch', branch)} loadFromApi allowCreate={false} required /></div>
               )}
               <div><label className="block text-gray-300 text-sm font-medium mb-1">From Name / Origin *</label><input type="text" name="from_name" value={formData.from_name} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               <div><CreatableBranchSelect label="To Code" value={formData.to_code} onChange={(branch) => handleBranchSelect('to', branch)} required /></div>

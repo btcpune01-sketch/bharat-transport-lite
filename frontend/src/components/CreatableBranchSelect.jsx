@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
+import api from '../api'
 
 const STORAGE_KEY = 'btc_custom_branches'
 const BRANCHES_UPDATED_EVENT = 'btc-custom-branches-updated'
@@ -49,9 +50,12 @@ export default function CreatableBranchSelect({
   onChange,
   label,
   placeholder = 'Type or Select Branch',
-  required = false
+  required = false,
+  loadFromApi = false,
+  allowCreate = true
 }) {
   const [customBranches, setCustomBranches] = useState([])
+  const [apiBranches, setApiBranches] = useState(null)
   const [inputValue, setInputValue] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const rootRef = useRef(null)
@@ -73,7 +77,36 @@ export default function CreatableBranchSelect({
     }
   }, [])
 
-  const branches = useMemo(() => [...DEFAULT_BRANCHES, ...customBranches], [customBranches])
+  useEffect(() => {
+    if (!loadFromApi) return undefined
+    let active = true
+    api.get('/branches/public')
+      .then(response => {
+        const data = response.data?.data
+        if (!Array.isArray(data)) throw new Error('The server returned an invalid branch list.')
+        const availableBranches = data
+          .filter(branch => branch?.branch_code && (branch.branch_name || branch.name))
+          .map(branch => ({
+            ...branch,
+            code: String(branch.branch_code || branch.code).toUpperCase(),
+            name: branch.branch_name || branch.name,
+            label: `${String(branch.branch_code || branch.code).toUpperCase()} - ${branch.branch_name || branch.name}`
+          }))
+        if (active) setApiBranches(availableBranches)
+      })
+      .catch(error => {
+        if (active) {
+          console.warn('Unable to load branches from the server; using local branch options:', error)
+          setApiBranches(null)
+        }
+      })
+    return () => { active = false }
+  }, [loadFromApi])
+
+  const branches = useMemo(
+    () => loadFromApi && apiBranches !== null ? apiBranches : [...DEFAULT_BRANCHES, ...customBranches],
+    [apiBranches, customBranches, loadFromApi]
+  )
   const selectedBranch = branches.find(branch => branch.code === value)
   const searchText = inputValue.trim().toLowerCase()
   const filteredBranches = branches.filter(branch =>
@@ -146,7 +179,7 @@ export default function CreatableBranchSelect({
         }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') setIsOpen(false)
-          if (event.key === 'Enter' && isOpen && parsedInput && !matchingBranchExists) {
+          if (allowCreate && event.key === 'Enter' && isOpen && parsedInput && !matchingBranchExists) {
             event.preventDefault()
             addBranch()
           }
@@ -177,7 +210,7 @@ export default function CreatableBranchSelect({
               {branch.label}
             </button>
           ))}
-          {parsedInput && !matchingBranchExists && (
+          {allowCreate && parsedInput && !matchingBranchExists && (
             <button
               type="button"
               onMouseDown={(event) => event.preventDefault()}
