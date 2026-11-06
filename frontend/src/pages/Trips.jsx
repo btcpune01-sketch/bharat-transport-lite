@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 
-export default function Trips() {
+export default function Trips({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
@@ -28,7 +28,7 @@ export default function Trips() {
 
   useEffect(() => {
     fetchTrips()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchTrips = async () => {
     try {
@@ -37,7 +37,12 @@ export default function Trips() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/trips`, { headers })
+      const res = await fetch(`${apiUrl}/trips`, {
+        headers: {
+          ...headers,
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {})
+        }
+      })
       if (res.ok) {
         const data = await res.json()
         setTrips(data.data || [])
@@ -67,6 +72,7 @@ export default function Trips() {
       const res = await fetch(url, {
         method,
         headers: {
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {}),
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
@@ -125,6 +131,7 @@ export default function Trips() {
       const res = await fetch(`${apiUrl}/trips/${tripId}`, {
         method: 'PUT',
         headers: {
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {}),
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
@@ -155,7 +162,7 @@ export default function Trips() {
       <nav className="bg-gradient-to-r from-cyan-700 to-cyan-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">🚛 Trip Management</h1>
               <p className="text-xs text-cyan-200">Vehicle Assignment & Trip Tracking (TCI Style)</p>
