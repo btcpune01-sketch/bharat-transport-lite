@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 
-export default function Claims() {
+export default function Claims({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [claims, setClaims] = useState([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +22,7 @@ export default function Claims() {
 
   useEffect(() => {
     fetchClaims()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchClaims = async () => {
     try {
@@ -31,7 +31,12 @@ export default function Claims() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/claims`, { headers })
+      const res = await fetch(`${apiUrl}/claims`, {
+        headers: {
+          ...headers,
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {})
+        }
+      })
       if (res.ok) {
         const data = await res.json()
         setClaims(data.data || [])
@@ -62,7 +67,8 @@ export default function Claims() {
         method,
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {})
         },
         body: JSON.stringify(formData)
       })
@@ -133,7 +139,7 @@ export default function Claims() {
       <nav className="bg-gradient-to-r from-rose-700 to-rose-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">⚠️ Claim Management</h1>
               <p className="text-xs text-rose-200">Track Damage, Loss, Shortage & Settlements</p>
