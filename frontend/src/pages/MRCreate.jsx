@@ -5,7 +5,7 @@ import { formatDateForInput } from '../utils/dateFormatter'
 import toast from 'react-hot-toast'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
-export default function MRCreate() {
+export default function MRCreate({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [biltyList, setBiltyList] = useState([])
@@ -29,11 +29,13 @@ export default function MRCreate() {
   useEffect(() => {
     fetchBilties()
     fetchBills()
-  }, [])
+  }, [branchMode, branchCode])
+
+  const branchParams = branchMode && branchCode ? { branch: branchCode } : undefined
 
   const fetchBills = async () => {
     try {
-      const response = await api.get('/bills')
+      const response = await api.get('/bills', { params: branchParams })
       setBillList((response.data?.data || []).filter(bill => bill.payment_status !== 'Paid'))
     } catch (err) {
       console.error('Error fetching bills:', err)
@@ -42,14 +44,10 @@ export default function MRCreate() {
 
   const fetchBilties = async () => {
     try {
-      const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/consignments`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const receiptResponse = await api.get('/mr')
+      const response = await api.get('/consignments', { params: branchParams })
+      if (response.status === 200) {
+        const data = response.data
+        const receiptResponse = await api.get('/mr', { params: branchParams })
         const receipts = receiptResponse.data?.data || []
         // Sirf Unpaid bilties dikhayenge MR ke liye
         const unpaidBilties = (data.data || [])
@@ -140,25 +138,15 @@ export default function MRCreate() {
 
     try {
       setLoading(true)
-      const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      
       const payload = {
         ...formData,
+        ...(branchMode && branchCode ? { branch: branchCode } : {}),
         amount: parseFloat(formData.amount),
         is_advance: formData.is_advance || false
       }
 
-      const res = await fetch(`${apiUrl}/mr`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      })
-
-      const result = await res.json()
+      const response = await api.post('/mr', payload)
+      const result = response.data
       if (result.local) {
         const draft = saveLocalDraft('memo', {
           ...payload,
@@ -166,11 +154,9 @@ export default function MRCreate() {
         })
         toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 })
         navigate(`/mr/print?mr_no=${encodeURIComponent(draft.mr_no)}`)
-      } else if (res.ok) {
-        toast.success(`MR created successfully! MR No: ${result.mr_no}`)
-        navigate('/mr')
       } else {
-        throw Object.assign(new Error(result.error || 'Failed to create MR'), { response: { status: res.status, data: result } })
+        toast.success(`MR created successfully! MR No: ${result.mr_no}`)
+        navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/money-receipt` : '/mr')
       }
     } catch (err) {
       console.error('MR create error:', err)
@@ -205,7 +191,7 @@ export default function MRCreate() {
       <nav className="bg-gradient-to-r from-purple-700 to-purple-900 text-white shadow-lg">
         <div className="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/mr')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/money-receipt` : '/mr')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">🧾 Create Money Receipt</h1>
               <p className="text-xs text-purple-200">Record Payment against Bilty or Bill</p>

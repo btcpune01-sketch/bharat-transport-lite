@@ -6,7 +6,7 @@ import api from '../api';
 import { useAuth } from '../AuthContext';
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion';
 
-const Consignments = () => {
+const Consignments = ({ branchMode = false, branchCode }) => {
   const { currentUser } = useAuth();
   const canDelete = canDeleteRecords(currentUser?.role);
   const navigate = useNavigate();
@@ -32,7 +32,7 @@ const Consignments = () => {
 
   useEffect(() => {
     fetchConsignments();
-  }, []);
+  }, [branchMode, branchCode]);
 
   const fetchConsignments = async () => {
     try {
@@ -45,7 +45,9 @@ const Consignments = () => {
         return;
       }
 
-      const response = await api.get('/consignments');
+      const response = await api.get('/consignments', {
+        params: branchMode && branchCode ? { branch: branchCode } : undefined
+      });
       const dataArray = response.data?.data || response.data || [];
       setConsignments(Array.isArray(dataArray) ? dataArray : []);
       setError('');
@@ -114,7 +116,7 @@ const Consignments = () => {
         <h1 className="text-3xl font-bold text-gray-800">Consignments (Bilty)</h1>
         <button
           type="button"
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')}
           className="self-start rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-50 sm:self-auto"
         >
           ← Back to Dashboard
@@ -148,7 +150,7 @@ const Consignments = () => {
         </select>
         <button
           type="button"
-          onClick={() => navigate('/consignments/new')}
+          onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/bilty-entry` : '/consignments/new')}
           className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition whitespace-nowrap flex items-center justify-center gap-2"
         >
           <Truck size={18} aria-hidden="true" />

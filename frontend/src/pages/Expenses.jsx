@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 
-export default function Expenses() {
+export default function Expenses({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -14,7 +14,7 @@ export default function Expenses() {
   const [saving, setSaving] = useState(false)
   const [filterCat, setFilterCat] = useState('')
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [branchMode, branchCode])
 
   const apiUrl = (import.meta.env.VITE_API_URL || '/api')
   const getHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' })
@@ -22,7 +22,10 @@ export default function Expenses() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`${apiUrl}/expenses`, { headers: getHeaders() })
+      const branchQuery = branchMode && branchCode
+        ? `?${new URLSearchParams({ branch: branchCode })}`
+        : ''
+      const res = await fetch(`${apiUrl}/expenses${branchQuery}`, { headers: getHeaders() })
       if (res.ok) { const d = await res.json(); setData(d.data || []) }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
@@ -33,7 +36,8 @@ export default function Expenses() {
     setSaving(true)
     try {
       const res = await fetch(`${apiUrl}/expenses`, {
-        method: 'POST', headers: getHeaders(), body: JSON.stringify(form)
+        method: 'POST', headers: getHeaders(),
+        body: JSON.stringify(branchMode ? { ...form, branch: branchCode } : form)
       })
       if (res.ok) {
         setShowForm(false)
@@ -66,7 +70,7 @@ export default function Expenses() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => setShowForm(!showForm)} className="bg-white text-red-700 px-4 py-2 rounded-lg font-bold hover:bg-red-50">➕ Add Expense</button>
-            <button onClick={() => navigate('/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/dashboard')} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30">← Dashboard</button>
           </div>
         </div>
       </div>

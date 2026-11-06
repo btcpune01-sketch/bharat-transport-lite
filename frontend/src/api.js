@@ -23,6 +23,15 @@ function getActiveBranchSession() {
     return null
   }
 }
+function getActiveBranchRouteSlug() {
+  const match = window.location.hash.match(/^#\/branch\/([^/?#]+)/)
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return null
+  }
+}
 
 axios.interceptors.request.use((config) => {
   const session = getActiveBranchSession()
@@ -30,6 +39,8 @@ axios.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${session.token}`
     config.headers['X-Branch-Slug'] = session.slug
   }
+  const branchSlug = getActiveBranchRouteSlug()
+  if (branchSlug) config.headers['X-Branch-Slug'] = branchSlug
   return config
 })
 
@@ -38,6 +49,8 @@ const api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'applica
 api.interceptors.request.use((config) => {
   const branchSession = getActiveBranchSession()
   if (branchSession) config.headers['X-Branch-Slug'] = branchSession.slug
+  const branchSlug = getActiveBranchRouteSlug()
+  if (branchSlug) config.headers['X-Branch-Slug'] = branchSlug
   const token = branchSession?.token || localStorage.getItem('token')
   if (token && (branchSession || !config.headers.Authorization)) config.headers.Authorization = `Bearer ${token}`
   return config

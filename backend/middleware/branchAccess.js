@@ -59,6 +59,12 @@ const BRANCH_RECORD_ROUTES = [
     table: 'vehicles',
     column: 'id',
     key: 1
+  },
+  {
+    pattern: /^\/api\/customers\/(\d+)$/,
+    table: 'customers',
+    column: 'id',
+    key: 1
   }
 ]
 

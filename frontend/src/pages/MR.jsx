@@ -4,7 +4,7 @@ import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
-export default function MR() {
+export default function MR({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const { currentUser } = useAuth()
   const canDelete = canDeleteRecords(currentUser?.role)
@@ -15,14 +15,17 @@ export default function MR() {
 
   useEffect(() => {
     fetchMRs()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchMRs = async () => {
     try {
       setLoading(true)
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/mr`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const branchQuery = branchMode && branchCode
+        ? `?${new URLSearchParams({ branch: branchCode })}`
+        : ''
+      const res = await fetch(`${apiUrl}/mr${branchQuery}`, { headers: { 'Authorization': `Bearer ${token}` } })
       const data = await res.json()
       setMrs(data.data || [])
     } catch (err) {
@@ -84,8 +87,8 @@ export default function MR() {
             <p className="text-xs text-purple-200">Total: {filteredMRs.length} MRs | Amount: ₹{totalAmount.toLocaleString('en-IN')}</p>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => navigate('/mr/create')} className="bg-white text-purple-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-purple-50">+ New MR</button>
-            <button onClick={() => navigate('/')} className="bg-purple-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/money-receipt/create` : '/mr/create')} className="bg-white text-purple-700 px-4 py-2 rounded-lg font-bold text-sm hover:bg-purple-50">+ New MR</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-purple-800 text-white px-4 py-2 rounded-lg font-bold text-sm">← Dashboard</button>
           </div>
         </div>
       </nav>

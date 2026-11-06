@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS customers (
     credit_limit NUMERIC(12,2) DEFAULT 0,
     credit_days INTEGER DEFAULT 0,
     opening_balance NUMERIC(12,2) DEFAULT 0,
+    branch_id INTEGER REFERENCES branches(id),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_deleted BOOLEAN NOT NULL DEFAULT FALSE,

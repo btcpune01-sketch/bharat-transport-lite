@@ -1,7 +1,7 @@
 // FINAL - All Sections Fixed + LR Editable - Print Format NOT Changed
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { biltyAPI, customerAPI } from '../api'
+import api, { biltyAPI, customerAPI } from '../api'
 import toast from 'react-hot-toast'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 import { formatDateForInput } from '../utils/dateFormatter'
@@ -68,10 +68,11 @@ const getLocalLrNumber = () => {
   return getLocalDocumentNumber('bilty', 'BTC-')
 }
 
-export default function BiltyEntry({ branchMode = false }) {
+export default function BiltyEntry({ branchMode = false, branchCode: branchSlug }) {
   const navigate = useNavigate()
   const { id } = useParams()
   const [branchCode, setBranchCode] = useState('')
+  const [branchId, setBranchId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [numberLoading, setNumberLoading] = useState(true)
   const [numberError, setNumberError] = useState(false)
@@ -104,16 +105,32 @@ export default function BiltyEntry({ branchMode = false }) {
 
   useEffect(() => {
     if (!branchMode) return
+    let active = true
     try {
-      const code = JSON.parse(localStorage.getItem('branch_session') || 'null')?.branch?.branch_code
-      if (!code) throw new Error('The branch code is missing from this session.')
-      setBranchCode(code)
-      setFormData(previous => ({ ...previous, branch_code: code }))
+      const sessionBranch = JSON.parse(localStorage.getItem('branch_session') || 'null')?.branch
+      const loadBranch = async () => {
+        let branch = sessionBranch?.url_slug === branchSlug ? sessionBranch : null
+        if (!branch?.id || !branch?.branch_code) {
+          const response = await api.get(`/branches/slug/${encodeURIComponent(branchSlug)}`)
+          branch = response.data?.branch
+        }
+        if (!active || !branch?.id || !branch?.branch_code) throw new Error('The selected branch could not be loaded.')
+        setBranchId(Number(branch.id))
+        setBranchCode(branch.branch_code)
+        setFormData(previous => ({ ...previous, branch_id: Number(branch.id), branch_code: branch.branch_code }))
+      }
+      loadBranch().catch(error => {
+        if (active) {
+          console.error('Unable to load the branch for Bilty entry:', error)
+          toast.error('Unable to load the selected branch.')
+        }
+      })
     } catch (error) {
       console.error('Unable to load the branch code for Bilty entry:', error)
       toast.error('Unable to load the branch assigned to this session.')
     }
-  }, [branchMode])
+    return () => { active = false }
+  }, [branchMode, branchSlug])
 
   useEffect(() => {
     fetchCustomers()
@@ -309,7 +326,7 @@ export default function BiltyEntry({ branchMode = false }) {
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
       const payload = {
         ...payloadData,
-        ...(branchMode ? { branch_code: branchCode } : {}),
+        ...(branchMode ? { branch: branchSlug, branch_id: branchId, branch_code: branchCode } : {}),
         actual_weight: formData.actual_weight ?? formData.act_wt ?? 0,
         charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0,
         length: formData.length ?? 0,

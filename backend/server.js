@@ -613,6 +613,7 @@ async function runMigrations() {
   await addColumnIfNotExists('parties', 'credit_days', 'INTEGER DEFAULT 0');
   await addColumnIfNotExists('parties', 'opening_balance', 'NUMERIC DEFAULT 0');
   await addColumnIfNotExists('customers', 'is_active', 'BOOLEAN DEFAULT TRUE');
+  await addColumnIfNotExists('customers', 'branch_id', 'INTEGER REFERENCES branches(id)');
   await addColumnIfNotExists('customers', 'mobile', 'TEXT');
   await addColumnIfNotExists('customers', 'whatsapp', 'TEXT');
   await addColumnIfNotExists('customers', 'city', 'TEXT');
@@ -957,7 +958,7 @@ function requireManualDeleteConfirmation(req, res, next) {
 
 registerStationeryRoutes(app, { pool, authMiddleware });
 
-function getBranchPaymentsScope(req, res) {
+async function getBranchPaymentsScope(req, res) {
   const role = String(req.user?.role || '').toLowerCase();
   const isBranchUser = role === 'branch' || role === 'branch_user';
   if (role !== 'admin' && role !== 'manager' && !isBranchUser) {
@@ -972,10 +973,14 @@ function getBranchPaymentsScope(req, res) {
     }
     return { branchId, isBranchUser: true };
   }
-  if (req.query.branch_id === undefined || req.query.branch_id === '') {
+  if (req.query.branch_id === undefined && req.query.branch === undefined) {
     return { branchId: null, isBranchUser: false };
   }
-  const branchId = Number(req.query.branch_id);
+  let branchId = Number(req.query.branch_id);
+  if ((!Number.isSafeInteger(branchId) || branchId < 1) && req.query.branch) {
+    branchId = await resolveAdminBranchId(req, res);
+    if (branchId === undefined) return null;
+  }
   if (!Number.isSafeInteger(branchId) || branchId < 1) {
     res.status(400).json({ error: 'Branch filter must be a valid branch ID.' });
     return null;
@@ -1014,7 +1019,7 @@ app.get('/api/admin/branch-payment-status', authMiddleware, async (req, res) => 
 });
 
 app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
-  const scope = getBranchPaymentsScope(req, res);
+  const scope = await getBranchPaymentsScope(req, res);
   if (!scope) return;
   try {
     await ensureBranchPaymentsSchema();
@@ -1054,7 +1059,7 @@ app.get('/api/branch-payments/summary', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/branch-payments', authMiddleware, async (req, res) => {
-  const scope = getBranchPaymentsScope(req, res);
+  const scope = await getBranchPaymentsScope(req, res);
   if (!scope) return;
   try {
     await ensureBranchPaymentsSchema();
@@ -1122,7 +1127,11 @@ app.post('/api/branch-payments', authMiddleware, async (req, res) => {
   if (!['Cash', 'UPI', 'Bank'].includes(paymentMode)) {
     return res.status(400).json({ error: 'Payment mode must be Cash, UPI, or Bank.' });
   }
-  const branchId = isBranchUser ? Number(req.user.branch_id) : Number(req.body?.branch_id);
+  let branchId = isBranchUser ? Number(req.user.branch_id) : Number(req.body?.branch_id);
+  if (!isBranchUser && !Number.isSafeInteger(branchId) && req.body?.branch) {
+    branchId = await resolveAdminBranchId(req, res, req.body);
+    if (branchId === undefined) return;
+  }
   if (!Number.isSafeInteger(branchId) || branchId < 1) {
     return res.status(400).json({ error: 'Select a valid branch.' });
   }
@@ -1432,6 +1441,26 @@ function buildBranchCondition({ branchId, branchCode }, startIndex = 1) {
     parts.push(`(branch_id IS NULL AND UPPER(TRIM(branch_code)) = UPPER(TRIM($${startIndex + params.length - 1})))`);
   }
   return { sql: parts.length ? `(${parts.join(' OR ')})` : '', params };
+}
+
+async function resolveAdminBranchId(req, res, source = req.query) {
+  const selected = String(
+    req.headers['x-branch-slug'] || source?.branch_id || source?.branch || source?.branch_code || ''
+  ).trim();
+  if (!selected || ALL_BRANCH_VALUES.has(selected.toLowerCase()) || selected.toLowerCase() === 'global') return null;
+  const result = await pool.query(
+    `SELECT id FROM branches
+     WHERE (id::TEXT = $1 OR LOWER(COALESCE(url_slug, '')) = LOWER($1)
+       OR LOWER(COALESCE(branch_code, '')) = LOWER($1))
+       AND COALESCE(is_active, TRUE) = TRUE
+     LIMIT 1`,
+    [selected]
+  );
+  if (!result.rows[0]) {
+    res.status(404).json({ error: 'The selected branch was not found.' });
+    return undefined;
+  }
+  return Number(result.rows[0].id);
 }
 
 app.get('/api/dashboard/pending-amount', authMiddleware, async (req, res) => {
@@ -2068,16 +2097,29 @@ app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, re
     let effectiveBranchCode = userBranchCode;
 
     if (isAdmin) {
-      const selectedBranchId = req.query.branch_id;
-      if (selectedBranchId && selectedBranchId !== 'all') {
-        const parsed = parseInt(selectedBranchId, 10);
-        if (Number.isSafeInteger(parsed) && parsed > 0) {
-          effectiveBranchId = parsed;
-          effectiveBranchCode = null;
-        } else {
-          effectiveBranchId = null;
-          effectiveBranchCode = null;
-        }
+      const selectedBranch = String(req.query.branch ?? req.query.branch_id ?? req.headers['x-branch-slug'] ?? '').trim();
+          if (req.user.role === 'admin') {
+            const selectedBranchId = await resolveAdminBranchId(req, res, c);
+            if (selectedBranchId === undefined) return;
+            c.branch_id = selectedBranchId;
+            if (selectedBranchId && !c.branch_code) {
+              const branchResult = await pool.query('SELECT branch_code FROM branches WHERE id = $1', [selectedBranchId]);
+              c.branch_code = branchResult.rows[0]?.branch_code || null;
+            }
+          } else if (!c.branch_id) c.branch_id = req.user.branch_id;
+      if (selectedBranch && !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())) {
+        const branchResult = await pool.query(
+          `SELECT id, branch_code FROM branches
+           WHERE (LOWER(COALESCE(url_slug, '')) = LOWER($1)
+             OR LOWER(COALESCE(branch_code, '')) = LOWER($1)
+             OR id::TEXT = $1)
+             AND COALESCE(is_active, TRUE) = TRUE
+           LIMIT 1`,
+          [selectedBranch]
+        );
+        if (!branchResult.rows[0]) return res.status(404).json({ error: 'The selected branch was not found.' });
+        effectiveBranchId = Number(branchResult.rows[0].id);
+        effectiveBranchCode = branchResult.rows[0].branch_code || null;
       } else {
         effectiveBranchId = null;
         effectiveBranchCode = null;
@@ -2121,7 +2163,16 @@ app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, re
 
 app.get('/api/consignments/:id', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM consignments WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const params = branchId === null ? [req.params.id] : [req.params.id, branchId];
+    const result = await pool.query(
+      `SELECT * FROM consignments WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition}`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2469,7 +2520,9 @@ app.get('/api/outstanding', authMiddleware, async (req, res) => {
 app.get('/api/expenses', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `WHERE branch_id = ${safeUserBranchId(req)}`;
+    const branchId = isAdmin ? await resolveAdminBranchId(req, res) : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : `WHERE branch_id = ${Number(branchId)}`;
     const result = await pool.query(`SELECT * FROM expenses ${branchCondition} ORDER BY expense_date DESC LIMIT 200`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/expenses error:', err.message); res.status(503).json({ error: 'Expenses are temporarily unavailable.', details: err.message, code: err.code || null }); }
@@ -2477,7 +2530,14 @@ app.get('/api/expenses', authMiddleware, async (req, res) => {
 
 app.post('/api/expenses', authMiddleware, async (req, res) => {
   try {
-    const data = { ...req.body }; if (!data.branch_id) data.branch_id = req.user.branch_id;
+    const data = { ...req.body };
+    if (req.user.role !== 'admin') data.branch_id = safeUserBranchId(req);
+    else {
+      const branchId = await resolveAdminBranchId(req, res, data);
+      if (branchId === undefined) return;
+      data.branch_id = branchId;
+    }
+    delete data.branch;
     const keys = Object.keys(data); const values = Object.values(data);
     const result = await pool.query(`INSERT INTO expenses (${keys.join(', ')}) VALUES (${keys.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`, values);
     res.json(result.rows[0]);
@@ -2647,10 +2707,16 @@ app.get('/api/bills/:identifier', authMiddleware, async (req, res) => {
   try {
     const { identifier } = req.params;
     const isNumeric = /^\d+$/.test(identifier);
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const params = branchId === null ? [identifier] : [identifier, branchId];
     const query = isNumeric
-      ? `SELECT * FROM bill_book WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE`
-      : `SELECT * FROM bill_book WHERE bill_no = $1 AND COALESCE(is_deleted, FALSE) = FALSE`;
-    const result = await pool.query(query, [identifier]);
+      ? `SELECT * FROM bill_book WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition}`
+      : `SELECT * FROM bill_book WHERE bill_no = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition}`;
+    const result = await pool.query(query, params);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
     const bill = result.rows[0];
     const itemsResult = await pool.query(`SELECT * FROM bill_items WHERE bill_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE`, [bill.id]);
@@ -2714,7 +2780,13 @@ app.post('/api/bills', authMiddleware, validateBill, checkBillValidation, async 
       bill.branch_id = branchResult.rows[0].id;
       bill.branch_code = branchResult.rows[0].branch_code;
     } else if (!bill.branch_id) {
-      bill.branch_id = req.user.branch_id;
+    } else {
+      const selectedBranchId = await resolveAdminBranchId(req, res, req.body);
+      if (selectedBranchId === undefined) {
+        await client.query('ROLLBACK');
+        return;
+      }
+      bill.branch_id = selectedBranchId;
     }
     if (!bill.bill_date) bill.bill_date = new Date().toISOString().split('T')[0];
     if (!bill.status) bill.status = 'Pending';
@@ -2785,7 +2857,9 @@ app.delete('/api/bills/:id', authMiddleware, requireManualDeleteConfirmation, as
 app.get('/api/mr', authMiddleware, async (req, res) => {
   try {
     const isAdmin = req.user.role === 'admin';
-    const branchCondition = isAdmin ? '' : `AND branch_id = ${safeUserBranchId(req)}`;
+    const branchId = isAdmin ? await resolveAdminBranchId(req, res) : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : `AND branch_id = ${Number(branchId)}`;
     const result = await pool.query(`SELECT * FROM money_receipts WHERE COALESCE(is_deleted, FALSE) = FALSE ${branchCondition} ORDER BY id DESC LIMIT 500`);
     res.json({ data: result.rows });
   } catch (err) { console.error('GET /api/mr error:', err.message); res.status(503).json({ error: 'Money receipts are temporarily unavailable.', details: err.message, code: err.code || null }); }
@@ -2805,7 +2879,16 @@ app.get('/api/mr/next-number', authMiddleware, async (req, res) => {
 
 app.get('/api/mr/:id', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM money_receipts WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
+    const branchId = req.user.role === 'admin'
+      ? await resolveAdminBranchId(req, res)
+      : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const params = branchId === null ? [req.params.id] : [req.params.id, branchId];
+    const result = await pool.query(
+      `SELECT * FROM money_receipts WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition}`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'MR not found' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2813,6 +2896,10 @@ app.get('/api/mr/:id', authMiddleware, async (req, res) => {
 
 app.post('/api/mr', authMiddleware, async (req, res) => {
   if (!pool) return res.json({ success: true, local: true, message: 'Save this record as a local draft.' });
+  const branchId = req.user.role === 'admin'
+    ? await resolveAdminBranchId(req, res, req.body)
+    : safeUserBranchId(req);
+  if (branchId === undefined) return;
   const client = await pool.connect();
   let transactionStarted = false;
   try {
@@ -2830,7 +2917,9 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
     let outstanding;
     let linkedDocument;
     if (bilty_id) {
-      const result = await client.query(`SELECT id, lr_no, COALESCE(NULLIF(grand_total, ''), '0')::NUMERIC AS grand_total, payment_status FROM consignments WHERE id = $1 FOR UPDATE`, [bilty_id]);
+      const branchFilter = branchId === null ? '' : 'AND branch_id = $2';
+      const branchParams = branchId === null ? [bilty_id] : [bilty_id, branchId];
+      const result = await client.query(`SELECT id, lr_no, COALESCE(NULLIF(grand_total, ''), '0')::NUMERIC AS grand_total, payment_status FROM consignments WHERE id = $1 ${branchFilter} FOR UPDATE`, branchParams);
       if (result.rows.length === 0) {
         await client.query('ROLLBACK'); transactionStarted = false;
         return res.status(404).json({ error: 'Linked Bilty not found.' });
@@ -2840,7 +2929,9 @@ app.post('/api/mr', authMiddleware, async (req, res) => {
       const totalReceived = Number(payments.rows[0].total);
       outstanding = linkedDocument.payment_status === 'Paid' ? 0 : Math.max(Number(linkedDocument.grand_total) - totalReceived, 0);
     } else if (bill_id) {
-      const result = await client.query(`SELECT id, bill_no, grand_total, advance_received, balance_due, payment_status FROM bill_book WHERE id = $1 FOR UPDATE`, [bill_id]);
+      const branchFilter = branchId === null ? '' : 'AND branch_id = $2';
+      const branchParams = branchId === null ? [bill_id] : [bill_id, branchId];
+      const result = await client.query(`SELECT id, bill_no, grand_total, advance_received, balance_due, payment_status FROM bill_book WHERE id = $1 ${branchFilter} FOR UPDATE`, branchParams);
       if (result.rows.length === 0) {
         await client.query('ROLLBACK'); transactionStarted = false;
         return res.status(404).json({ error: 'Linked Bill not found.' });
@@ -2943,13 +3034,35 @@ app.get('/api/audit', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/customers', authMiddleware, async (req, res) => {
-  try { const result = await pool.query('SELECT * FROM customers WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE ORDER BY customer_name'); res.json(result.rows); }
+  try {
+    const isAdmin = req.user.role === 'admin';
+    const branchId = isAdmin ? await resolveAdminBranchId(req, res) : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $1';
+    const params = branchId === null ? [] : [Number(branchId)];
+    const result = await pool.query(
+      `SELECT * FROM customers
+       WHERE COALESCE(is_deleted, FALSE) = FALSE AND COALESCE(is_active, TRUE) = TRUE
+         ${branchCondition}
+       ORDER BY customer_name`,
+      params
+    );
+    res.json(result.rows);
+  }
   catch (err) { console.error('GET /api/customers error:', err.message); res.status(503).json({ error: 'Customers are temporarily unavailable.', details: err.message, code: err.code || null }); }
 });
 
 app.get('/api/customers/:id', authMiddleware, async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM customers WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE', [req.params.id]);
+    const isAdmin = req.user.role === 'admin';
+    const branchId = isAdmin ? await resolveAdminBranchId(req, res) : safeUserBranchId(req);
+    if (branchId === undefined) return;
+    const branchCondition = branchId === null ? '' : 'AND branch_id = $2';
+    const params = branchId === null ? [req.params.id] : [req.params.id, Number(branchId)];
+    const result = await pool.query(
+      `SELECT * FROM customers WHERE id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ${branchCondition}`,
+      params
+    );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found.' });
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -2969,10 +3082,11 @@ app.post('/api/customers', authMiddleware, async (req, res) => {
       const codeResult = await client.query(`SELECT COALESCE(MAX(SUBSTRING(customer_code FROM '[0-9]+$')::INTEGER), 0) AS last_serial FROM customers WHERE customer_code ~ '^CUST[0-9]+$'`);
       customerCode = `CUST${String(Number(codeResult.rows[0].last_serial) + 1).padStart(4, '0')}`;
     }
+    const branchId = req.user.role === 'admin' ? req.body.branch_id || null : safeUserBranchId(req);
     const result = await client.query(
-      `INSERT INTO customers (customer_code, customer_name, mobile, phone, whatsapp, email, address, city, state, pincode, gst_no, pan_no, customer_type, credit_limit, credit_days, opening_balance)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-      [customerCode, customerName, mobile, req.body.whatsapp || mobile, req.body.email || null, req.body.address || null, req.body.city || null, req.body.state || null, req.body.pincode || null, req.body.gst_no || null, req.body.pan_no || null, req.body.customer_type || 'Cash', Number(req.body.credit_limit) || 0, Number(req.body.credit_days) || 0, Number(req.body.opening_balance) || 0]
+      `INSERT INTO customers (customer_code, customer_name, mobile, phone, whatsapp, email, address, city, state, pincode, gst_no, pan_no, customer_type, credit_limit, credit_days, opening_balance, branch_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [customerCode, customerName, mobile, mobile, req.body.whatsapp || mobile, req.body.email || null, req.body.address || null, req.body.city || null, req.body.state || null, req.body.pincode || null, req.body.gst_no || null, req.body.pan_no || null, req.body.customer_type || 'Cash', Number(req.body.credit_limit) || 0, Number(req.body.credit_days) || 0, Number(req.body.opening_balance) || 0, branchId]
     );
     await client.query('COMMIT');
     res.status(201).json({ success: true, data: result.rows[0] });

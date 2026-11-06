@@ -1,25 +1,24 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
+import api from '../api'
 
-export default function Reports() {
+export default function Reports({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [bilties, setBilties] = useState([])
   const [activeReport, setActiveReport] = useState('monthly')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
-  useEffect(() => { fetchReports() }, [])
+  useEffect(() => { fetchReports() }, [branchMode, branchCode])
 
   const fetchReports = async () => {
     try {
       setLoading(true)
       setLoadError('')
-      const token = localStorage.getItem('token')
-      const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const res = await fetch(`${apiUrl}/consignments`, { headers: { 'Authorization': `Bearer ${token}` } })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.details || data.error || 'Unable to load report data.')
+      const { data } = await api.get('/consignments', {
+        params: branchMode && branchCode ? { branch: branchCode } : undefined
+      })
       const rows = Array.isArray(data)
         ? data
         : Array.isArray(data.data)
@@ -83,7 +82,7 @@ export default function Reports() {
       <nav className="bg-red-700 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <h1 className="font-bold text-lg">📊 Advanced Reports</h1>
-          <button onClick={() => navigate('/')} className="bg-white text-red-700 px-4 py-1 rounded font-bold text-sm">← Dashboard</button>
+          <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white text-red-700 px-4 py-1 rounded font-bold text-sm">← Dashboard</button>
         </div>
       </nav>
 

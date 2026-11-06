@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import api from '../api'
 
-export default function Customers() {
+export default function Customers({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -9,15 +10,19 @@ export default function Customers() {
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const token = localStorage.getItem('token')
-        const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-        const res = await fetch(`${apiUrl}/customers`, { headers: { 'Authorization': `Bearer ${token}` } })
-        const data = await res.json()
-        setCustomers(Array.isArray(data) ? data : [])
-      } catch (err) { console.error(err) } finally { setLoading(false) }
+        const response = await api.get('/customers', {
+          params: branchMode && branchCode ? { branch: branchCode } : undefined
+        })
+        setCustomers(Array.isArray(response.data) ? response.data : [])
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLoading(false)
+      }
     }
+
     fetchCustomers()
-  }, [])
+  }, [branchMode, branchCode])
 
   return (
     <div className="min-h-screen w-full bg-[#eef2f7]">

@@ -3,7 +3,7 @@ import { useAuth } from '../AuthContext';
 import api from '../api';
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion';
 
-export default function BranchPayments() {
+export default function BranchPayments({ branchMode = false, branchCode }) {
   const { currentUser } = useAuth();
   const canDelete = canDeleteRecords(currentUser?.role);
   const [loading, setLoading] = useState(true);
@@ -22,9 +22,9 @@ export default function BranchPayments() {
   });
 
   useEffect(() => {
-    fetchBranches();
+    if (!branchMode) fetchBranches();
     fetchPayments();
-  }, [filterBranch]);
+  }, [filterBranch, branchMode, branchCode]);
 
   const fetchBranches = async () => {
     try {
@@ -39,7 +39,8 @@ export default function BranchPayments() {
     setLoading(true);
     try {
       const params = {};
-      if (filterBranch) params.branch_id = filterBranch;
+      if (branchMode && branchCode) params.branch = branchCode;
+      else if (filterBranch) params.branch_id = filterBranch;
       const res = await api.get('/branch-payments', { params });
       const rows = res.data?.data || [];
       setPayments(rows);
@@ -53,12 +54,12 @@ export default function BranchPayments() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.branch_id || !formData.amount) {
+    if ((!branchMode && !formData.branch_id) || !formData.amount) {
       alert('Branch और Amount ज़रूरी हैं!');
       return;
     }
     try {
-      await api.post('/branch-payments', formData);
+      await api.post('/branch-payments', branchMode ? { ...formData, branch: branchCode } : formData);
       alert('Payment सफलतापूर्वक Save हो गई!');
       setFormData({
         branch_id: '',
@@ -111,7 +112,7 @@ export default function BranchPayments() {
           <div className="bg-white p-6 rounded-xl shadow-md">
             <h2 className="text-lg font-semibold mb-4">Record New Payment</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              {!branchMode && <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Branch *</label>
                 <select
                   className="w-full border border-gray-300 rounded-lg p-2"
@@ -124,7 +125,7 @@ export default function BranchPayments() {
                     <option key={b.id} value={b.id}>{b.branch_name}</option>
                   ))}
                 </select>
-              </div>
+              </div>}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₹) *</label>
@@ -202,7 +203,7 @@ export default function BranchPayments() {
           <div className="bg-white p-6 rounded-xl shadow-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Recent Payments</h2>
-              <select
+              {!branchMode && <select
                 className="border border-gray-300 rounded-lg p-2 text-sm"
                 value={filterBranch}
                 onChange={(e) => setFilterBranch(e.target.value)}
@@ -211,7 +212,7 @@ export default function BranchPayments() {
                 {branches.map(b => (
                   <option key={b.id} value={b.id}>{b.branch_name}</option>
                 ))}
-              </select>
+              </select>}
             </div>
 
             <div className="overflow-x-auto">
