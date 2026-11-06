@@ -52,9 +52,14 @@ const Consignments = ({ branchMode = false, branchCode }) => {
       setConsignments(Array.isArray(dataArray) ? dataArray : []);
       setError('');
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.error('Failed to load consignments:', {
+        error: err,
+        status: err.response?.status,
+        response: err.response?.data,
+        requestUrl: err.config?.url,
+        requestParams: err.config?.params
+      });
       setError(err.response?.data?.error || err.message || 'Failed to fetch consignments');
-      setConsignments([]);
     } finally {
       setLoading(false);
     }

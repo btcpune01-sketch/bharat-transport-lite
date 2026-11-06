@@ -1582,6 +1582,25 @@ function canonicalBranchCode(value) {
   return aliases[code.toUpperCase()] || code;
 }
 
+function branchCodeAliases(value) {
+  const code = canonicalBranchCode(value).toUpperCase();
+  const aliases = {
+    PUNE: ['PUN', 'PUNE'],
+    MUMBAI: ['MUM', 'MUMBAI'],
+    DLH: ['DEL', 'DLH'],
+    AHMD: ['AHM', 'AHMD']
+  };
+  return aliases[code] || [code];
+}
+
+function buildConsignmentBranchCondition(branchId, branchCode, startIndex = 1) {
+  if (!branchId) return { sql: '', params: [] };
+  return {
+    sql: `(branch_id = $${startIndex} OR (branch_id IS NULL AND UPPER(TRIM(COALESCE(branch_code, ''))) = ANY($${startIndex + 1}::TEXT[])))`,
+    params: [branchId, branchCodeAliases(branchCode)]
+  };
+}
+
 async function resolveAdminBranchId(req, res, source = req.query) {
   const selected = canonicalBranchCode(
     req.headers['x-branch-slug'] || source?.branch_id || source?.branch || source?.branch_code || ''
@@ -2588,20 +2607,13 @@ app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, re
       return res.status(403).json({ error: 'Your account is not assigned to a branch' });
     }
 
-    let effectiveBranchId = userBranchId;
+    let effectiveBranchId = isAdmin ? null : userBranchId;
     let effectiveBranchCode = userBranchCode;
 
     if (isAdmin) {
-      const selectedBranch = String(req.query.branch ?? req.query.branch_id ?? req.headers['x-branch-slug'] ?? '').trim();
-          if (req.user.role === 'admin') {
-            const selectedBranchId = await resolveAdminBranchId(req, res, c);
-            if (selectedBranchId === undefined) return;
-            c.branch_id = selectedBranchId;
-            if (selectedBranchId && !c.branch_code) {
-              const branchResult = await pool.query('SELECT branch_code FROM branches WHERE id = $1', [selectedBranchId]);
-              c.branch_code = branchResult.rows[0]?.branch_code || null;
-            }
-          } else if (!c.branch_id) c.branch_id = req.user.branch_id;
+      const selectedBranch = canonicalBranchCode(
+        req.query.branch ?? req.query.branch_id ?? req.headers['x-branch-slug'] ?? ''
+      );
       if (selectedBranch && !ALL_BRANCH_VALUES.has(selectedBranch.toLowerCase())) {
         const branchResult = await pool.query(
           `SELECT id, branch_code FROM branches
@@ -2621,15 +2633,14 @@ app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, re
       }
     }
 
-    const consignmentBranch = { branchId: effectiveBranchId || null, branchCode: effectiveBranchCode || null };
-    const searchCond = buildBranchCondition(consignmentBranch, 3);
-    const listCond = buildBranchCondition(consignmentBranch, 1);
+    const searchCond = buildConsignmentBranchCondition(effectiveBranchId, effectiveBranchCode, 3);
+    const listCond = buildConsignmentBranchCondition(effectiveBranchId, effectiveBranchCode, 1);
     let result;
     if (lrNumber) {
       if (isAdmin && !effectiveBranchId) {
         return res.status(400).json({ error: 'Select a branch before looking up an LR number.' });
       }
-      const numberBranch = buildBranchCondition({ branchId: effectiveBranchId }, 2);
+      const numberBranch = buildConsignmentBranchCondition(effectiveBranchId, effectiveBranchCode, 2);
       result = await pool.query(
         `SELECT id, lr_no FROM consignments
          WHERE LOWER(lr_no) = LOWER($1) AND COALESCE(is_deleted, FALSE) = FALSE
@@ -2640,19 +2651,25 @@ app.get(['/api/consignments', '/api/bilty-list'], authMiddleware, async (req, re
       if (search) {
         result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${searchCond.sql ? `AND ${searchCond.sql}` : ''} AND lr_no ILIKE $1 ORDER BY (lr_no = $2) DESC, id DESC LIMIT 100`, [`%${search}%`, search, ...searchCond.params]);
       } else {
-        result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${listCond.sql ? `AND ${listCond.sql}` : ''} ORDER BY id DESC LIMIT 500`, listCond.params);
+        result = await pool.query(`SELECT * FROM consignments WHERE COALESCE(is_deleted, FALSE) = FALSE ${listCond.sql ? `AND ${listCond.sql}` : ''} ORDER BY id DESC`, listCond.params);
       }
     } else {
+      const branchCondition = buildConsignmentBranchCondition(userBranchId, userBranchCode, 1);
       if (search) {
-        result = await pool.query(`SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $2 ORDER BY (lr_no = $3) DESC, id DESC LIMIT 100`, [userBranchId, `%${search}%`, search]);
+        result = await pool.query(`SELECT * FROM consignments WHERE ${branchCondition.sql} AND COALESCE(is_deleted, FALSE) = FALSE AND lr_no ILIKE $3 ORDER BY (lr_no = $4) DESC, id DESC LIMIT 100`, [...branchCondition.params, `%${search}%`, search]);
       } else {
-        result = await pool.query('SELECT * FROM consignments WHERE branch_id = $1 AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC LIMIT 500', [userBranchId]);
+        result = await pool.query(`SELECT * FROM consignments WHERE ${branchCondition.sql} AND COALESCE(is_deleted, FALSE) = FALSE ORDER BY id DESC`, branchCondition.params);
       }
     }
 
     res.json({ data: result.rows, total: result.rows.length });
   } catch (err) { 
-    console.error('Consignments fetch error:', err.message);
+    console.error('GET /api/consignments failed:', {
+      message: err.message,
+      code: err.code || null,
+      detail: err.detail || null,
+      stack: err.stack
+    });
     res.status(503).json({
       error: 'Consignments are temporarily unavailable because the database could not be queried.',
       details: err.message,
