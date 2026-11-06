@@ -4,7 +4,7 @@ import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
-export default function Rates() {
+export default function Rates({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
   const { currentUser } = useAuth()
   const canDelete = canDeleteRecords(currentUser?.role)
@@ -34,7 +34,7 @@ export default function Rates() {
 
   useEffect(() => {
     fetchRates()
-  }, [])
+  }, [branchMode, branchCode])
 
   const fetchRates = async () => {
     try {
@@ -43,7 +43,12 @@ export default function Rates() {
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       const headers = { 'Authorization': `Bearer ${token}` }
 
-      const res = await fetch(`${apiUrl}/rates`, { headers })
+      const res = await fetch(`${apiUrl}/rates`, {
+        headers: {
+          ...headers,
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {})
+        }
+      })
       if (res.ok) {
         const data = await res.json()
         setRates(data.data || [])
@@ -73,6 +78,7 @@ export default function Rates() {
       const res = await fetch(url, {
         method,
         headers: {
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {}),
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
@@ -129,7 +135,8 @@ export default function Rates() {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
       
-      const res = await fetch(`${apiUrl}/rates/${id}`, {
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const res = await fetch(`${apiUrl}/rates/${id}${branchQuery}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}`, ...recordDeletionHeaders }
       })
@@ -155,6 +162,7 @@ export default function Rates() {
       const res = await fetch(`${apiUrl}/rates/calculate`, {
         method: 'POST',
         headers: {
+          ...(branchMode && branchCode ? { 'X-Branch-Slug': branchCode } : {}),
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
@@ -190,7 +198,7 @@ export default function Rates() {
       <nav className="bg-gradient-to-r from-teal-700 to-teal-900 text-white shadow-lg">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
+            <button onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/dashboard` : '/')} className="bg-white/20 p-2 rounded-lg hover:bg-white/30">← Back</button>
             <div>
               <h1 className="font-bold text-xl">⚙️ Smart Rate Engine</h1>
               <p className="text-xs text-teal-200">Auto Freight Calculation & Rate Contracts (TCI Style)</p>
