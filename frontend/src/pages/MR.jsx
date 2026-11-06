@@ -40,7 +40,8 @@ export default function MR({ branchMode = false, branchCode }) {
     try {
       const token = localStorage.getItem('token')
       const apiUrl = (import.meta.env.VITE_API_URL || '/api')
-      const response = await fetch(`${apiUrl}/mr/${id}`, {
+      const branchQuery = branchMode && branchCode ? `?branch=${encodeURIComponent(branchCode)}` : ''
+      const response = await fetch(`${apiUrl}/mr/${id}${branchQuery}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}`, ...recordDeletionHeaders }
       })
