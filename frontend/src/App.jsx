@@ -169,45 +169,67 @@ function LoadingSpinner() {
   )
 }
 
+function getBranchSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem('branch_session') || 'null')
+    if (s?.token && s.branch?.url_slug) return s
+  } catch (e) {
+    localStorage.removeItem('branch_session')
+  }
+  return null
+}
+
 function PrivateRoute({ children }) {
   const { currentUser, loading } = useAuth()
   const location = useLocation()
   if (loading) return <LoadingSpinner />
+
+  // Branch login wala user hai (sirf branch_session hai) to usko uski branch pe bhejo, session mat udao
   if (!currentUser) {
-    localStorage.removeItem('branch_session')
+    const s = getBranchSession()
+    if (s) {
+      if (location.pathname.startsWith('/branch/')) return children
+      return <Navigate to={`/branch/${s.branch.url_slug}/dashboard`} replace />
+    }
     return <Navigate to="/login" replace />
   }
-  // FIX: branch_session redirect sirf branch users ke liye, Admin ke liye kabhi nahi
+
+  // Admin ke liye branch_session redirect kabhi mat chalao
   if (currentUser.role !== 'admin') {
-    try {
-      const branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null')
-      if (branchSession?.token && branchSession.branch?.url_slug) {
-        const slug = branchSession.branch.url_slug
-        if (!location.pathname.startsWith('/branch/')) {
-          return <Navigate to={`/branch/${slug}/dashboard`} replace />
-        }
-      }
-    } catch (error) {
-      localStorage.removeItem('branch_session')
+    const s = getBranchSession()
+    if (s && !location.pathname.startsWith('/branch/')) {
+      return <Navigate to={`/branch/${s.branch.url_slug}/dashboard`} replace />
     }
   }
   return children
 }
 
-// FIX: Branch URL sirf branch user ke liye. Admin -> /dashboard, Logout -> /branch-login/:slug
+// Branch URL sirf branch user ke liye. Admin -> /dashboard, Logout -> /branch-login/:slug
 function BranchOnly({ children }) {
   const { currentUser, loading } = useAuth()
   const { branchSlug, branchCode } = useParams()
   const slug = branchSlug || branchCode
   if (loading) return <LoadingSpinner />
-  if (!currentUser) {
-    return <Navigate to={slug ? `/branch-login/${slug}` : '/login'} replace />
-  }
-  // Admin ko branch URL pe kabhi andar mat jaane do
-  if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
+
+  // 1. Admin ko branch URL pe kabhi andar mat jaane do
+  if (currentUser?.role === 'admin' || currentUser?.role === 'super_admin') {
     return <Navigate to="/dashboard" replace />
   }
-  return children
+
+  // 2. Agar Auth me branch user hai to andar jaane do
+  if (currentUser && ['branch', 'branch_user'].includes(currentUser.role)) {
+    return children
+  }
+
+  // 3. Branch Login branch_session se hota hai, isko bhi login maano
+  const s = getBranchSession()
+  if (s) {
+    if (!slug || s.branch.url_slug === slug) return children
+    return <Navigate to={`/branch/${s.branch.url_slug}/dashboard`} replace />
+  }
+
+  // 4. Na currentUser hai, na branch_session hai -> Branch Login pe bhejo
+  return <Navigate to={slug ? `/branch-login/${slug}` : '/login'} replace />
 }
 
 // /branch/ahmedabad khola to sidha /branch/ahmedabad/dashboard pe bhejo
