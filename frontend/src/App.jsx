@@ -158,35 +158,62 @@ function BranchModuleRoute() {
   return <BranchFeatureNotice title={module ? module.replaceAll('-', ' ') : 'Module'} branchCode={branchCode} />
 }
 
+function LoadingSpinner() {
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eef2f7' }}>
+      <div className="text-center">
+        <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-red-700 border-t-transparent mb-4"></div>
+        <h2 className="text-xl font-bold text-gray-700">Loading...</h2>
+      </div>
+    </div>
+  )
+}
+
 function PrivateRoute({ children }) {
   const { currentUser, loading } = useAuth()
   const location = useLocation()
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eef2f7' }}>
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-red-700 border-t-transparent mb-4"></div>
-          <h2 className="text-xl font-bold text-gray-700">Loading...</h2>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <LoadingSpinner />
   if (!currentUser) {
     localStorage.removeItem('branch_session')
     return <Navigate to="/login" replace />
   }
-  try {
-    const branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null')
-    if (branchSession?.token && branchSession.branch?.url_slug) {
-      const slug = branchSession.branch.url_slug
-      if (!location.pathname.startsWith('/branch/')) {
-         return <Navigate to={`/branch/${slug}/dashboard`} replace />
+  // FIX: branch_session redirect sirf branch users ke liye, Admin ke liye kabhi nahi
+  if (currentUser.role !== 'admin') {
+    try {
+      const branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null')
+      if (branchSession?.token && branchSession.branch?.url_slug) {
+        const slug = branchSession.branch.url_slug
+        if (!location.pathname.startsWith('/branch/')) {
+          return <Navigate to={`/branch/${slug}/dashboard`} replace />
+        }
       }
+    } catch (error) {
+      localStorage.removeItem('branch_session')
     }
-  } catch (error) {
-    localStorage.removeItem('branch_session')
   }
-  return currentUser ? children : <Navigate to="/login" replace />
+  return children
+}
+
+// FIX: Branch URL sirf branch user ke liye. Admin -> /dashboard, Logout -> /branch-login/:slug
+function BranchOnly({ children }) {
+  const { currentUser, loading } = useAuth()
+  const { branchSlug, branchCode } = useParams()
+  const slug = branchSlug || branchCode
+  if (loading) return <LoadingSpinner />
+  if (!currentUser) {
+    return <Navigate to={slug ? `/branch-login/${slug}` : '/login'} replace />
+  }
+  // Admin ko branch URL pe kabhi andar mat jaane do
+  if (currentUser.role === 'admin' || currentUser.role === 'super_admin') {
+    return <Navigate to="/dashboard" replace />
+  }
+  return children
+}
+
+// /branch/ahmedabad khola to sidha /branch/ahmedabad/dashboard pe bhejo
+function BranchSlugRedirect() {
+  const { branchSlug } = useParams()
+  return <Navigate to={`/branch/${branchSlug}/dashboard`} replace />
 }
 
 function AdminOnly({ children }) {
@@ -231,10 +258,10 @@ function App() {
           <Route path="/branch-login" element={<Navigate to="/login" replace />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
           <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
-          <Route path="/branch/:branchSlug" element={<PrivateRoute><TMSDashboard isMainAdmin={false} /></PrivateRoute>} />
+          <Route path="/branch/:branchSlug" element={<BranchOnly><BranchSlugRedirect /></BranchOnly>} />
 
           {/* --- FIXED BRANCH LAYOUT ROUTES - Nested with Outlet --- */}
-          <Route path="/branch/:branchCode" element={<PrivateRoute><BranchLayout /></PrivateRoute>}>
+          <Route path="/branch/:branchCode" element={<BranchOnly><BranchLayout /></BranchOnly>}>
             <Route path="dashboard" element={<TMSDashboard isMainAdmin={false} />} />
             <Route path=":module" element={<BranchModuleRoute />} />
             <Route path=":module/:id" element={<BranchModuleRoute />} />
