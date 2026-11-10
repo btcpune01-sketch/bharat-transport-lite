@@ -161,6 +161,20 @@ function BranchModuleRoute() {
 function PrivateRoute({ children }) {
   const { currentUser, loading } = useAuth()
   const location = useLocation()
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eef2f7' }}>
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-red-700 border-t-transparent mb-4"></div>
+          <h2 className="text-xl font-bold text-gray-700">Loading...</h2>
+        </div>
+      </div>
+    )
+  }
+  if (!currentUser) {
+    localStorage.removeItem('branch_session')
+    return <Navigate to="/login" replace />
+  }
   try {
     const branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null')
     if (branchSession?.token && branchSession.branch?.url_slug) {
@@ -171,16 +185,6 @@ function PrivateRoute({ children }) {
     }
   } catch (error) {
     localStorage.removeItem('branch_session')
-  }
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#eef2f7' }}>
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-red-700 border-t-transparent mb-4"></div>
-          <h2 className="text-xl font-bold text-gray-700">Loading...</h2>
-        </div>
-      </div>
-    )
   }
   return currentUser ? children : <Navigate to="/login" replace />
 }
@@ -227,10 +231,10 @@ function App() {
           <Route path="/branch-login" element={<Navigate to="/login" replace />} />
           <Route path="/branch-login/:slug" element={<BranchLoginPage />} />
           <Route path="/branch-portal" element={<PrivateRoute><Branches /></PrivateRoute>} />
-          <Route path="/branch/:branchSlug" element={<TMSDashboard isMainAdmin={false} />} />
+          <Route path="/branch/:branchSlug" element={<PrivateRoute><TMSDashboard isMainAdmin={false} /></PrivateRoute>} />
 
           {/* --- FIXED BRANCH LAYOUT ROUTES - Nested with Outlet --- */}
-          <Route path="/branch/:branchCode" element={<BranchLayout />}>
+          <Route path="/branch/:branchCode" element={<PrivateRoute><BranchLayout /></PrivateRoute>}>
             <Route path="dashboard" element={<TMSDashboard isMainAdmin={false} />} />
             <Route path=":module" element={<BranchModuleRoute />} />
             <Route path=":module/:id" element={<BranchModuleRoute />} />
