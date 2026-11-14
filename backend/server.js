@@ -733,6 +733,7 @@ async function runMigrations() {
   await addColumnIfNotExists('consignments', 'branch_code', 'TEXT');
   await addColumnIfNotExists('bill_book', 'branch_id', 'INTEGER');
   await addColumnIfNotExists('bill_book', 'branch_code', 'TEXT');
+  await addColumnIfNotExists('bill_book', 'created_by', 'TEXT');
   await addColumnIfNotExists('consignments', 'pod_status', "TEXT DEFAULT 'Pending'");
   await addColumnIfNotExists('consignments', 'pod_date', 'DATE');
   await addColumnIfNotExists('consignments', 'pod_remarks', 'TEXT');
