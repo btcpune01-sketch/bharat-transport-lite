@@ -3,7 +3,6 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import api from '../api';
 import { getLocalDrafts } from '../utils/offlineDrafts';
-import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -120,68 +119,98 @@ const BiltyPrint = () => {
   const handleBackToList = () => navigate('/consignments');
   const handleBack = () => navigate('/consignments');
 
-  // ===== NEW: PDF BANAKE WHATSAPP PE BHEJNA =====
+  // ===== FIXED: PDF seedha Text se banegi - html2canvas hata diya, isliye ab fail nahi hoga =====
   const handleWhatsAppShare = async () => {
     if (!data || sending) return;
     setSending(true);
     try {
       const mrText = includeMR ? `\nMR Party: ${mrData.party_name}\nMR Amount: Rs.${mrData.amount} (${mrData.payment_mode})` : '';
-      const caption = `*BHARAT TRANSPORT COMPANY - Bilty*\n\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}\nTotal Freight: Rs.${data.grand_total || data.freight}${mrText}\n\nOriginal Bilty PDF attached hai.`;
-
-      // 1. Har selected copy ka screenshot leke PDF banao
-      const sheets = document.querySelectorAll('.bilty-container');
-      if (sheets.length === 0) throw new Error('Bilty print area nahi mila');
+      const caption = `BHARAT TRANSPORT COMPANY - Bilty\n\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}\nTotal Freight: Rs.${data.grand_total || data.freight}${mrText}\n\nOriginal Bilty PDF attached hai.`;
 
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const copiesList = [];
+      if (copies.CONSIGNOR_COPY) copiesList.push('CONSIGNOR COPY');
+      if (copies.CONSIGNEE_COPY) copiesList.push('CONSIGNEE COPY');
+      if (copies.LORRY_COPY) copiesList.push('LORRY COPY');
+      if (copies.HO_COPY) copiesList.push('HO COPY');
+      if (copiesList.length === 0) copiesList.push('CONSIGNOR COPY');
 
-      for (let i = 0; i < sheets.length; i++) {
-        const canvas = await html2canvas(sheets[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-        const imgData = canvas.toDataURL('image/png');
-        if (i > 0) pdf.addPage();
-        // Image ko A4 me fit karo
-        const imgProps = pdf.getImageProperties(imgData);
-        let imgW = pdfWidth;
-        let imgH = (imgProps.height * imgW) / imgProps.width;
-        if (imgH > pdfHeight) { imgH = pdfHeight; imgW = (imgProps.width * imgH) / imgProps.height; }
-        const x = (pdfWidth - imgW) / 2;
-        pdf.addImage(imgData, 'PNG', x, 0, imgW, imgH);
-      }
+      const drawOneCopy = (copyLabel, isFirst) => {
+        if (!isFirst) pdf.addPage();
+        let y = 10;
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16);
+        pdf.text('BHARAT TRANSPORT COMPANY', 105, y, { align: 'center' }); y += 6;
+        pdf.setFontSize(8); pdf.setFont('helvetica', 'normal');
+        pdf.text('Head Office: Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan 331023', 105, y, { align: 'center' }); y += 4;
+        pdf.text('GST NO: 08CMRPP0955N1Z5 | PAN NO: CMRPP0955N', 105, y, { align: 'center' }); y += 6;
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
+        pdf.text(copyLabel, 105, y, { align: 'center' }); y += 4;
+        pdf.setFontSize(9); pdf.text('Goods Carried At Owner\'s Risk', 105, y, { align: 'center' }); y += 8;
+
+        pdf.setFontSize(10);
+        const left = 12, right = 105;
+        const row = (lx, label, val, rx) => {
+          pdf.setFont('helvetica', 'bold'); pdf.text(label, lx, y);
+          pdf.setFont('helvetica', 'normal'); pdf.text(String(val || '-'), lx + 28, y);
+          if (rx) { pdf.setFont('helvetica', 'bold'); pdf.text(rx.l, right, y); pdf.setFont('helvetica', 'normal'); pdf.text(String(rx.v || '-'), right + 28, y); }
+          y += 6;
+        };
+        pdf.setFont('helvetica', 'bold'); pdf.text('CONSIGNOR:', left, y); y += 6;
+        row(left, 'M/s.', data.consignor_name, { l: 'LR NO:', v: data.lr_no });
+        row(left, 'Addr:', data.consignor_address, { l: 'DATE:', v: formatDate(data.lr_date) });
+        row(left, 'GST:', data.consignor_gst, { l: 'FROM:', v: data.from_name });
+        row(left, 'Inv No:', `${data.invoice_no || '-'}  Dt: ${formatDate(data.invoice_date)}`, { l: 'TO:', v: data.to_name });
+        y += 2;
+        pdf.setFont('helvetica', 'bold'); pdf.text('CONSIGNEE:', left, y); y += 6;
+        row(left, 'M/s.', data.consignee_name, { l: 'LORRY NO:', v: data.lorry_no });
+        row(left, 'Addr:', data.consignee_address, { l: 'DRIVER PH:', v: data.driver_mobile });
+        row(left, 'GST:', data.consignee_gst, { l: 'DELIVERY:', v: data.delivery_type || 'GODOWN / DOOR' });
+        row(left, 'P.O. NO:', data.po_no, null);
+        y += 4;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Pkgs: ${data.no_of_packages || 0}   Method: ${data.method_of_packing || data.package_type || '-'}   HSN: ${data.hsn_code || '-'}`, left, y); y += 6;
+        pdf.text(`Act Wt: ${data.actual_weight || 0}   Chg Wt: ${data.charged_weight || 0}   E-Way: ${data.eway_bill_no || '-'}`, left, y); y += 6;
+        pdf.text(`Description: ${data.description || data.material_desc || '-'}`, left, y); y += 6;
+        pdf.text(`Size LxWxH: ${data.length || '-'} x ${data.width || '-'} x ${data.height || '-'}   CFT: ${data.total_cft || '-'}`, left, y); y += 6;
+        pdf.text(`Declared Value: Rs.${data.declared_value || '-'}   Basis: ${data.basis_booking || '-'}`, left, y); y += 10;
+
+        pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.text('FREIGHT DETAILS', left, y); y += 7;
+        pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
+        const f = (l, v) => { pdf.text(l, left, y); pdf.text(`Rs.${v || 0}`, 80, y); y += 6; };
+        f('Freight:', data.freight); f('A.O.C:', data.aoc_percent); f('Handling:', data.material_mgmt_ch);
+        f('Collect:', data.collection_charges); f('Door Del:', data.door_dly_charges); f('Other:', data.misc_charges);
+        y += 2; pdf.setFont('helvetica', 'bold'); pdf.setFontSize(12);
+        pdf.text(`TOTAL: Rs.${total}/-`, left, y); y += 12;
+        pdf.setFontSize(9); pdf.setFont('helvetica', 'normal');
+        pdf.text('Rajgarh (Churu) Jurisdiction. Owner\'s risk. No claim after delivery.', left, y); y += 10;
+        pdf.text('For BHARAT TRANSPORT COMPANY', 140, y); y += 10;
+        pdf.text('Signature', 140, y);
+        if (includeMR) { y += 10; pdf.setFont('helvetica', 'bold'); pdf.text(`MR - Party: ${mrData.party_name}  Amt: Rs.${mrData.amount}  Mode: ${mrData.payment_mode}  Remarks: ${mrData.remarks}`, left, y); }
+      };
+
+      copiesList.forEach((c, i) => drawOneCopy(c, i === 0));
 
       const pdfBlob = pdf.output('blob');
       const fileName = `Bilty-${data.lr_no || id}.pdf`;
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-      // 2. TAREEKA 1 - Mobile pe seedha WhatsApp me PDF Share
       if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
         await navigator.share({ files: [pdfFile], title: `Bilty ${data.lr_no}`, text: caption });
         setSending(false);
         return;
       }
 
-      // 3. TAREEKA 2 - Laptop pe PDF Download + WhatsApp kholo
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-      const waText = encodeURIComponent(caption + `\n\nPDF download ho gayi hai, wahi attach karke bhej raha hu.`);
-      window.open(`https://wa.me/?text=${waText}`, '_blank');
+      window.open(`https://wa.me/?text=${encodeURIComponent(caption + '\n\nPDF download ho gayi hai, wahi attach karke bhej raha hu.')}`, '_blank');
       alert('Bilty PDF download ho gayi hai. WhatsApp khul gaya hai, bas us PDF ko attach karke SEND kar do.');
     } catch (err) {
-      console.error('WhatsApp PDF Share Error:', err);
-      // 4. TAREEKA 3 - Agar kuch fail ho to purana text wala tareeka
-      const fallback = `BHARAT TRANSPORT COMPANY - Bilty Details\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}`;
-      window.open(`https://wa.me/?text=${encodeURIComponent(fallback)}`, '_blank');
-      alert('PDF banane me dikkat aayi, isliye text bheja hai. Dobara try karo.');
-    } finally {
-      setSending(false);
-    }
+      console.error('WhatsApp PDF Error:', err);
+      alert('PDF banane me dikkat aayi: ' + err.message);
+    } finally { setSending(false); }
   };
 
   if (loading) return <div role="status" className="text-center p-10 text-xl font-bold">Loading Bilty Data...</div>;
@@ -232,20 +261,17 @@ const BiltyPrint = () => {
       <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center opacity-10">
         <span className="text-8xl font-black tracking-widest -rotate-12 select-none">BTC</span>
       </div>
-
       <div className="relative z-20">
         <div className="text-center border-b-2 border-black p-2" style={{ backgroundColor: 'var(--bg-accent, #f8f9ff)' }}>
           <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--primary-color, #000)' }}>BHARAT TRANSPORT COMPANY</h1>
           <p className="text-xs font-bold m-1">Head Office: Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan 331023</p>
           <p className="text-xs font-bold m-1">GST NO: 08CMRPP0955N1Z5 | PAN NO: CMRPP0955N</p>
         </div>
-
         <div className="text-center my-2">
           <div className="border border-black px-5 py-1 font-bold inline-block text-xs" style={{ backgroundColor: 'var(--bg-accent, #f8f9ff)' }}>Goods Carried At Owner's Risk</div>
           <br />
           <div className="border-2 px-6 py-1 font-bold inline-block text-sm min-w-[200px] mt-1" style={{ borderColor: 'var(--primary-color, #000)', color: 'var(--primary-color, #000)' }}>{copyLabel}</div>
         </div>
-
         <div className="flex border-b-2 border-black">
           <div className="w-[58%] border-r-2 border-black p-2">
             <div className="border border-black p-2 mb-2 bg-white">
@@ -263,7 +289,6 @@ const BiltyPrint = () => {
               <div className="mt-1 text-xs">P.O. NO: <span className="font-bold">{data.po_no}</span></div>
             </div>
           </div>
-
           <div className="w-[42%] p-2 bg-gray-50">
             <div className="border-2 p-2 text-center mb-2 bg-white" style={{ borderColor: 'var(--primary-color, #000)' }}>
               <label className="font-bold text-xs block" style={{ color: 'var(--primary-color, #000)' }}>CONSIGNMENT NO:</label>
@@ -280,7 +305,6 @@ const BiltyPrint = () => {
             </div>
           </div>
         </div>
-
         <table className="w-full border-collapse mt-1">
           <thead><tr style={{ backgroundColor: 'var(--bg-accent, #f8f9ff)' }}>
             <th className="border border-black p-1 text-xs text-center w-[10%]">Pkgs</th>
@@ -297,7 +321,6 @@ const BiltyPrint = () => {
             <td className="border border-black p-1 text-center text-xs font-bold">{data.charged_weight || data.chg_wt || data.chgWt || 0}</td>
           </tr></tbody>
         </table>
-
         <div className="flex border-t-2 border-black mt-1">
           <div className="w-[42%] border-r-2 border-black p-2">
             <div className="border border-black p-2 mb-2 relative bg-white min-h-[50px]">
@@ -339,7 +362,6 @@ const BiltyPrint = () => {
               </div>
             </div>
           </div>
-
           <div className="w-[28%] border-r-2 border-black p-2">
             <div className="border border-black p-2 mb-2 relative bg-white">
               <label className="absolute -top-2 left-2 bg-white px-1 font-bold text-[9px]" style={{ color: 'var(--primary-color, #000)' }}>RECEIPT VOUCHER</label>
@@ -353,7 +375,6 @@ const BiltyPrint = () => {
               <div className="flex justify-between text-[11px] mt-1"><span>POL:</span> <span className="font-bold">{data.policy_no}</span></div>
               <div className="flex justify-between text-[11px] mt-1"><span>AMT:</span> <span className="font-bold">{data.insurance_amount}</span></div>
             </div>
-            
             {includeMR && (
               <div className="border-2 border-green-600 p-2 mt-2 relative bg-green-50">
                 <label className="absolute -top-2 left-2 bg-green-50 px-1 font-bold text-[9px] text-green-800">MONEY RECEIPT (MR)</label>
@@ -364,7 +385,6 @@ const BiltyPrint = () => {
               </div>
             )}
           </div>
-
           <div className="w-[30%] p-2 bg-gray-50">
             <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Freight:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.freight}</span></div>
             <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>A.O.C:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.aoc_percent}</span></div>
@@ -383,9 +403,8 @@ const BiltyPrint = () => {
             </div>
           </div>
         </div>
-
         <div className="mt-2 pt-1 text-[10px] border-t border-black">
-          • Rajgarh (Churu) Jurisdiction. • Owner's risk. • No claim after delivery.
+          - Rajgarh (Churu) Jurisdiction. • Owner's risk. • No claim after delivery.
         </div>
       </div>
     </div>
@@ -404,24 +423,20 @@ const BiltyPrint = () => {
           body { background: #fff !important; }
         }
       `}</style>
-
       <div className="no-print bg-white p-4 mb-4 rounded shadow flex flex-wrap gap-4 items-center justify-center sticky top-0 z-50">
         <label className="flex items-center gap-2 cursor-pointer font-bold text-sm"><input type="checkbox" checked={copies.CONSIGNOR_COPY} onChange={(e) => setCopies({...copies, CONSIGNOR_COPY: e.target.checked})} /> CONSIGNOR</label>
         <label className="flex items-center gap-2 cursor-pointer font-bold text-sm"><input type="checkbox" checked={copies.CONSIGNEE_COPY} onChange={(e) => setCopies({...copies, CONSIGNEE_COPY: e.target.checked})} /> CONSIGNEE</label>
         <label className="flex items-center gap-2 cursor-pointer font-bold text-sm"><input type="checkbox" checked={copies.LORRY_COPY} onChange={(e) => setCopies({...copies, LORRY_COPY: e.target.checked})} /> LORRY COPY</label>
         <label className="flex items-center gap-2 cursor-pointer font-bold text-sm"><input type="checkbox" checked={copies.HO_COPY} onChange={(e) => setCopies({...copies, HO_COPY: e.target.checked})} /> HO COPY</label>
-        
         <div className="border-l pl-4 flex items-center gap-2">
           <label className="flex items-center gap-2 cursor-pointer font-bold text-blue-700 text-sm">
             <input type="checkbox" checked={includeMR} onChange={(e) => setIncludeMR(e.target.checked)} /> Include MR (Money Receipt)
           </label>
         </div>
-
         <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 font-bold text-sm">SAVE & PRINT</button>
         <button onClick={handleWhatsAppShare} disabled={sending} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-bold text-sm disabled:opacity-60">{sending ? 'PDF Ban Rahi Hai...' : 'WhatsApp Send - PDF'}</button>
         <button onClick={handleBackToList} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold text-sm">Back to List</button>
       </div>
-
       {includeMR && (
         <div className="no-print bg-yellow-50 border-2 border-yellow-400 p-4 mb-4 rounded max-w-4xl mx-auto">
           <h3 className="font-bold text-lg mb-3 text-yellow-800 border-b border-yellow-300 pb-2">Money Receipt (MR) Details - Fill before printing/sending</h3>
@@ -438,7 +453,6 @@ const BiltyPrint = () => {
           </div>
         </div>
       )}
-
       <div id="print-area" className="max-w-4xl mx-auto">
         {copies.CONSIGNOR_COPY && <BiltySheet copyLabel="CONSIGNOR COPY" theme="consignor-theme" />}
         {copies.CONSIGNEE_COPY && <BiltySheet copyLabel="CONSIGNEE COPY" theme="consignee-theme" />}
