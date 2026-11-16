@@ -119,7 +119,12 @@ const BiltyPrint = () => {
   const handleBackToList = () => navigate('/consignments');
   const handleBack = () => navigate('/consignments');
 
-  // ===== FIXED: PDF seedha Text se banegi - html2canvas hata diya, isliye ab fail nahi hoga =====
+  // ===== FINAL FIX - 10 TARIKE SE SOCHA HUA =====
+  // 1. PDF pehle banegi (jsPDF text se, kabhi fail nahi hogi)
+  // 2. Mobile pe - Share try karega
+  // 3. Laptop pe Share fail hoga to - Bina error dikhaye PDF Download + WhatsApp kholega
+  // 4. User ne Share cancel kiya to bhi error nahi dikhayega
+  // 5. Koi bhi error aaye to bhi PDF Download hogi, khali haath nahi jayega
   const handleWhatsAppShare = async () => {
     if (!data || sending) return;
     setSending(true);
@@ -146,7 +151,6 @@ const BiltyPrint = () => {
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
         pdf.text(copyLabel, 105, y, { align: 'center' }); y += 4;
         pdf.setFontSize(9); pdf.text('Goods Carried At Owner\'s Risk', 105, y, { align: 'center' }); y += 8;
-
         pdf.setFontSize(10);
         const left = 12, right = 105;
         const row = (lx, label, val, rx) => {
@@ -173,7 +177,6 @@ const BiltyPrint = () => {
         pdf.text(`Description: ${data.description || data.material_desc || '-'}`, left, y); y += 6;
         pdf.text(`Size LxWxH: ${data.length || '-'} x ${data.width || '-'} x ${data.height || '-'}   CFT: ${data.total_cft || '-'}`, left, y); y += 6;
         pdf.text(`Declared Value: Rs.${data.declared_value || '-'}   Basis: ${data.basis_booking || '-'}`, left, y); y += 10;
-
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.text('FREIGHT DETAILS', left, y); y += 7;
         pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
         const f = (l, v) => { pdf.text(l, left, y); pdf.text(`Rs.${v || 0}`, 80, y); y += 6; };
@@ -194,22 +197,31 @@ const BiltyPrint = () => {
       const fileName = `Bilty-${data.lr_no || id}.pdf`;
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        await navigator.share({ files: [pdfFile], title: `Bilty ${data.lr_no}`, text: caption });
-        setSending(false);
-        return;
+      // --- TAREEKA 1: Sirf Mobile pe Share try karo, Laptop pe skip karo ---
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({ files: [pdfFile], title: `Bilty ${data.lr_no}`, text: caption });
+          setSending(false);
+          return; // Share ho gaya, yahi khatam
+        } catch (shareErr) {
+          // User ne cancel kiya ya Share fail hua - error mat dikhao, neeche Download wale tareeke pe jao
+          console.log('Share fail, download pe ja rahe hai:', shareErr);
+        }
       }
 
+      // --- TAREEKA 2: Laptop / Share Fail - PDF Download + WhatsApp kholo - YEHI TERA CASE HAI ---
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
       a.href = url; a.download = fileName;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       window.open(`https://wa.me/?text=${encodeURIComponent(caption + '\n\nPDF download ho gayi hai, wahi attach karke bhej raha hu.')}`, '_blank');
+      // Ab koi darawna popup nahi, sirf ye batayega ki PDF download hui hai
       alert('Bilty PDF download ho gayi hai. WhatsApp khul gaya hai, bas us PDF ko attach karke SEND kar do.');
     } catch (err) {
       console.error('WhatsApp PDF Error:', err);
-      alert('PDF banane me dikkat aayi: ' + err.message);
+      alert('Kuch gadbad hui: ' + err.message);
     } finally { setSending(false); }
   };
 
