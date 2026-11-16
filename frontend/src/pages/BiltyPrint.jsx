@@ -119,18 +119,16 @@ const BiltyPrint = () => {
   const handleBackToList = () => navigate('/consignments');
   const handleBack = () => navigate('/consignments');
 
-  // ===== FINAL FIX - 10 TARIKE SE SOCHA HUA =====
-  // 1. PDF pehle banegi (jsPDF text se, kabhi fail nahi hogi)
-  // 2. Mobile pe - Share try karega
-  // 3. Laptop pe Share fail hoga to - Bina error dikhaye PDF Download + WhatsApp kholega
-  // 4. User ne Share cancel kiya to bhi error nahi dikhayega
-  // 5. Koi bhi error aaye to bhi PDF Download hogi, khali haath nahi jayega
+  // ===== FINAL - LAST WALI FALTU LINE HATA DI =====
+  // Mobile: PDF + Text ek saath Attached jayega
+  // Laptop: PDF Download hogi + WhatsApp me saaf Text jayega, bina us faltu line ke
   const handleWhatsAppShare = async () => {
     if (!data || sending) return;
     setSending(true);
     try {
       const mrText = includeMR ? `\nMR Party: ${mrData.party_name}\nMR Amount: Rs.${mrData.amount} (${mrData.payment_mode})` : '';
-      const caption = `BHARAT TRANSPORT COMPANY - Bilty\n\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}\nTotal Freight: Rs.${data.grand_total || data.freight}${mrText}\n\nOriginal Bilty PDF attached hai.`;
+      // YEHI CAPTION JAYEGA - isme wo "PDF download ho gayi hai" wali line AB NAHI HAI
+      const caption = `*BHARAT TRANSPORT COMPANY - Bilty*\n\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}\nTotal Freight: Rs.${data.grand_total || data.freight}${mrText}\n\nThank you for choosing us!`;
 
       const pdf = new jsPDF('p', 'mm', 'a4');
       const copiesList = [];
@@ -197,28 +195,26 @@ const BiltyPrint = () => {
       const fileName = `Bilty-${data.lr_no || id}.pdf`;
       const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-      // --- TAREEKA 1: Sirf Mobile pe Share try karo, Laptop pe skip karo ---
+      // Mobile pe - PDF + Text ek saath Attached jayega
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
         try {
           await navigator.share({ files: [pdfFile], title: `Bilty ${data.lr_no}`, text: caption });
           setSending(false);
-          return; // Share ho gaya, yahi khatam
+          return;
         } catch (shareErr) {
-          // User ne cancel kiya ya Share fail hua - error mat dikhao, neeche Download wale tareeke pe jao
           console.log('Share fail, download pe ja rahe hai:', shareErr);
         }
       }
 
-      // --- TAREEKA 2: Laptop / Share Fail - PDF Download + WhatsApp kholo - YEHI TERA CASE HAI ---
+      // Laptop pe - PDF Download + WhatsApp me SA AF Text (bina faltu line ke)
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
       a.href = url; a.download = fileName;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      window.open(`https://wa.me/?text=${encodeURIComponent(caption + '\n\nPDF download ho gayi hai, wahi attach karke bhej raha hu.')}`, '_blank');
-      // Ab koi darawna popup nahi, sirf ye batayega ki PDF download hui hai
-      alert('Bilty PDF download ho gayi hai. WhatsApp khul gaya hai, bas us PDF ko attach karke SEND kar do.');
+      window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, '_blank');
+      // Ab wo "PDF download ho gayi hai" wala alert bhi nahi aayega
     } catch (err) {
       console.error('WhatsApp PDF Error:', err);
       alert('Kuch gadbad hui: ' + err.message);
