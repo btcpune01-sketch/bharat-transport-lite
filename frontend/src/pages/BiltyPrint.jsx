@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import api from '../api';
 import { getLocalDrafts } from '../utils/offlineDrafts';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -23,6 +25,7 @@ const BiltyPrint = () => {
   const [error, setError] = useState('');
   const [includeMR, setIncludeMR] = useState(false);
   const [mrData, setMrData] = useState({ party_name: '', amount: '', payment_mode: 'Cash', remarks: '' });
+  const [sending, setSending] = useState(false);
   const [copies, setCopies] = useState({
     CONSIGNOR_COPY: true,
     CONSIGNEE_COPY: true,
@@ -117,12 +120,68 @@ const BiltyPrint = () => {
   const handleBackToList = () => navigate('/consignments');
   const handleBack = () => navigate('/consignments');
 
-  const handleWhatsAppShare = () => {
-    if (!data) return;
-    const mrText = includeMR ? `\nMR Party: ${mrData.party_name}\nMR Amount: ₹${mrData.amount} (${mrData.payment_mode})` : '';
-    const text = `*🚚 BHARAT TRANSPORT COMPANY - Bilty Details*\n\n📜 LR No: ${data.lr_no}\n📅 Date: ${formatDate(data.lr_date)}\n Consignor: ${data.consignor_name}\n🏁 Consignee: ${data.consignee_name}\n📍 Route: ${data.from_name} → ${data.to_name}\n💰 Total Freight: ₹${data.grand_total || data.freight}\n📦 Status: ${data.status}${mrText}\n\nThank you for choosing us!`;
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+  // ===== NEW: PDF BANAKE WHATSAPP PE BHEJNA =====
+  const handleWhatsAppShare = async () => {
+    if (!data || sending) return;
+    setSending(true);
+    try {
+      const mrText = includeMR ? `\nMR Party: ${mrData.party_name}\nMR Amount: Rs.${mrData.amount} (${mrData.payment_mode})` : '';
+      const caption = `*BHARAT TRANSPORT COMPANY - Bilty*\n\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}\nTotal Freight: Rs.${data.grand_total || data.freight}${mrText}\n\nOriginal Bilty PDF attached hai.`;
+
+      // 1. Har selected copy ka screenshot leke PDF banao
+      const sheets = document.querySelectorAll('.bilty-container');
+      if (sheets.length === 0) throw new Error('Bilty print area nahi mila');
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      for (let i = 0; i < sheets.length; i++) {
+        const canvas = await html2canvas(sheets[i], { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+        const imgData = canvas.toDataURL('image/png');
+        if (i > 0) pdf.addPage();
+        // Image ko A4 me fit karo
+        const imgProps = pdf.getImageProperties(imgData);
+        let imgW = pdfWidth;
+        let imgH = (imgProps.height * imgW) / imgProps.width;
+        if (imgH > pdfHeight) { imgH = pdfHeight; imgW = (imgProps.width * imgH) / imgProps.height; }
+        const x = (pdfWidth - imgW) / 2;
+        pdf.addImage(imgData, 'PNG', x, 0, imgW, imgH);
+      }
+
+      const pdfBlob = pdf.output('blob');
+      const fileName = `Bilty-${data.lr_no || id}.pdf`;
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+      // 2. TAREEKA 1 - Mobile pe seedha WhatsApp me PDF Share
+      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        await navigator.share({ files: [pdfFile], title: `Bilty ${data.lr_no}`, text: caption });
+        setSending(false);
+        return;
+      }
+
+      // 3. TAREEKA 2 - Laptop pe PDF Download + WhatsApp kholo
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      const waText = encodeURIComponent(caption + `\n\nPDF download ho gayi hai, wahi attach karke bhej raha hu.`);
+      window.open(`https://wa.me/?text=${waText}`, '_blank');
+      alert('Bilty PDF download ho gayi hai. WhatsApp khul gaya hai, bas us PDF ko attach karke SEND kar do.');
+    } catch (err) {
+      console.error('WhatsApp PDF Share Error:', err);
+      // 4. TAREEKA 3 - Agar kuch fail ho to purana text wala tareeka
+      const fallback = `BHARAT TRANSPORT COMPANY - Bilty Details\nLR No: ${data.lr_no}\nDate: ${formatDate(data.lr_date)}\nConsignor: ${data.consignor_name}\nConsignee: ${data.consignee_name}\nRoute: ${data.from_name} -> ${data.to_name}`;
+      window.open(`https://wa.me/?text=${encodeURIComponent(fallback)}`, '_blank');
+      alert('PDF banane me dikkat aayi, isliye text bheja hai. Dobara try karo.');
+    } finally {
+      setSending(false);
+    }
   };
 
   if (loading) return <div role="status" className="text-center p-10 text-xl font-bold">Loading Bilty Data...</div>;
@@ -299,7 +358,7 @@ const BiltyPrint = () => {
               <div className="border-2 border-green-600 p-2 mt-2 relative bg-green-50">
                 <label className="absolute -top-2 left-2 bg-green-50 px-1 font-bold text-[9px] text-green-800">MONEY RECEIPT (MR)</label>
                 <div className="flex justify-between text-[11px] mt-1"><span>Party:</span> <span className="font-bold">{mrData.party_name || 'N/A'}</span></div>
-                <div className="flex justify-between text-[11px] mt-1"><span>Amt:</span> <span className="font-bold">₹{mrData.amount || '0'}</span></div>
+                <div className="flex justify-between text-[11px] mt-1"><span>Amt:</span> <span className="font-bold">Rs.{mrData.amount || '0'}</span></div>
                 <div className="flex justify-between text-[11px] mt-1"><span>Mode:</span> <span className="font-bold">{mrData.payment_mode}</span></div>
                 <div className="text-[10px] mt-1 border-t border-green-300 pt-1"><span>Remarks:</span> <span className="font-bold">{mrData.remarks}</span></div>
               </div>
@@ -307,15 +366,15 @@ const BiltyPrint = () => {
           </div>
 
           <div className="w-[30%] p-2 bg-gray-50">
-            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Freight:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">₹{data.freight}</span></div>
-            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>A.O.C:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">₹{data.aoc_percent}</span></div>
-            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Handling:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">₹{data.material_mgmt_ch}</span></div>
-            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Collect:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">₹{data.collection_charges}</span></div>
-            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Door Del:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">₹{data.door_dly_charges}</span></div>
-            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Other:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">₹{data.misc_charges}</span></div>
+            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Freight:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.freight}</span></div>
+            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>A.O.C:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.aoc_percent}</span></div>
+            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Handling:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.material_mgmt_ch}</span></div>
+            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Collect:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.collection_charges}</span></div>
+            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Door Del:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.door_dly_charges}</span></div>
+            <div className="flex justify-between items-center mb-2 text-xs font-bold"><label>Other:</label> <span className="border border-gray-400 bg-white px-2 py-1 rounded w-24 text-right">Rs.{data.misc_charges}</span></div>
             <hr className="border-black my-2" />
             <div className="flex justify-between items-center text-sm font-black" style={{ color: 'var(--primary-color, #000)' }}>
-              <span>TOTAL:</span> <span className="text-lg font-black min-w-24 text-right border-2 border-black px-2 py-1 bg-yellow-100">₹{total}/-</span>
+              <span>TOTAL:</span> <span className="text-lg font-black min-w-24 text-right border-2 border-black px-2 py-1 bg-yellow-100">Rs.{total}/-</span>
             </div>
             <div className="border border-black mt-4 text-center p-2 bg-white">
               <strong className="text-[10px] block">For BHARAT TRANSPORT COMPANY</strong>
@@ -354,21 +413,21 @@ const BiltyPrint = () => {
         
         <div className="border-l pl-4 flex items-center gap-2">
           <label className="flex items-center gap-2 cursor-pointer font-bold text-blue-700 text-sm">
-            <input type="checkbox" checked={includeMR} onChange={(e) => setIncludeMR(e.target.checked)} /> ✅ Include MR (Money Receipt)
+            <input type="checkbox" checked={includeMR} onChange={(e) => setIncludeMR(e.target.checked)} /> Include MR (Money Receipt)
           </label>
         </div>
 
-        <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 font-bold text-sm">🖨️ SAVE & PRINT</button>
-        <button onClick={handleWhatsAppShare} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-bold text-sm">📱 WhatsApp Send</button>
-        <button onClick={handleBackToList} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold text-sm">← Back to List</button>
+        <button onClick={handlePrint} className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 font-bold text-sm">SAVE & PRINT</button>
+        <button onClick={handleWhatsAppShare} disabled={sending} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 font-bold text-sm disabled:opacity-60">{sending ? 'PDF Ban Rahi Hai...' : 'WhatsApp Send - PDF'}</button>
+        <button onClick={handleBackToList} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 font-bold text-sm">Back to List</button>
       </div>
 
       {includeMR && (
         <div className="no-print bg-yellow-50 border-2 border-yellow-400 p-4 mb-4 rounded max-w-4xl mx-auto">
-          <h3 className="font-bold text-lg mb-3 text-yellow-800 border-b border-yellow-300 pb-2">💰 Money Receipt (MR) Details - Fill before printing/sending</h3>
+          <h3 className="font-bold text-lg mb-3 text-yellow-800 border-b border-yellow-300 pb-2">Money Receipt (MR) Details - Fill before printing/sending</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <input type="text" placeholder="Party Name" value={mrData.party_name} onChange={(e) => setMrData({...mrData, party_name: e.target.value})} className="border border-gray-300 p-2 rounded font-bold" />
-            <input type="number" placeholder="Amount (₹)" value={mrData.amount} onChange={(e) => setMrData({...mrData, amount: e.target.value})} className="border border-gray-300 p-2 rounded font-bold" />
+            <input type="number" placeholder="Amount (Rs.)" value={mrData.amount} onChange={(e) => setMrData({...mrData, amount: e.target.value})} className="border border-gray-300 p-2 rounded font-bold" />
             <select value={mrData.payment_mode} onChange={(e) => setMrData({...mrData, payment_mode: e.target.value})} className="border border-gray-300 p-2 rounded font-bold">
               <option value="Cash">Cash</option>
               <option value="UPI">UPI</option>
