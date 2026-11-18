@@ -371,15 +371,15 @@ export default function TMSDashboard({ branch }) {
         setMonthlyStats({ bills: [], bilties: [] })
         setMonthlyStatsError(monthlyStatsResult.reason?.response?.data?.error || 'Monthly statistics could not be loaded.')
       }
-      // *** ADD START - Bills save, Amount ko touch nahi kiya ***
+      // *** FIXED - Bills save, BillList.jsx jaisa normalize, Amount ko touch nahi kiya ***
       if (billsResult && billsResult.status === 'fulfilled') {
-        const data = getData(billsResult.value)
-        const list = Array.isArray(data) ? data : (Array.isArray(data?.bills) ? data.bills : [])
+        const raw = billsResult.value?.data || {}
+        const list = Array.isArray(raw) ? raw : (Array.isArray(raw.data) ? raw.data : (Array.isArray(raw.bills) ? raw.bills : (Array.isArray(raw.rows) ? raw.rows : [])))
         setAllBills(list)
       } else {
         setAllBills([])
       }
-      // *** ADD END ***
+      // *** FIXED END ***
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -532,7 +532,8 @@ export default function TMSDashboard({ branch }) {
     return 0
   }
 
-  // *** ADD START - Bilty + Bill connection via LR NO., Amount same rahega ***
+  // *** FIXED - Bill Box + Bilty Badge, BillList.jsx jaisa: net_balance se, Amount same rahega ***
+  const billBalance = (b) => Number(b?.net_balance ?? b?.balance_due ?? b?.grand_total ?? 0)
   const billByLr = {}
   allBills.forEach((b) => {
     const direct = [b.lr_no, b.lrNo, b.bilty_no, b.biltyNo].filter(Boolean)
@@ -543,20 +544,13 @@ export default function TMSDashboard({ branch }) {
   function getBiltyBillingStatus(entry) {
     const bill = billByLr[String(entry.lr_no || '').trim()]
     if (!bill) return { label: 'Billing pending', cls: 'bg-red-100 text-red-700', dot: 'bg-red-500' }
-    const s = String(bill.payment_status || bill.status || '').toLowerCase()
-    const isPaid = s.includes('paid') || s.includes('cleared') || s.includes('received') || clearedBills.some((c) => String(c.lr_no) === String(entry.lr_no))
+    const isPaid = billBalance(bill) <= 0
     if (isPaid) return { label: 'Payment Received ✅', cls: 'bg-green-100 text-green-700', dot: 'bg-green-500' }
     return { label: 'Bill Done - Payment Pending', cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
   }
-  const pendingBillsBox = allBills.filter((b) => {
-    const s = String(b.payment_status || b.status || '').toLowerCase()
-    return !s.includes('paid') && !s.includes('cleared') && !s.includes('received')
-  })
-  const clearedBillsBox = allBills.filter((b) => {
-    const s = String(b.payment_status || b.status || '').toLowerCase()
-    return s.includes('paid') || s.includes('cleared') || s.includes('received')
-  })
-  // *** ADD END ***
+  const pendingBillsBox = allBills.filter((b) => billBalance(b) > 0)
+  const clearedBillsBox = allBills.filter((b) => billBalance(b) <= 0)
+  // *** FIXED END ***
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-800">
