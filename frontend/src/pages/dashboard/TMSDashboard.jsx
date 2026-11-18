@@ -532,14 +532,11 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
+  // *** SIRF YAHI FUNCTION BADLA HAI - BAAKI SAB SAME HAI ***
   async function linkBillToBilty() {
     if (!linkingBill || !linkLrNo.trim()) return
-    const lr = linkLrNo.trim()
-    const exists = pendingRows.some((r) => String(r.lr_no).trim() === lr) || clearedBills.some((r) => String(r.lr_no).trim() === lr)
-    if (!exists) {
-      toast.error(`Bilty ${lr} Dashboard me nahi mili. Sahi Bilty Number likho.`)
-      return
-    }
+    const lr = linkLrNo.trim().toUpperCase()
+    // 100 wali rok hatayi - Dashboard me Bilty dikhe ya na dikhe, Link try karega
     setLinking(true)
     const params = {}
     if (isBranchDashboard) {
@@ -547,7 +544,31 @@ export default function TMSDashboard({ branch }) {
       if (activeBranch?.id) params.branch_id = activeBranch.id
     }
     try {
-      await api.patch(`/bills/${linkingBill.id}`, { lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] }, { params })
+      let linked = false
+      let lastError = null
+      try {
+        await api.patch(`/bills/${linkingBill.id}`, { lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] }, { params })
+        linked = true
+      } catch (e1) { lastError = e1 }
+      if (!linked) {
+        try {
+          await api.patch(`/bills/${linkingBill.id}`, { lr_no: lr }, { params })
+          linked = true
+        } catch (e2) { lastError = e2 }
+      }
+      if (!linked) {
+        try {
+          await api.put(`/bills/${linkingBill.id}`, { ...linkingBill, lr_no: lr, bilty_no: lr }, { params })
+          linked = true
+        } catch (e3) { lastError = e3 }
+      }
+      if (!linked) {
+        try {
+          await api.post(`/bills/${linkingBill.id}/link-bilty`, { lr_no: lr, lrNo: lr }, { params })
+          linked = true
+        } catch (e4) { lastError = e4 }
+      }
+      if (!linked) throw lastError || new Error('Link nahi ho paya.')
       setAllBills((prev) => prev.map((b) => String(b.id) === String(linkingBill.id) ? { ...b, lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] } : b))
       toast.success(`Bill ${linkingBill.bill_no} ab Bilty ${lr} se connect ho gaya.`)
       setLinkingBill(null)
@@ -555,7 +576,8 @@ export default function TMSDashboard({ branch }) {
       setRefreshKey((key) => key + 1)
     } catch (error) {
       console.error('Unable to link bill to bilty:', error)
-      toast.error(error.response?.data?.error || 'Link nahi ho paya.')
+      const msg = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Link nahi ho paya.'
+      toast.error(`Link nahi ho paya: ${msg}`)
     } finally {
       setLinking(false)
     }
