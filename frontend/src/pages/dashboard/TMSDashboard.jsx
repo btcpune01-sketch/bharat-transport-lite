@@ -215,7 +215,6 @@ export default function TMSDashboard({ branch }) {
   const [linkingBill, setLinkingBill] = useState(null)
   const [linkLrNo, setLinkLrNo] = useState('')
   const [linking, setLinking] = useState(false)
-  // *** NEW - Bill ko yahi se khol ke dekhne ke liye ***
   const [viewBill, setViewBill] = useState(null)
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
@@ -607,10 +606,9 @@ export default function TMSDashboard({ branch }) {
   const pendingBillsBox = allBills.filter((b) => billBalance(b) > 0)
   const clearedBillsBox = allBills.filter((b) => billBalance(b) <= 0)
 
-  // *** NEW - Bill kholne ka link - Bill Print page pe jayega ***
+  // *** FIX - /bill-print/1 se 404 aa raha tha, isliye Bill List pe bhejenge ***
   function openBillUrl(b) {
     if (!b) return '#'
-    if (b.id) return branchPath(`bill-print/${b.id}`)
     return branchPath('bill-list')
   }
 
@@ -939,7 +937,6 @@ export default function TMSDashboard({ branch }) {
           )}
         </section>
 
-        {/* *** Bill Box - Yaha se Bill khol sakte ho *** */}
         <section aria-label="Bill Box" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex gap-2">
             <button type="button" onClick={() => setBillBoxTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billBoxTab === 'pending' ? 'bg-yellow-500 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bills ({pendingBillsBox.length})</button>
@@ -953,7 +950,6 @@ export default function TMSDashboard({ branch }) {
               {(billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).map((b) => (
                 <div key={b.id || b.bill_no || b.invoice_no} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div>
-                    {/* Bill No pe click karte hi Bill khul jayega */}
                     <button type="button" onClick={() => setViewBill(b)} className="text-left font-semibold text-blue-700 underline hover:text-blue-900">
                       {b.bill_no || b.invoice_no || b.bill_number}
                     </button>
@@ -963,12 +959,11 @@ export default function TMSDashboard({ branch }) {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-sm text-slate-900">{money(b.grand_total || b.total_amount || b.amount)}</strong>
-                    {/* NEW - Bill Open karne ka button */}
                     <button type="button" onClick={() => setViewBill(b)} className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100">
                       👁 View Bill
                     </button>
                     <a href={openBillUrl(b)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-50">
-                      ↗ Full Print
+                      ↗ Bill List me kholo
                     </a>
                     {canClearPending && (
                       <button type="button" onClick={() => { setLinkingBill(b); setLinkLrNo(b.lr_no || '') }} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-50">
@@ -1129,7 +1124,6 @@ export default function TMSDashboard({ branch }) {
           </section>
         </div>
       )}
-      {/* *** NEW - Bill View Popup - Yahi se Bill khul jayega *** */}
       {viewBill && (
         <div role="dialog" aria-modal="true" aria-labelledby="view-bill-title" className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4">
           <section className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
@@ -1167,7 +1161,7 @@ export default function TMSDashboard({ branch }) {
                 Band karo
               </button>
               <a href={openBillUrl(viewBill)} target="_blank" rel="noreferrer" className="rounded-md bg-purple-700 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-800">
-                ↗ Full Bill Print kholo
+                ↗ Bill List me kholo
               </a>
               <button type="button" onClick={() => { setLinkingBill(viewBill); setLinkLrNo(viewBill.lr_no || ''); setViewBill(null) }} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">
                 🔗 Link Bilty
