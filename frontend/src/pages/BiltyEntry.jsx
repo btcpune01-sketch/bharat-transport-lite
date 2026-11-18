@@ -84,6 +84,25 @@ function canonicalBranchCode(value) {
   return ({ PUN: 'PUNE', MUM: 'MUMBAI', DEL: 'DLH', AHM: 'AHMD' })[code] || code
 }
 
+// *** SIRF BRANCH KE LIYE - AUTO SERIAL FIX - ADMIN KO HAATH NAHI ***
+function nextBiltyNo(last) {
+  const s = String(last || '')
+  const m = s.match(/(\d+)\s*$/)
+  if (!m) return 'BTC-13079'
+  const prefix = s.slice(0, s.length - m[1].length)
+  return `${prefix}${String(Number(m[1]) + 1).padStart(m[1].length, '0')}`
+}
+function biltyNum(v) {
+  const m = String(v || '').match(/(\d+)\s*$/)
+  return m ? Number(m[1]) : 0
+}
+// Ahmedabad ka last BTC-13078 hai, isliye agla 13079 se neeche nahi jana chahiye
+function branchFallbackLast(branchCode, branchSlugValue) {
+  const key = String(branchCode || branchSlugValue || '').trim().toUpperCase()
+  if (key === 'AHMD' || key === 'AHMEDABAD' || key === 'AHM') return 'BTC-13078'
+  return null
+}
+
 export default function BiltyEntry({ branchMode = false, branchCode: branchSlug, id: idProp, biltyId: biltyIdProp }) {
   const navigate = useNavigate()
   const params = useParams()
@@ -243,15 +262,35 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     } catch (err) { console.error('Failed to load customers:', err); setCustomers([]) }
   }
 
+  // *** SIRF YAHI FUNCTION BADLA HAI - BRANCH SERIAL FIX ***
   const generateLRNo = async (selectedBranch = branchCode) => {
     const requestId = ++lrGenerationRequest.current
     if (!selectedBranch) { setNumberLoading(false); setFormData(prev => ({ ...prev, lr_no: '' })); return }
     setNumberLoading(true)
     setFormData(prev => ({ ...prev, lr_no: '' }))
+    // Branch ka fallback - Ahmedabad ka last BTC-13078, agla BTC-13079
+    const fallbackLast = branchMode ? branchFallbackLast(selectedBranch, branchSlugValue) : null
+    const fallbackNext = fallbackLast ? nextBiltyNo(fallbackLast) : null
     try {
       const response = await biltyAPI.getNextNumber({ branch: selectedBranch })
-      const nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
+      let nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
       if (!nextLrNo) throw new Error('invalid')
+      // BRANCH ME: Server ne purana / chhota number diya to usko mat lo, fallback se bada wala lo
+      if (branchMode && fallbackNext && biltyNum(nextLrNo) < biltyNum(fallbackNext)) {
+        nextLrNo = fallbackNext
+      }
+      // BRANCH ME: Browser me saved last se bhi check karo - usse bada hi lo
+      if (branchMode) {
+        try {
+          const savedKey = `btc_last_bilty_${String(branchSlugValue || selectedBranch).toLowerCase()}`
+          const savedLast = localStorage.getItem(savedKey)
+          if (savedLast && biltyNum(nextLrNo) <= biltyNum(savedLast)) {
+            nextLrNo = nextBiltyNo(savedLast)
+          }
+          // Fallback se bhi bada hona chahiye
+          if (fallbackNext && biltyNum(nextLrNo) < biltyNum(fallbackNext)) nextLrNo = fallbackNext
+        } catch (e) {}
+      }
       if (requestId !== lrGenerationRequest.current) return
       setFormData(prev => ({ ...prev, lr_no: nextLrNo }))
       if (response.data?.branch_id) setBranchId(Number(response.data.branch_id))
@@ -259,8 +298,14 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     } catch (err) {
       if (requestId !== lrGenerationRequest.current) return
       console.warn('Unable to query the branch LR series; save will request a database-generated number:', err)
-      setFormData(prev => ({ ...prev, lr_no: '' }))
-      setIsLrEditable(true)
+      // BRANCH ME: Server fail ho to khaali MAT chhodo, fallback 13079 bhar do
+      if (branchMode && fallbackNext) {
+        setFormData(prev => ({ ...prev, lr_no: fallbackNext }))
+        setIsLrEditable(false)
+      } else {
+        setFormData(prev => ({ ...prev, lr_no: '' }))
+        setIsLrEditable(true)
+      }
     } finally { if (requestId === lrGenerationRequest.current) setNumberLoading(false) }
   }
 
@@ -353,10 +398,45 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
         toast.success('Bilty Updated - ' + payload.lr_no)
       } else {
-        const response = await biltyAPI.create(payload)
-        if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
-        toast.success('Bilty Saved - ' + (response.data?.lr_no || payload.lr_no))
-        if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
+        // *** SIRF BRANCH ME - DUPLICATE PE ERROR NAHI, AGLA NUMBER LE LO - ADMIN SAME RAHEGA ***
+        if (branchMode) {
+          let currentLr = payload.lr_no || ''
+          let saved = null
+          let lastErr = null
+          for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+              const attemptPayload = { ...payload, lr_no: currentLr }
+              const res = await biltyAPI.create(attemptPayload)
+              saved = res
+              // Last save karo - agli baar isse aage wala aayega
+              try { localStorage.setItem(`btc_last_bilty_${String(branchSlugValue || branchCode).toLowerCase()}`, currentLr) } catch (e) {}
+              setFormData(prev => ({ ...prev, lr_no: currentLr }))
+              break
+            } catch (createErr) {
+              lastErr = createErr
+              const msg = String(createErr?.response?.data?.error || createErr?.message || '').toLowerCase()
+              const suggested = createErr?.response?.data?.suggested_number
+              const isDup = createErr?.response?.status === 409 || msg.includes('duplicate') || msg.includes('already') || msg.includes('exists')
+              if (isDup) {
+                // Error MAT dikhao, agla number lo
+                currentLr = suggested ? String(suggested) : nextBiltyNo(currentLr)
+                continue
+              }
+              throw createErr
+            }
+          }
+          if (!saved) throw lastErr || new Error('Bilty save nahi hui')
+          const response = saved
+          if (response.data?.local) { const draft = saveLocalDraft('bilty', { ...payload, lr_no: currentLr }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
+          toast.success('Bilty Saved - ' + (response.data?.lr_no || currentLr))
+          if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
+        } else {
+          // ADMIN - purana wala same
+          const response = await biltyAPI.create(payload)
+          if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
+          toast.success('Bilty Saved - ' + (response.data?.lr_no || payload.lr_no))
+          if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
+        }
       }
       // Bilty save ke BAAD party save - Bilty kabhi fail nahi hogi
       await savePartyIfNew(formData.consignor_name, formData.consignor_mobile, formData.consignor_address, formData.consignor_gst)
@@ -364,7 +444,9 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       navigate(branchMode ? branchPath('consignments') : '/consignments')
     } catch (err) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
-      if (err.response?.status === 409) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
+      // BRANCH ME duplicate pe yaha tak aaye to bhi error mat dikhao, wapas try ho chuka hai
+      if (err.response?.status === 409 && !branchMode) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
+      if (err.response?.status === 409 && branchMode) { toast.error('Bilty save nahi hui, fir se try karo'); return }
       if (isDatabaseUnavailable(err)) {
         try { const draft = saveLocalDraft('bilty', { ...formData, lr_no: formData.lr_no }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`) } catch (storageError) { console.error('Unable to store the Bilty as a local draft:', storageError); toast.error(`Unable to save Bilty: ${errorMsg}`) }
       } else { toast.error(errorMsg) }
@@ -400,6 +482,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
                 <p className="mt-1 text-xs text-blue-600">Ye series {[formData.branch_code || branchCode, branchName].filter(Boolean).join(' - ') || 'selected'} branch ka hai. Duplicate check sirf isi branch me hota hai.</p>
                 {!isLrEditable && <p className="mt-1 text-xs text-gray-400">Auto generated hai. Change karna hai to Edit dabao.</p>}
                 {isLrEditable && <p className="mt-1 text-xs text-green-600">✓ Apni branch series ka number enter kar sakte ho</p>}
+                {branchMode && formData.lr_no && <p className="mt-1 text-xs font-bold text-green-700">✅ Agla Bilty No apne aap: {formData.lr_no} - Serial se chalega</p>}
               </div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">LR Date *</label><input type="date" name="lr_date" value={formData.lr_date} onChange={handleChange} required className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               {branchMode ? (
@@ -527,7 +610,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
             <h3 className="text-xl font-bold text-white mb-4">💵 Section 12: Booking Details - BILL TO PARTY FIXED</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Declared Value of Goods</label><input type="number" name="declared_value" value={formData.declared_value} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Basis of Booking</label><input type="text" name="basis_of_booking" value={formData.basis_of_booking} onChange={handleChange} placeholder="(1) To Pay (2) To Be (3) Paid" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><label className="block text-gray-300 text-sm font-medium mb-1">Basis of Booking</label><input type="text" name="basis_of_booking" value={formData.basis_of_booking} placeholder="(1) To Pay (2) To Be (3) Paid" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               <div><CustomSelect label="Billed at with M/s" name="bill_to_party" value={formData.bill_to_party} onChange={(e) => setFormData(prev => ({ ...prev, bill_to_party: e.target.value, billed_at_type: e.target.value, gst_through: e.target.value }))} options={billedAtOptions} /></div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Company Name (Auto from Bill To)</label><input type="text" value={billedAtName} readOnly placeholder="Bill To Party select karo" className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white font-bold" /></div>
               <div className="md:col-span-2"><CustomSelect label="GST Through" name="gst_through" value={formData.gst_through} onChange={(e) => setFormData(prev => ({ ...prev, gst_through: e.target.value, billed_at_type: e.target.value === 'B.T.C.' ? '' : e.target.value, bill_to_party: e.target.value === 'B.T.C.' ? '' : e.target.value }))} options={gstOptions} /></div>
