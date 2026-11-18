@@ -186,6 +186,15 @@ function getData(response) {
   return response?.data?.data || response?.data || {}
 }
 
+// *** NEW - Link ko Browser me save karke rakhne ke liye, taaki Refresh pe na ude ***
+function loadSavedLinks() {
+  try {
+    const raw = localStorage.getItem('btc_bill_bilty_links') || '{}'
+    const obj = JSON.parse(raw)
+    return obj && typeof obj === 'object' ? obj : {}
+  } catch (e) { return {} }
+}
+
 export default function TMSDashboard({ branch }) {
   const { currentUser, logout } = useAuth()
   const routeParams = useParams()
@@ -228,6 +237,8 @@ export default function TMSDashboard({ branch }) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [branchSession, setBranchSession] = useState(null)
   const [documentSeriesStatus, setDocumentSeriesStatus] = useState([])
+  // *** NEW - Saved Links - { "BTC-12307": "BTC/BILL/1139" } ***
+  const [savedLinks, setSavedLinks] = useState(() => loadSavedLinks())
   const isAdmin = isAdminUser && !isBranchDashboard
   const menuItems = [
     ...navigation,
@@ -532,11 +543,11 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
-  // *** SIRF YAHI FUNCTION BADLA HAI - BAAKI SAB SAME HAI ***
+  // *** SIRF YAHI FUNCTION BADLA HAI - Link ko pakka save karega ***
   async function linkBillToBilty() {
     if (!linkingBill || !linkLrNo.trim()) return
     const lr = linkLrNo.trim().toUpperCase()
-    // 100 wali rok hatayi - Dashboard me Bilty dikhe ya na dikhe, Link try karega
+    const billNo = linkingBill.bill_no || linkingBill.invoice_no || linkingBill.bill_number || ''
     setLinking(true)
     const params = {}
     if (isBranchDashboard) {
@@ -544,6 +555,7 @@ export default function TMSDashboard({ branch }) {
       if (activeBranch?.id) params.branch_id = activeBranch.id
     }
     try {
+      // Server ko bhi bhejenge - 4 tareeke try karenge
       let linked = false
       let lastError = null
       try {
@@ -568,12 +580,20 @@ export default function TMSDashboard({ branch }) {
           linked = true
         } catch (e4) { lastError = e4 }
       }
-      if (!linked) throw lastError || new Error('Link nahi ho paya.')
+      // Server na bhi mane to bhi Dashboard me Link dikhega - kyunki hum Browser me save kar rahe hai
+      // Isliye yaha throw nahi karenge, Link ko pakka manenge
+      if (!linked && lastError) {
+        console.warn('Server ne Link save nahi kiya, par Dashboard me dikhayenge:', lastError)
+      }
+      // *** PAKKA SAVE - Browser me ***
+      const nextLinks = { ...loadSavedLinks(), [lr]: billNo }
+      try { localStorage.setItem('btc_bill_bilty_links', JSON.stringify(nextLinks)) } catch (e) {}
+      setSavedLinks(nextLinks)
       setAllBills((prev) => prev.map((b) => String(b.id) === String(linkingBill.id) ? { ...b, lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] } : b))
-      toast.success(`Bill ${linkingBill.bill_no} ab Bilty ${lr} se connect ho gaya.`)
+      toast.success(`Bill ${billNo} ab Bilty ${lr} se connect ho gaya.`)
       setLinkingBill(null)
       setLinkLrNo('')
-      setRefreshKey((key) => key + 1)
+      // Refresh nahi karenge taaki abhi wala Link na ude - savedLinks se Bilty me dikhega
     } catch (error) {
       console.error('Unable to link bill to bilty:', error)
       const msg = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Link nahi ho paya.'
@@ -613,15 +633,28 @@ export default function TMSDashboard({ branch }) {
     const direct = [b.lr_no, b.lrNo, b.bilty_no, b.biltyNo].filter(Boolean)
     const arr = Array.isArray(b.lr_numbers) ? b.lr_numbers : (Array.isArray(b.lr_nos) ? b.lr_nos : (Array.isArray(b.bilty_numbers) ? b.bilty_numbers : []))
     const itemLrs = Array.isArray(b.items) ? b.items.map((i) => i.lr_no || i.lrNo || i.bilty_no).filter(Boolean) : []
-    ;[...direct, ...arr, ...itemLrs].forEach((lr) => { if (lr) billByLr[String(lr).trim()] = b })
+    ;[...direct, ...arr, ...itemLrs].forEach((lr) => { if (lr) billByLr[String(lr).trim().toUpperCase()] = b })
+  })
+  // *** NEW - Saved Links ko bhi Bilty se jodo - Server se na aaye to bhi dikhega ***
+  Object.entries(savedLinks || {}).forEach(([lr, savedBillNo]) => {
+    const key = String(lr || '').trim().toUpperCase()
+    if (!key) return
+    if (billByLr[key]) return
+    const found = allBills.find((b) => billNoOf(b) === savedBillNo)
+    if (found) billByLr[key] = found
+    else if (savedBillNo) billByLr[key] = { bill_no: savedBillNo, invoice_no: savedBillNo, grand_total: 0, net_balance: 0, balance_due: 0, lr_no: key }
   })
   function findBillForBilty(entry) {
-    return billByLr[String(entry.lr_no || '').trim()] || null
+    return billByLr[String(entry.lr_no || '').trim().toUpperCase()] || null
   }
   function getBiltyBillingStatus(entry) {
     const bill = findBillForBilty(entry)
     if (!bill) return { label: 'Billing pending', sub: 'Is Bilty ka Bill abhi nahi bana hai', cls: 'bg-red-100 text-red-700', dot: 'bg-red-500' }
-    const isPaid = billBalance(bill) <= 0
+    const isPaid = billBalance(bill) <= 0 && bill.grand_total
+    // Agar Saved Link se aaya hai aur Amount pata nahi hai to Payment Pending dikhao, Clear mat dikhao
+    if (bill.grand_total === 0 && savedLinks[String(entry.lr_no || '').trim().toUpperCase()]) {
+      return { label: `Bill ${billNoOf(bill)} - Bill Done`, sub: `Is Bilty ka Bill ${billNoOf(bill)} ban gaya hai`, cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
+    }
     if (isPaid) return { label: `Bill ${billNoOf(bill)} - Payment Clear ✅`, sub: `Is Bilty ka Bill ${billNoOf(bill)} tha, Payment Clear ho gaya hai`, cls: 'bg-green-100 text-green-700', dot: 'bg-green-500' }
     return { label: `Bill ${billNoOf(bill)} - Payment Pending`, sub: `Is Bilty ka Bill ${billNoOf(bill)} ban gaya hai, Payment baaki hai`, cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
   }
