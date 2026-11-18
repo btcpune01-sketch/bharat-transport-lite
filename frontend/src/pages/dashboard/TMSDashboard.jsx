@@ -186,13 +186,40 @@ function getData(response) {
   return response?.data?.data || response?.data || {}
 }
 
-// *** NEW - Link ko Browser me save karke rakhne ke liye, taaki Refresh pe na ude ***
-function loadSavedLinks() {
+// *** NEW - Branch Filter - Admin ka data Branch me nahi dikhega ***
+function normalizeBranch(v) {
+  return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+function isRowForCurrentBranch(row, branchSlug, activeBranch) {
+  if (!branchSlug || branchSlug === 'global') return true
+  if (!row || typeof row !== 'object') return false
+  const want = normalizeBranch(branchSlug)
+  const wantCode = normalizeBranch(activeBranch?.branch_code || '')
+  const wantName = normalizeBranch(activeBranch?.branch_name || '')
+  const candidates = [
+    row.branch_slug, row.branchSlug, row.branch_code, row.branchCode,
+    row.branch, row.branch_name, row.branchName, row.branch_id, row.branchId
+  ].filter((x) => x !== undefined && x !== null && String(x).trim() !== '')
+  // Agar Bill/Bilty me Branch hi nahi likha hai to wo Admin/Global ka hai - Branch me MAT dikhao
+  if (candidates.length === 0) return false
+  // branch_id match ho to bhi chalega
+  if (activeBranch?.id && candidates.some((c) => String(c) === String(activeBranch.id))) return true
+  return candidates.some((c) => {
+    const n = normalizeBranch(c)
+    return n === want || (wantCode && n === wantCode) || (wantName && n === wantName)
+  })
+}
+function loadSavedLinks(branchSlug) {
   try {
-    const raw = localStorage.getItem('btc_bill_bilty_links') || '{}'
+    // Branch-wise key - Ahmedabad ka Link Pune me nahi dikhega
+    const key = branchSlug && branchSlug !== 'global' ? `btc_bill_bilty_links_${normalizeBranch(branchSlug)}` : 'btc_bill_bilty_links'
+    const raw = localStorage.getItem(key) || '{}'
     const obj = JSON.parse(raw)
     return obj && typeof obj === 'object' ? obj : {}
   } catch (e) { return {} }
+}
+function savedLinksKey(branchSlug) {
+  return branchSlug && branchSlug !== 'global' ? `btc_bill_bilty_links_${normalizeBranch(branchSlug)}` : 'btc_bill_bilty_links'
 }
 
 export default function TMSDashboard({ branch }) {
@@ -237,8 +264,7 @@ export default function TMSDashboard({ branch }) {
   const [refreshKey, setRefreshKey] = useState(0)
   const [branchSession, setBranchSession] = useState(null)
   const [documentSeriesStatus, setDocumentSeriesStatus] = useState([])
-  // *** NEW - Saved Links - { "BTC-12307": "BTC/BILL/1139" } ***
-  const [savedLinks, setSavedLinks] = useState(() => loadSavedLinks())
+  const [savedLinks, setSavedLinks] = useState(() => loadSavedLinks(branchSlug))
   const isAdmin = isAdminUser && !isBranchDashboard
   const menuItems = [
     ...navigation,
@@ -247,6 +273,11 @@ export default function TMSDashboard({ branch }) {
   const quickActions = isAdmin
     ? adminQuickActions
     : adminQuickActions.filter((item) => !item.adminOnly && (isBranchDashboard || item.path !== 'user-management'))
+
+  // Branch badle to us Branch ke Links load karo, dusri Branch ke nahi
+  useEffect(() => {
+    setSavedLinks(loadSavedLinks(branchSlug))
+  }, [branchSlug])
 
   useEffect(() => {
     if (!isBranchDashboard) return
@@ -354,7 +385,14 @@ export default function TMSDashboard({ branch }) {
       }
       if (pendingResult.status === 'fulfilled') {
         const data = getData(pendingResult.value)
-        setPendingRows(Array.isArray(data) ? data : [])
+        let rows = Array.isArray(data) ? data : []
+        // *** BRANCH FILTER - Admin ki Bilty Branch me nahi ***
+        // Sirf tab filter karo jab Bilty me Branch likha ho, warna server ka data hi dikhao
+        if (isBranchDashboard) {
+          const withBranch = rows.filter((r) => r.branch_code || r.branch_slug || r.branch_name || r.branch_id || r.branch)
+          if (withBranch.length > 0) rows = rows.filter((r) => isRowForCurrentBranch(r, branchSlug, activeBranch))
+        }
+        setPendingRows(rows)
         setPendingError('')
       } else {
         console.error('Unable to load dashboard pending amounts:', pendingResult.reason)
@@ -363,7 +401,12 @@ export default function TMSDashboard({ branch }) {
       }
       if (clearedResult.status === 'fulfilled') {
         const data = getData(clearedResult.value)
-        setClearedBills(Array.isArray(data) ? data : [])
+        let rows = Array.isArray(data) ? data : []
+        if (isBranchDashboard) {
+          const withBranch = rows.filter((r) => r.branch_code || r.branch_slug || r.branch_name || r.branch_id || r.branch)
+          if (withBranch.length > 0) rows = rows.filter((r) => isRowForCurrentBranch(r, branchSlug, activeBranch))
+        }
+        setClearedBills(rows)
         setClearedError('')
       } else {
         console.error('Unable to load dashboard cleared amounts:', clearedResult.reason)
@@ -384,7 +427,12 @@ export default function TMSDashboard({ branch }) {
       }
       if (billsResult && billsResult.status === 'fulfilled') {
         const raw = billsResult.value?.data || {}
-        const list = Array.isArray(raw) ? raw : (Array.isArray(raw.data) ? raw.data : (Array.isArray(raw.bills) ? raw.bills : (Array.isArray(raw.rows) ? raw.rows : [])))
+        let list = Array.isArray(raw) ? raw : (Array.isArray(raw.data) ? raw.data : (Array.isArray(raw.bills) ? raw.bills : (Array.isArray(raw.rows) ? raw.rows : [])))
+        // *** BRANCH FILTER - YAHI MAIN FIX HAI ***
+        // Branch Dashboard me SIRF usi Branch ka Bill rakho, Admin ka Bill hata do
+        if (isBranchDashboard) {
+          list = list.filter((b) => isRowForCurrentBranch(b, branchSlug, activeBranch))
+        }
         setAllBills(list)
       } else {
         setAllBills([])
@@ -543,7 +591,6 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
-  // *** SIRF YAHI FUNCTION BADLA HAI - Link ko pakka save karega ***
   async function linkBillToBilty() {
     if (!linkingBill || !linkLrNo.trim()) return
     const lr = linkLrNo.trim().toUpperCase()
@@ -555,7 +602,6 @@ export default function TMSDashboard({ branch }) {
       if (activeBranch?.id) params.branch_id = activeBranch.id
     }
     try {
-      // Server ko bhi bhejenge - 4 tareeke try karenge
       let linked = false
       let lastError = null
       try {
@@ -580,20 +626,16 @@ export default function TMSDashboard({ branch }) {
           linked = true
         } catch (e4) { lastError = e4 }
       }
-      // Server na bhi mane to bhi Dashboard me Link dikhega - kyunki hum Browser me save kar rahe hai
-      // Isliye yaha throw nahi karenge, Link ko pakka manenge
       if (!linked && lastError) {
         console.warn('Server ne Link save nahi kiya, par Dashboard me dikhayenge:', lastError)
       }
-      // *** PAKKA SAVE - Browser me ***
-      const nextLinks = { ...loadSavedLinks(), [lr]: billNo }
-      try { localStorage.setItem('btc_bill_bilty_links', JSON.stringify(nextLinks)) } catch (e) {}
+      const nextLinks = { ...loadSavedLinks(branchSlug), [lr]: billNo }
+      try { localStorage.setItem(savedLinksKey(branchSlug), JSON.stringify(nextLinks)) } catch (e) {}
       setSavedLinks(nextLinks)
       setAllBills((prev) => prev.map((b) => String(b.id) === String(linkingBill.id) ? { ...b, lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] } : b))
       toast.success(`Bill ${billNo} ab Bilty ${lr} se connect ho gaya.`)
       setLinkingBill(null)
       setLinkLrNo('')
-      // Refresh nahi karenge taaki abhi wala Link na ude - savedLinks se Bilty me dikhega
     } catch (error) {
       console.error('Unable to link bill to bilty:', error)
       const msg = error?.response?.data?.error || error?.response?.data?.message || error?.message || 'Link nahi ho paya.'
@@ -635,7 +677,6 @@ export default function TMSDashboard({ branch }) {
     const itemLrs = Array.isArray(b.items) ? b.items.map((i) => i.lr_no || i.lrNo || i.bilty_no).filter(Boolean) : []
     ;[...direct, ...arr, ...itemLrs].forEach((lr) => { if (lr) billByLr[String(lr).trim().toUpperCase()] = b })
   })
-  // *** NEW - Saved Links ko bhi Bilty se jodo - Server se na aaye to bhi dikhega ***
   Object.entries(savedLinks || {}).forEach(([lr, savedBillNo]) => {
     const key = String(lr || '').trim().toUpperCase()
     if (!key) return
@@ -651,7 +692,6 @@ export default function TMSDashboard({ branch }) {
     const bill = findBillForBilty(entry)
     if (!bill) return { label: 'Billing pending', sub: 'Is Bilty ka Bill abhi nahi bana hai', cls: 'bg-red-100 text-red-700', dot: 'bg-red-500' }
     const isPaid = billBalance(bill) <= 0 && bill.grand_total
-    // Agar Saved Link se aaya hai aur Amount pata nahi hai to Payment Pending dikhao, Clear mat dikhao
     if (bill.grand_total === 0 && savedLinks[String(entry.lr_no || '').trim().toUpperCase()]) {
       return { label: `Bill ${billNoOf(bill)} - Bill Done`, sub: `Is Bilty ka Bill ${billNoOf(bill)} ban gaya hai`, cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
     }
@@ -661,7 +701,6 @@ export default function TMSDashboard({ branch }) {
   const pendingBillsBox = allBills.filter((b) => billBalance(b) > 0)
   const clearedBillsBox = allBills.filter((b) => billBalance(b) <= 0)
 
-  // *** FIX - Ab New Tab me nahi khulega, andar hi khulega, isliye 404 nahi aayega ***
   function openBillUrl(b) {
     if (!b) return '#'
     return branchPath('bill-list')
