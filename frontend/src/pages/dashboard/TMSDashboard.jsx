@@ -207,9 +207,9 @@ export default function TMSDashboard({ branch }) {
   const [clearingPending, setClearingPending] = useState(false)
   // STEP 1 - NEW : Pending / Cleared Tabs + Cleared Bills list
   const [billTab, setBillTab] = useState('pending')
-  const [clearedBills, setClearedBills] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('cleared_bills') || '[]') } catch { return [] }
-  })
+  // STEP 3 - CHANGED : Cleared ab Server se aayega, localStorage nahi
+  const [clearedBills, setClearedBills] = useState([])
+  const [clearedError, setClearedError] = useState('')
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
@@ -316,10 +316,11 @@ export default function TMSDashboard({ branch }) {
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
       api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query }),
       api.get('/dashboard/pending-amount', { params: query }),
+      api.get('/dashboard/cleared-amount', { params: query }),
       dashboardAPI.getMonthlyStats(statsBranchSlug, statsBranchId)
     ]).then((results) => {
       if (!active) return
-      const [statsResult, stockResult, pendingResult, monthlyStatsResult] = results
+      const [statsResult, stockResult, pendingResult, clearedResult, monthlyStatsResult] = results
       if (statsResult.status === 'fulfilled' && statsResult.value.data?.success !== false) {
         setStats(getData(statsResult.value))
         setStatsUnavailable(false)
@@ -341,6 +342,15 @@ export default function TMSDashboard({ branch }) {
         console.error('Unable to load dashboard pending amounts:', pendingResult.reason)
         setPendingRows([])
         setPendingError(pendingResult.reason?.response?.data?.error || 'Pending amounts could not be loaded.')
+      }
+      if (clearedResult.status === 'fulfilled') {
+        const data = getData(clearedResult.value)
+        setClearedBills(Array.isArray(data) ? data : [])
+        setClearedError('')
+      } else {
+        console.error('Unable to load dashboard cleared amounts:', clearedResult.reason)
+        setClearedBills([])
+        setClearedError(clearedResult.reason?.response?.data?.error || 'Cleared bills could not be loaded.')
       }
       if (monthlyStatsResult.status === 'fulfilled') {
         const data = getData(monthlyStatsResult.value)
@@ -470,11 +480,7 @@ export default function TMSDashboard({ branch }) {
     }
     try {
       await api.patch(`/dashboard/pending-amount/${pendingToClear.id}`, {}, { params })
-      // STEP 1 - NEW : Clear hote hi Pending se hatake Cleared list me daalo
-      const clearedOne = { ...pendingToClear, cleared_at: new Date().toLocaleString('en-IN'), cleared_by: currentUser?.username || 'Admin' }
-      const nextCleared = [clearedOne, ...clearedBills]
-      setClearedBills(nextCleared)
-      localStorage.setItem('cleared_bills', JSON.stringify(nextCleared))
+      // STEP 3 - CHANGED : Server se Cleared list aayegi, localStorage nahi chahiye
       setPendingRows((rows) => rows.filter((r) => r.id !== pendingToClear.id))
       toast.success(`Pending amount for ${pendingToClear.lr_no} cleared.`)
       setPendingToClear(null)
@@ -777,7 +783,9 @@ export default function TMSDashboard({ branch }) {
           {billTab === 'cleared' ? (
             <div>
               <h2 className="mb-2 text-base font-bold text-slate-900">Cleared Bills</h2>
-              {clearedBills.length === 0 ? (
+              {clearedError ? (
+                <p className="text-sm text-amber-800">{clearedError}</p>
+              ) : clearedBills.length === 0 ? (
                 <p className="text-sm text-slate-500">Abhi koi Bill Clear nahi hua hai.</p>
               ) : (
                 <div className="divide-y divide-slate-100">
