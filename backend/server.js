@@ -739,6 +739,8 @@ async function runMigrations() {
   await addColumnIfNotExists('consignments', 'pod_remarks', 'TEXT');
   await addColumnIfNotExists('consignments', 'updated_at', 'TIMESTAMP DEFAULT NOW()');
   await addColumnIfNotExists('consignments', 'payment_status', "TEXT DEFAULT 'Unpaid'");
+  await addColumnIfNotExists('consignments', 'cleared_at', 'TIMESTAMPTZ');
+  await addColumnIfNotExists('consignments', 'cleared_by', 'TEXT');
   await addColumnIfNotExists('consignments', 'mr_active', 'BOOLEAN DEFAULT FALSE');
   await addColumnIfNotExists('consignments', 'mr_party_name', 'TEXT');
   await addColumnIfNotExists('consignments', 'mr_amount', 'NUMERIC DEFAULT 0');
@@ -1699,7 +1701,7 @@ app.patch('/api/dashboard/pending-amount/:id', authMiddleware, async (req, res) 
     const branch = buildBranchCondition(scope, 2);
     const result = await pool.query(
       `UPDATE consignments
-       SET payment_status = 'Cleared', updated_at = NOW()
+       SET payment_status = 'Cleared', updated_at = NOW(), cleared_at = NOW(), cleared_by = '${(req.user?.username || 'user').replace(/'/g, "''")}'
        WHERE id = $1
          AND COALESCE(payment_status, 'Unpaid') = 'Unpaid'
          AND COALESCE(is_deleted, FALSE) = FALSE
@@ -1728,7 +1730,23 @@ app.patch('/api/dashboard/pending-amount/:id', authMiddleware, async (req, res) 
     return res.status(503).json({ error: 'Unable to clear this pending amount.' });
   }
 });
-
+// STEP 2 - Cleared Amount List
+app.get('/api/dashboard/cleared-amount', authMiddleware, async (req, res) => {
+  try {
+    let query = `SELECT id, lr_no, lr_date, branch_id, branch_code, consignor_name, consignee_name, grand_total, payment_status, cleared_at, cleared_by FROM consignments WHERE (payment_status = 'Paid' OR payment_status = 'Cleared' OR cleared_at IS NOT NULL) AND COALESCE(is_deleted, FALSE) = FALSE`;
+    const params = [];
+    if (req.user.role === 'branch' || req.user.role === 'branch_user') {
+      params.push(req.user.branch_id);
+      query += ` AND branch_id = $${params.length}`;
+    }
+    query += ` ORDER BY cleared_at DESC NULLS LAST, id DESC LIMIT 100`;
+    const result = await pool.query(query, params);
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('GET /api/dashboard/cleared-amount error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 app.get('/api/dashboard/recent', authMiddleware, async (req, res) => {
   try {
     const scope = await resolveDashboardBranch(req, res);
