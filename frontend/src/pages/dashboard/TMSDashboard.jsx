@@ -205,6 +205,11 @@ export default function TMSDashboard({ branch }) {
   const [pendingError, setPendingError] = useState('')
   const [pendingToClear, setPendingToClear] = useState(null)
   const [clearingPending, setClearingPending] = useState(false)
+  // STEP 1 - NEW : Pending / Cleared Tabs + Cleared Bills list
+  const [billTab, setBillTab] = useState('pending')
+  const [clearedBills, setClearedBills] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('cleared_bills') || '[]') } catch { return [] }
+  })
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
@@ -465,6 +470,12 @@ export default function TMSDashboard({ branch }) {
     }
     try {
       await api.patch(`/dashboard/pending-amount/${pendingToClear.id}`, {}, { params })
+      // STEP 1 - NEW : Clear hote hi Pending se hatake Cleared list me daalo
+      const clearedOne = { ...pendingToClear, cleared_at: new Date().toLocaleString('en-IN'), cleared_by: currentUser?.username || 'Admin' }
+      const nextCleared = [clearedOne, ...clearedBills]
+      setClearedBills(nextCleared)
+      localStorage.setItem('cleared_bills', JSON.stringify(nextCleared))
+      setPendingRows((rows) => rows.filter((r) => r.id !== pendingToClear.id))
       toast.success(`Pending amount for ${pendingToClear.lr_no} cleared.`)
       setPendingToClear(null)
       setRefreshKey((key) => key + 1)
@@ -560,11 +571,24 @@ export default function TMSDashboard({ branch }) {
               className="rounded-md p-2 text-slate-600 hover:bg-slate-100"
             >
               <Bell className="h-5 w-5" />
+              {/* STEP 1 - NEW : Bell pe Pending count */}
+              {pendingRows.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white">{pendingRows.length > 99 ? '99+' : pendingRows.length}</span>
+              )}
             </button>
             {showNotifications && (
               <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-lg">
                 <strong className="text-slate-800">Notifications</strong>
-                <p className="mt-2 text-slate-500">No notification feed is configured.</p>
+                {/* STEP 1 - NEW : Pending Bill Alert */}
+                {pendingRows.length > 0 ? (
+                  <div className="mt-2">
+                    <p className="font-bold text-red-600">⚠️ {pendingRows.length} Bill Pending hai</p>
+                    <p className="text-slate-500">Total Pending: {money(pendingRows.reduce((s, r) => s + Number(r.grand_total || 0), 0))}</p>
+                    <p className="mt-1 text-slate-500">Payment aaye to Pending se Clear kar do.</p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-slate-500">Koi Pending Bill nahi hai. Sab Clear hai ✅</p>
+                )}
               </div>
             )}
           </div>
@@ -745,6 +769,35 @@ export default function TMSDashboard({ branch }) {
         {isAdmin && <BranchPaymentStatus />}
 
         <section aria-labelledby="pending-amounts-title" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          {/* STEP 1 - NEW : Pending / Cleared Tabs */}
+          <div className="mb-4 flex gap-2">
+            <button type="button" onClick={() => setBillTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'pending' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bills ({pendingRows.length})</button>
+            <button type="button" onClick={() => setBillTab('cleared')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'cleared' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Cleared Bills ({clearedBills.length})</button>
+          </div>
+          {billTab === 'cleared' ? (
+            <div>
+              <h2 className="mb-2 text-base font-bold text-slate-900">Cleared Bills</h2>
+              {clearedBills.length === 0 ? (
+                <p className="text-sm text-slate-500">Abhi koi Bill Clear nahi hua hai.</p>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {clearedBills.map((entry) => (
+                    <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900">{entry.lr_no || 'Bilty'} <span className="font-normal text-slate-500">· {entry.consignor_name || entry.consignee_name || 'Customer not specified'}</span></p>
+                        <p className="text-xs text-slate-500">Cleared on: {entry.cleared_at || 'Today'}{entry.cleared_by ? ` · By: ${entry.cleared_by}` : ''}{entry.branch_code ? ` · ${entry.branch_code}` : ''}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <strong className="text-sm text-green-700">{money(entry.grand_total)}</strong>
+                        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">✓ Cleared</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+          <div>
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <h2 id="pending-amounts-title" className="text-base font-bold text-slate-900">Pending Amount Entries</h2>
             <span className="text-xs text-slate-500">Showing up to 100 unpaid bilties</span>
@@ -777,6 +830,8 @@ export default function TMSDashboard({ branch }) {
                 </div>
               ))}
             </div>
+          )}
+          </div>
           )}
         </section>
 
