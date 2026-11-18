@@ -145,6 +145,7 @@ const BiltyPrint = () => {
         pdf.text('BHARAT TRANSPORT COMPANY', 105, y, { align: 'center' }); y += 6;
         pdf.setFontSize(8); pdf.setFont('helvetica', 'normal');
         pdf.text('Head Office: Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan 331023', 105, y, { align: 'center' }); y += 4;
+        pdf.text('Mob: 9680264231, 6375717265', 105, y, { align: 'center' }); y += 4;
         pdf.text('GST NO: 08CMRPP0955N1Z5 | PAN NO: CMRPP0955N', 105, y, { align: 'center' }); y += 6;
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11);
         pdf.text(copyLabel, 105, y, { align: 'center' }); y += 4;
@@ -273,6 +274,7 @@ const BiltyPrint = () => {
         <div className="text-center border-b-2 border-black p-2" style={{ backgroundColor: 'var(--bg-accent, #f8f9ff)' }}>
           <h1 className="text-2xl font-bold m-0" style={{ color: 'var(--primary-color, #000)' }}>BHARAT TRANSPORT COMPANY</h1>
           <p className="text-xs font-bold m-1">Head Office: Ward No. 17, Purana Falsa, Pilani Road, Rajgarh, Churu, Rajasthan 331023</p>
+          <p className="text-xs font-bold m-1">Mob: 9680264231, 6375717265</p>
           <p className="text-xs font-bold m-1">GST NO: 08CMRPP0955N1Z5 | PAN NO: CMRPP0955N</p>
         </div>
         <div className="text-center my-2">
