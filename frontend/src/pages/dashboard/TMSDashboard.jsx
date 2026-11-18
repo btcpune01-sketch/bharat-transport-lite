@@ -606,7 +606,7 @@ export default function TMSDashboard({ branch }) {
   const pendingBillsBox = allBills.filter((b) => billBalance(b) > 0)
   const clearedBillsBox = allBills.filter((b) => billBalance(b) <= 0)
 
-  // *** FIX - /bill-print/1 se 404 aa raha tha, isliye Bill List pe bhejenge ***
+  // *** FIX - Ab New Tab me nahi khulega, andar hi khulega, isliye 404 nahi aayega ***
   function openBillUrl(b) {
     if (!b) return '#'
     return branchPath('bill-list')
@@ -962,9 +962,9 @@ export default function TMSDashboard({ branch }) {
                     <button type="button" onClick={() => setViewBill(b)} className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100">
                       👁 View Bill
                     </button>
-                    <a href={openBillUrl(b)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-50">
+                    <button type="button" onClick={() => navigate(openBillUrl(b))} className="inline-flex items-center gap-1 rounded-md border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-50">
                       ↗ Bill List me kholo
-                    </a>
+                    </button>
                     {canClearPending && (
                       <button type="button" onClick={() => { setLinkingBill(b); setLinkLrNo(b.lr_no || '') }} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-50">
                         🔗 Link Bilty
@@ -1160,9 +1160,9 @@ export default function TMSDashboard({ branch }) {
               <button type="button" onClick={() => setViewBill(null)} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 Band karo
               </button>
-              <a href={openBillUrl(viewBill)} target="_blank" rel="noreferrer" className="rounded-md bg-purple-700 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-800">
+              <button type="button" onClick={() => { setViewBill(null); navigate(openBillUrl(viewBill)) }} className="rounded-md bg-purple-700 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-800">
                 ↗ Bill List me kholo
-              </a>
+              </button>
               <button type="button" onClick={() => { setLinkingBill(viewBill); setLinkLrNo(viewBill.lr_no || ''); setViewBill(null) }} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">
                 🔗 Link Bilty
               </button>
