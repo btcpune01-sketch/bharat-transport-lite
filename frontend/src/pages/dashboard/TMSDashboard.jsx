@@ -210,6 +210,10 @@ export default function TMSDashboard({ branch }) {
   // STEP 3 - CHANGED : Cleared ab Server se aayega, localStorage nahi
   const [clearedBills, setClearedBills] = useState([])
   const [clearedError, setClearedError] = useState('')
+  // *** ADD START - Bill Box ke liye ***
+  const [allBills, setAllBills] = useState([])
+  const [billBoxTab, setBillBoxTab] = useState('pending')
+  // *** ADD END ***
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
@@ -317,10 +321,13 @@ export default function TMSDashboard({ branch }) {
       api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query }),
       api.get('/dashboard/pending-amount', { params: query }),
       api.get('/dashboard/cleared-amount', { params: query }),
-      dashboardAPI.getMonthlyStats(statsBranchSlug, statsBranchId)
+      dashboardAPI.getMonthlyStats(statsBranchSlug, statsBranchId),
+      // *** ADD START - Bills list for Bill Box ***
+      api.get('/bills', { params: query })
+      // *** ADD END ***
     ]).then((results) => {
       if (!active) return
-      const [statsResult, stockResult, pendingResult, clearedResult, monthlyStatsResult] = results
+      const [statsResult, stockResult, pendingResult, clearedResult, monthlyStatsResult, billsResult] = results
       if (statsResult.status === 'fulfilled' && statsResult.value.data?.success !== false) {
         setStats(getData(statsResult.value))
         setStatsUnavailable(false)
@@ -364,6 +371,15 @@ export default function TMSDashboard({ branch }) {
         setMonthlyStats({ bills: [], bilties: [] })
         setMonthlyStatsError(monthlyStatsResult.reason?.response?.data?.error || 'Monthly statistics could not be loaded.')
       }
+      // *** ADD START - Bills save, Amount ko touch nahi kiya ***
+      if (billsResult && billsResult.status === 'fulfilled') {
+        const data = getData(billsResult.value)
+        const list = Array.isArray(data) ? data : (Array.isArray(data?.bills) ? data.bills : [])
+        setAllBills(list)
+      } else {
+        setAllBills([])
+      }
+      // *** ADD END ***
     }).finally(() => {
       if (active) setLoading(false)
     })
@@ -515,6 +531,32 @@ export default function TMSDashboard({ branch }) {
     }
     return 0
   }
+
+  // *** ADD START - Bilty + Bill connection via LR NO., Amount same rahega ***
+  const billByLr = {}
+  allBills.forEach((b) => {
+    const direct = [b.lr_no, b.lrNo, b.bilty_no, b.biltyNo].filter(Boolean)
+    const arr = Array.isArray(b.lr_numbers) ? b.lr_numbers : (Array.isArray(b.lr_nos) ? b.lr_nos : (Array.isArray(b.bilty_numbers) ? b.bilty_numbers : []))
+    const itemLrs = Array.isArray(b.items) ? b.items.map((i) => i.lr_no || i.lrNo || i.bilty_no).filter(Boolean) : []
+    ;[...direct, ...arr, ...itemLrs].forEach((lr) => { if (lr) billByLr[String(lr).trim()] = b })
+  })
+  function getBiltyBillingStatus(entry) {
+    const bill = billByLr[String(entry.lr_no || '').trim()]
+    if (!bill) return { label: 'Billing pending', cls: 'bg-red-100 text-red-700', dot: 'bg-red-500' }
+    const s = String(bill.payment_status || bill.status || '').toLowerCase()
+    const isPaid = s.includes('paid') || s.includes('cleared') || s.includes('received') || clearedBills.some((c) => String(c.lr_no) === String(entry.lr_no))
+    if (isPaid) return { label: 'Payment Received ✅', cls: 'bg-green-100 text-green-700', dot: 'bg-green-500' }
+    return { label: 'Bill Done - Payment Pending', cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
+  }
+  const pendingBillsBox = allBills.filter((b) => {
+    const s = String(b.payment_status || b.status || '').toLowerCase()
+    return !s.includes('paid') && !s.includes('cleared') && !s.includes('received')
+  })
+  const clearedBillsBox = allBills.filter((b) => {
+    const s = String(b.payment_status || b.status || '').toLowerCase()
+    return s.includes('paid') || s.includes('cleared') || s.includes('received')
+  })
+  // *** ADD END ***
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -807,7 +849,7 @@ export default function TMSDashboard({ branch }) {
           ) : (
           <div>
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <h2 id="pending-amounts-title" className="text-base font-bold text-slate-900">Pending Amount Entries</h2>
+            <h2 id="pending-amounts-title" className="text-base font-bold text-slate-900">Bilty</h2>
             <span className="text-xs text-slate-500">Showing up to 100 unpaid bilties</span>
             {loading && <span className="text-xs text-slate-500">Updating…</span>}
           </div>
@@ -821,6 +863,9 @@ export default function TMSDashboard({ branch }) {
                 <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900">{entry.lr_no || 'Bilty'} <span className="font-normal text-slate-500">· {entry.consignor_name || entry.consignee_name || 'Customer not specified'}</span></p>
+                    {/* *** ADD START - Bilty Billing Status Badge *** */}
+                    {(() => { const st = getBiltyBillingStatus(entry); return (<span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}><span className={`h-2 w-2 rounded-full ${st.dot}`} />{st.label}</span>) })()}
+                    {/* *** ADD END *** */}
                     <p className="text-xs text-slate-500">{entry.lr_date || 'Date unavailable'}{entry.branch_code ? ` · ${entry.branch_code}` : ''}</p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -842,6 +887,31 @@ export default function TMSDashboard({ branch }) {
           </div>
           )}
         </section>
+
+        {/* *** ADD START - Naya Bill Box, Dashboard + Admin + Sab Branch *** */}
+        <section aria-label="Bill Box" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex gap-2">
+            <button type="button" onClick={() => setBillBoxTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billBoxTab === 'pending' ? 'bg-yellow-500 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bills ({pendingBillsBox.length})</button>
+            <button type="button" onClick={() => setBillBoxTab('cleared')} className={`rounded-full px-4 py-2 text-sm font-bold ${billBoxTab === 'cleared' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Cleared Bills ({clearedBillsBox.length})</button>
+          </div>
+          <h2 className="mb-2 text-base font-bold text-slate-900">Bill</h2>
+          {(billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).length === 0 ? (
+            <p className="text-sm text-slate-500">{billBoxTab === 'pending' ? 'No pending bills.' : 'No cleared bills.'}</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {(billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).map((b) => (
+                <div key={b.id || b.bill_no || b.invoice_no} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{b.bill_no || b.invoice_no || b.bill_number} <span className="font-normal text-slate-500">· LR: {b.lr_no || (Array.isArray(b.items) ? b.items.map((i) => i.lr_no).join(', ') : '') || '—'} · {b.party_name || b.customer_name || b.consignor_name || ''}</span></p>
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${billBoxTab === 'cleared' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>{billBoxTab === 'cleared' ? 'Payment Received ✅' : 'Bill Done - Payment Pending'}</span>
+                  </div>
+                  <strong className="text-sm text-slate-900">{money(b.grand_total || b.total_amount || b.amount)}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        {/* *** ADD END *** */}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center gap-2">
