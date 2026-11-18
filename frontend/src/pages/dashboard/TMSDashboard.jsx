@@ -212,10 +212,11 @@ export default function TMSDashboard({ branch }) {
   const [billBoxTab, setBillBoxTab] = useState('pending')
   const [billToClear, setBillToClear] = useState(null)
   const [clearingBill, setClearingBill] = useState(false)
-  // *** Bilty se Bill Connect - Bilty Number se hi, Party se nahi ***
   const [linkingBill, setLinkingBill] = useState(null)
   const [linkLrNo, setLinkLrNo] = useState('')
   const [linking, setLinking] = useState(false)
+  // *** NEW - Bill ko yahi se khol ke dekhne ke liye ***
+  const [viewBill, setViewBill] = useState(null)
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
@@ -532,7 +533,6 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
-  // *** Bilty se Bill Connect - SIRF Bilty Number se ***
   async function linkBillToBilty() {
     if (!linkingBill || !linkLrNo.trim()) return
     const lr = linkLrNo.trim()
@@ -587,7 +587,6 @@ export default function TMSDashboard({ branch }) {
 
   const billBalance = (b) => Number(b?.net_balance ?? b?.balance_due ?? b?.grand_total ?? 0)
   const billNoOf = (b) => b?.bill_no || b?.invoice_no || b?.bill_number || b?.billNo || ''
-  // *** SIRF Bilty Number se Connection - Party se nahi ***
   const billByLr = {}
   allBills.forEach((b) => {
     const direct = [b.lr_no, b.lrNo, b.bilty_no, b.biltyNo].filter(Boolean)
@@ -607,6 +606,13 @@ export default function TMSDashboard({ branch }) {
   }
   const pendingBillsBox = allBills.filter((b) => billBalance(b) > 0)
   const clearedBillsBox = allBills.filter((b) => billBalance(b) <= 0)
+
+  // *** NEW - Bill kholne ka link - Bill Print page pe jayega ***
+  function openBillUrl(b) {
+    if (!b) return '#'
+    if (b.id) return branchPath(`bill-print/${b.id}`)
+    return branchPath('bill-list')
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 font-sans text-slate-800">
@@ -864,7 +870,6 @@ export default function TMSDashboard({ branch }) {
 
         {isAdmin && <BranchPaymentStatus />}
 
-        {/* *** FIX - Upar wala Bilty Box, Bill nahi *** */}
         <section aria-labelledby="pending-amounts-title" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex gap-2">
             <button type="button" onClick={() => setBillTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'pending' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bilty ({pendingRows.length})</button>
@@ -934,7 +939,7 @@ export default function TMSDashboard({ branch }) {
           )}
         </section>
 
-        {/* *** Neeche wala Bill Box - Yaha Bills hi rahega *** */}
+        {/* *** Bill Box - Yaha se Bill khol sakte ho *** */}
         <section aria-label="Bill Box" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex gap-2">
             <button type="button" onClick={() => setBillBoxTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billBoxTab === 'pending' ? 'bg-yellow-500 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bills ({pendingBillsBox.length})</button>
@@ -948,11 +953,23 @@ export default function TMSDashboard({ branch }) {
               {(billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).map((b) => (
                 <div key={b.id || b.bill_no || b.invoice_no} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div>
-                    <p className="font-semibold text-slate-900">{b.bill_no || b.invoice_no || b.bill_number} <span className="font-normal text-slate-500">· Bilty No: {b.lr_no || (Array.isArray(b.items) ? b.items.map((i) => i.lr_no).join(', ') : '') || '—'} · {b.party_name || b.customer_name || b.consignor_name || ''}</span></p>
+                    {/* Bill No pe click karte hi Bill khul jayega */}
+                    <button type="button" onClick={() => setViewBill(b)} className="text-left font-semibold text-blue-700 underline hover:text-blue-900">
+                      {b.bill_no || b.invoice_no || b.bill_number}
+                    </button>
+                    <span className="font-normal text-slate-500"> · Bilty No: {b.lr_no || (Array.isArray(b.items) ? b.items.map((i) => i.lr_no).join(', ') : '') || '—'} · {b.party_name || b.customer_name || b.consignor_name || ''}</span>
+                    <br />
                     <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${billBoxTab === 'cleared' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>{billBoxTab === 'cleared' ? 'Payment Received ✅' : 'Bill Done - Payment Pending'}</span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-sm text-slate-900">{money(b.grand_total || b.total_amount || b.amount)}</strong>
+                    {/* NEW - Bill Open karne ka button */}
+                    <button type="button" onClick={() => setViewBill(b)} className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100">
+                      👁 View Bill
+                    </button>
+                    <a href={openBillUrl(b)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-50">
+                      ↗ Full Print
+                    </a>
                     {canClearPending && (
                       <button type="button" onClick={() => { setLinkingBill(b); setLinkLrNo(b.lr_no || '') }} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-50">
                         🔗 Link Bilty
@@ -1107,6 +1124,53 @@ export default function TMSDashboard({ branch }) {
               </button>
               <button type="button" disabled={linking || !linkLrNo.trim()} onClick={linkBillToBilty} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
                 {linking ? 'Linking…' : 'Link kar do'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {/* *** NEW - Bill View Popup - Yahi se Bill khul jayega *** */}
+      {viewBill && (
+        <div role="dialog" aria-modal="true" aria-labelledby="view-bill-title" className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4">
+          <section className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="view-bill-title" className="text-lg font-bold text-slate-900">Bill Details</h2>
+                <p className="mt-1 text-sm text-slate-500">Is Bill ka pura detail yahi dikh jayega</p>
+              </div>
+              <button type="button" onClick={() => setViewBill(null)} className="rounded p-1 text-slate-500 hover:bg-slate-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+              <dt className="text-slate-500">Bill No</dt><dd className="font-bold text-slate-900">{viewBill.bill_no || viewBill.invoice_no || viewBill.bill_number || '—'}</dd>
+              <dt className="text-slate-500">Party</dt><dd className="font-bold text-slate-900">{viewBill.party_name || viewBill.customer_name || viewBill.consignor_name || viewBill.consignee_name || '—'}</dd>
+              <dt className="text-slate-500">Bilty No / LR No</dt><dd className="font-bold text-slate-900">{viewBill.lr_no || viewBill.bilty_no || (Array.isArray(viewBill.items) ? viewBill.items.map((i) => i.lr_no).filter(Boolean).join(', ') : '') || '— (Abhi Link nahi hua)'}</dd>
+              <dt className="text-slate-500">Bill Date</dt><dd className="text-slate-900">{viewBill.bill_date || viewBill.date || viewBill.created_at || '—'}</dd>
+              <dt className="text-slate-500">Amount</dt><dd className="font-bold text-slate-900">{money(viewBill.grand_total || viewBill.total_amount || viewBill.amount)}</dd>
+              <dt className="text-slate-500">Balance / Pending</dt><dd className="font-bold text-red-700">{money(billBalance(viewBill))}</dd>
+              <dt className="text-slate-500">Status</dt><dd className="font-bold text-slate-900">{billBalance(viewBill) <= 0 ? 'Payment Clear ✅' : 'Payment Pending'}</dd>
+              <dt className="text-slate-500">Branch</dt><dd className="text-slate-900">{viewBill.branch_code || viewBill.branch_name || branchSlug || '—'}</dd>
+            </dl>
+            {Array.isArray(viewBill.items) && viewBill.items.length > 0 && (
+              <div className="mt-4 border-t border-slate-200 pt-3">
+                <p className="text-sm font-bold text-slate-900">Bill Items ({viewBill.items.length})</p>
+                <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                  {viewBill.items.map((it, idx) => (
+                    <li key={idx} className="flex justify-between gap-2"><span>{it.description || it.item_name || it.lr_no || `Item ${idx + 1}`}</span><span className="font-semibold">{money(it.amount || it.total || it.grand_total)}</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setViewBill(null)} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Band karo
+              </button>
+              <a href={openBillUrl(viewBill)} target="_blank" rel="noreferrer" className="rounded-md bg-purple-700 px-3 py-2 text-sm font-semibold text-white hover:bg-purple-800">
+                ↗ Full Bill Print kholo
+              </a>
+              <button type="button" onClick={() => { setLinkingBill(viewBill); setLinkLrNo(viewBill.lr_no || ''); setViewBill(null) }} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+                🔗 Link Bilty
               </button>
             </div>
           </section>
