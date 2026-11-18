@@ -210,10 +210,12 @@ export default function TMSDashboard({ branch }) {
   const [clearedError, setClearedError] = useState('')
   const [allBills, setAllBills] = useState([])
   const [billBoxTab, setBillBoxTab] = useState('pending')
-  // *** ADD START - Sirf Bill Clear ke liye, Bilty ko haath nahi ***
   const [billToClear, setBillToClear] = useState(null)
   const [clearingBill, setClearingBill] = useState(false)
-  // *** ADD END ***
+  // *** Bilty se Bill Connect - Bilty Number se hi, Party se nahi ***
+  const [linkingBill, setLinkingBill] = useState(null)
+  const [linkLrNo, setLinkLrNo] = useState('')
+  const [linking, setLinking] = useState(false)
   const [branches, setBranches] = useState([])
   const [statsUnavailable, setStatsUnavailable] = useState(false)
   const [activeMenu, setActiveMenu] = useState('')
@@ -504,7 +506,6 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
-  // *** ADD START - Sirf Bill Clear, Bilty ko haath nahi ***
   async function clearBillAmount() {
     if (!billToClear) return
     setClearingBill(true)
@@ -514,11 +515,9 @@ export default function TMSDashboard({ branch }) {
       if (activeBranch?.id) params.branch_id = activeBranch.id
     }
     try {
-      // BillList jaisa logic: net_balance 0 hote hi Bill Cleared me jayega
       try {
         await api.patch(`/bills/${billToClear.id}`, { net_balance: 0, balance_due: 0, payment_status: 'cleared', status: 'cleared' }, { params })
       } catch (e) {
-        // Agar PATCH /bills/:id na chale to /clear try karo
         await api.patch(`/bills/${billToClear.id}/clear`, {}, { params })
       }
       setAllBills((prev) => prev.map((b) => String(b.id) === String(billToClear.id) ? { ...b, net_balance: 0, balance_due: 0, payment_status: 'cleared', status: 'cleared' } : b))
@@ -532,7 +531,36 @@ export default function TMSDashboard({ branch }) {
       setClearingBill(false)
     }
   }
-  // *** ADD END ***
+
+  // *** Bilty se Bill Connect - SIRF Bilty Number se ***
+  async function linkBillToBilty() {
+    if (!linkingBill || !linkLrNo.trim()) return
+    const lr = linkLrNo.trim()
+    const exists = pendingRows.some((r) => String(r.lr_no).trim() === lr) || clearedBills.some((r) => String(r.lr_no).trim() === lr)
+    if (!exists) {
+      toast.error(`Bilty ${lr} Dashboard me nahi mili. Sahi Bilty Number likho.`)
+      return
+    }
+    setLinking(true)
+    const params = {}
+    if (isBranchDashboard) {
+      params.branch = branchSlug
+      if (activeBranch?.id) params.branch_id = activeBranch.id
+    }
+    try {
+      await api.patch(`/bills/${linkingBill.id}`, { lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] }, { params })
+      setAllBills((prev) => prev.map((b) => String(b.id) === String(linkingBill.id) ? { ...b, lr_no: lr, lrNo: lr, bilty_no: lr, lr_numbers: [lr] } : b))
+      toast.success(`Bill ${linkingBill.bill_no} ab Bilty ${lr} se connect ho gaya.`)
+      setLinkingBill(null)
+      setLinkLrNo('')
+      setRefreshKey((key) => key + 1)
+    } catch (error) {
+      console.error('Unable to link bill to bilty:', error)
+      toast.error(error.response?.data?.error || 'Link nahi ho paya.')
+    } finally {
+      setLinking(false)
+    }
+  }
 
   async function handleLogout() {
     await logout()
@@ -558,6 +586,8 @@ export default function TMSDashboard({ branch }) {
   }
 
   const billBalance = (b) => Number(b?.net_balance ?? b?.balance_due ?? b?.grand_total ?? 0)
+  const billNoOf = (b) => b?.bill_no || b?.invoice_no || b?.bill_number || b?.billNo || ''
+  // *** SIRF Bilty Number se Connection - Party se nahi ***
   const billByLr = {}
   allBills.forEach((b) => {
     const direct = [b.lr_no, b.lrNo, b.bilty_no, b.biltyNo].filter(Boolean)
@@ -565,12 +595,15 @@ export default function TMSDashboard({ branch }) {
     const itemLrs = Array.isArray(b.items) ? b.items.map((i) => i.lr_no || i.lrNo || i.bilty_no).filter(Boolean) : []
     ;[...direct, ...arr, ...itemLrs].forEach((lr) => { if (lr) billByLr[String(lr).trim()] = b })
   })
+  function findBillForBilty(entry) {
+    return billByLr[String(entry.lr_no || '').trim()] || null
+  }
   function getBiltyBillingStatus(entry) {
-    const bill = billByLr[String(entry.lr_no || '').trim()]
-    if (!bill) return { label: 'Billing pending', cls: 'bg-red-100 text-red-700', dot: 'bg-red-500' }
+    const bill = findBillForBilty(entry)
+    if (!bill) return { label: 'Billing pending', sub: 'Is Bilty ka Bill abhi nahi bana hai', cls: 'bg-red-100 text-red-700', dot: 'bg-red-500' }
     const isPaid = billBalance(bill) <= 0
-    if (isPaid) return { label: 'Payment Received ✅', cls: 'bg-green-100 text-green-700', dot: 'bg-green-500' }
-    return { label: 'Bill Done - Payment Pending', cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
+    if (isPaid) return { label: `Bill ${billNoOf(bill)} - Payment Clear ✅`, sub: `Is Bilty ka Bill ${billNoOf(bill)} tha, Payment Clear ho gaya hai`, cls: 'bg-green-100 text-green-700', dot: 'bg-green-500' }
+    return { label: `Bill ${billNoOf(bill)} - Payment Pending`, sub: `Is Bilty ka Bill ${billNoOf(bill)} ban gaya hai, Payment baaki hai`, cls: 'bg-yellow-100 text-yellow-800', dot: 'bg-yellow-500' }
   }
   const pendingBillsBox = allBills.filter((b) => billBalance(b) > 0)
   const clearedBillsBox = allBills.filter((b) => billBalance(b) <= 0)
@@ -645,12 +678,12 @@ export default function TMSDashboard({ branch }) {
                 <strong className="text-slate-800">Notifications</strong>
                 {pendingRows.length > 0 ? (
                   <div className="mt-2">
-                    <p className="font-bold text-red-600">⚠️ {pendingRows.length} Bill Pending hai</p>
+                    <p className="font-bold text-red-600">⚠️ {pendingRows.length} Bilty Pending hai</p>
                     <p className="text-slate-500">Total Pending: {money(pendingRows.reduce((s, r) => s + Number(r.grand_total || 0), 0))}</p>
                     <p className="mt-1 text-slate-500">Payment aaye to Pending se Clear kar do.</p>
                   </div>
                 ) : (
-                  <p className="mt-2 text-slate-500">Koi Pending Bill nahi hai. Sab Clear hai ✅</p>
+                  <p className="mt-2 text-slate-500">Koi Pending Bilty nahi hai. Sab Clear hai ✅</p>
                 )}
               </div>
             )}
@@ -831,18 +864,19 @@ export default function TMSDashboard({ branch }) {
 
         {isAdmin && <BranchPaymentStatus />}
 
+        {/* *** FIX - Upar wala Bilty Box, Bill nahi *** */}
         <section aria-labelledby="pending-amounts-title" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex gap-2">
-            <button type="button" onClick={() => setBillTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'pending' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bills ({pendingRows.length})</button>
-            <button type="button" onClick={() => setBillTab('cleared')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'cleared' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Cleared Bills ({clearedBills.length})</button>
+            <button type="button" onClick={() => setBillTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'pending' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bilty ({pendingRows.length})</button>
+            <button type="button" onClick={() => setBillTab('cleared')} className={`rounded-full px-4 py-2 text-sm font-bold ${billTab === 'cleared' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Cleared Bilty ({clearedBills.length})</button>
           </div>
           {billTab === 'cleared' ? (
             <div>
-              <h2 className="mb-2 text-base font-bold text-slate-900">Cleared Bills</h2>
+              <h2 className="mb-2 text-base font-bold text-slate-900">Cleared Bilty</h2>
               {clearedError ? (
                 <p className="text-sm text-amber-800">{clearedError}</p>
               ) : clearedBills.length === 0 ? (
-                <p className="text-sm text-slate-500">Abhi koi Bill Clear nahi hua hai.</p>
+                <p className="text-sm text-slate-500">Abhi koi Bilty Clear nahi hui hai.</p>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {clearedBills.map((entry) => (
@@ -877,7 +911,7 @@ export default function TMSDashboard({ branch }) {
                 <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900">{entry.lr_no || 'Bilty'} <span className="font-normal text-slate-500">· {entry.consignor_name || entry.consignee_name || 'Customer not specified'}</span></p>
-                    {(() => { const st = getBiltyBillingStatus(entry); return (<span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}><span className={`h-2 w-2 rounded-full ${st.dot}`} />{st.label}</span>) })()}
+                    {(() => { const st = getBiltyBillingStatus(entry); return (<><span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${st.cls}`}><span className={`h-2 w-2 rounded-full ${st.dot}`} />{st.label}</span><p className="mt-1 text-[11px] text-slate-500">{st.sub}</p></>) })()}
                     <p className="text-xs text-slate-500">{entry.lr_date || 'Date unavailable'}{entry.branch_code ? ` · ${entry.branch_code}` : ''}</p>
                   </div>
                   <div className="flex items-center gap-3">
@@ -900,7 +934,7 @@ export default function TMSDashboard({ branch }) {
           )}
         </section>
 
-        {/* *** BILL BOX - Sirf Bill Clear, Bilty ko haath nahi *** */}
+        {/* *** Neeche wala Bill Box - Yaha Bills hi rahega *** */}
         <section aria-label="Bill Box" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex gap-2">
             <button type="button" onClick={() => setBillBoxTab('pending')} className={`rounded-full px-4 py-2 text-sm font-bold ${billBoxTab === 'pending' ? 'bg-yellow-500 text-white' : 'bg-slate-100 text-slate-700'}`}>Pending Bills ({pendingBillsBox.length})</button>
@@ -914,11 +948,16 @@ export default function TMSDashboard({ branch }) {
               {(billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).map((b) => (
                 <div key={b.id || b.bill_no || b.invoice_no} className="flex flex-wrap items-center justify-between gap-3 py-3">
                   <div>
-                    <p className="font-semibold text-slate-900">{b.bill_no || b.invoice_no || b.bill_number} <span className="font-normal text-slate-500">· LR: {b.lr_no || (Array.isArray(b.items) ? b.items.map((i) => i.lr_no).join(', ') : '') || '—'} · {b.party_name || b.customer_name || b.consignor_name || ''}</span></p>
+                    <p className="font-semibold text-slate-900">{b.bill_no || b.invoice_no || b.bill_number} <span className="font-normal text-slate-500">· Bilty No: {b.lr_no || (Array.isArray(b.items) ? b.items.map((i) => i.lr_no).join(', ') : '') || '—'} · {b.party_name || b.customer_name || b.consignor_name || ''}</span></p>
                     <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${billBoxTab === 'cleared' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>{billBoxTab === 'cleared' ? 'Payment Received ✅' : 'Bill Done - Payment Pending'}</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <strong className="text-sm text-slate-900">{money(b.grand_total || b.total_amount || b.amount)}</strong>
+                    {canClearPending && (
+                      <button type="button" onClick={() => { setLinkingBill(b); setLinkLrNo(b.lr_no || '') }} className="inline-flex items-center gap-1 rounded-md border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-50">
+                        🔗 Link Bilty
+                      </button>
+                    )}
                     {billBoxTab === 'pending' && canClearPending && (
                       <button type="button" onClick={() => setBillToClear(b)} className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50">
                         <CheckCircle2 className="h-4 w-4" />Clear
@@ -1018,7 +1057,6 @@ export default function TMSDashboard({ branch }) {
           </section>
         </div>
       )}
-      {/* *** ADD START - Sirf Bill Clear Popup *** */}
       {billToClear && (
         <div role="dialog" aria-modal="true" aria-labelledby="clear-bill-title" className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4">
           <section className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
@@ -1045,7 +1083,35 @@ export default function TMSDashboard({ branch }) {
           </section>
         </div>
       )}
-      {/* *** ADD END *** */}
+      {linkingBill && (
+        <div role="dialog" aria-modal="true" aria-labelledby="link-bilty-title" className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4">
+          <section className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="link-bilty-title" className="text-lg font-bold text-slate-900">Bill ko Bilty se Link karo</h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Bill <b>{linkingBill.bill_no}</b> kis Bilty ka hai? Bilty Number likho. Jaise - BTC-12307
+                  <br />Party naam se nahi, SIRF Bilty Number se jodega, taaki 10 Bilty me confusion na ho.
+                </p>
+              </div>
+              <button type="button" disabled={linking} onClick={() => { setLinkingBill(null); setLinkLrNo('') }} className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <label className="mt-4 block text-sm font-semibold text-slate-700">Bilty Number / LR No</label>
+            <input value={linkLrNo} onChange={(e) => setLinkLrNo(e.target.value)} placeholder="BTC-12307" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500" />
+            <p className="mt-2 text-xs text-slate-500">Dashboard me maujood Bilty Number hi likhna hai.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" disabled={linking} onClick={() => { setLinkingBill(null); setLinkLrNo('') }} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="button" disabled={linking || !linkLrNo.trim()} onClick={linkBillToBilty} className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+                {linking ? 'Linking…' : 'Link kar do'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }
