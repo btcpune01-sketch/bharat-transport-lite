@@ -98,6 +98,16 @@ export default function BillList({ branchMode = false, branchCode }) {
     }
   }
 
+  // FIX: Branch Edit - pehle /bill-entry/:id pe ja raha tha jo route hai hi nahi, isliye dashboard pe aa raha tha. Ab /bill-edit/:id pe jayega jo bana hua hai.
+  const handleEdit = (bill) => {
+    if (branchMode) {
+      sessionStorage.setItem('branchReturn', `/branch/${encodeURIComponent(branchCode)}/bill-list`)
+      navigate(`/bill-edit/${bill.id}?branch=${encodeURIComponent(branchCode)}`)
+    } else {
+      navigate(`/bill-edit/${bill.id}`)
+    }
+  }
+
   return (
     <div className="min-h-screen w-full bg-[#eef2f7]">
       <header className="bg-red-700 text-white shadow-lg">
@@ -145,7 +155,7 @@ export default function BillList({ branchMode = false, branchCode }) {
                   <td className="px-4 py-3 text-right font-medium">₹{Number(bill.grand_total || 0).toLocaleString('en-IN')}</td>
                   <td className="px-4 py-3 text-right font-medium text-red-600">₹{Number(bill.net_balance || bill.balance_due || 0).toLocaleString('en-IN')}</td>
                   <td className="px-4 py-3 text-center">
-                    <Link to={branchMode ? `/branch/${encodeURIComponent(branchCode)}/bill-entry/${bill.id}` : `/bill-edit/${bill.id}`} className="ml-2 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 text-sm font-medium inline-block">Edit</Link>
+                    <button type="button" onClick={() => handleEdit(bill)} className="ml-2 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 text-sm font-medium inline-block">Edit</button>
                     <Link to={branchMode ? `/branch/${encodeURIComponent(branchCode)}/bill-print/${bill.id}` : `/bill-print/${bill.id}`} className="ml-2 bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm font-medium inline-block">Print</Link>
                     {canDelete && <button type="button" onClick={() => deleteBill(bill)} className="ml-2 bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 text-sm font-medium">Delete</button>}
                   </td>
