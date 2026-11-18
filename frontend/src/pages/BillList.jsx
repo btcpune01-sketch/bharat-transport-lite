@@ -5,6 +5,40 @@ import { formatDate } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
+// *** SIRF BRANCH KE LIYE - ADMIN KA BILL BRANCH ME NAHI - ADMIN KO HAATH NAHI ***
+function normalizeBranch(v) {
+  return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+// AHMD = ahmedabad, PUNE = pune - dono ko same mano
+function branchAliases(code) {
+  const n = normalizeBranch(code)
+  const map = {
+    ahmd: ['ahmd', 'ahmedabad'],
+    ahmedabad: ['ahmd', 'ahmedabad'],
+    ahm: ['ahmd', 'ahmedabad', 'ahm'],
+    pune: ['pune', 'pun'],
+    pun: ['pune', 'pun'],
+    mumbai: ['mumbai', 'mum', 'bombay'],
+    mum: ['mumbai', 'mum', 'bombay'],
+    dlh: ['dlh', 'delhi', 'del'],
+    delhi: ['dlh', 'delhi', 'del'],
+    del: ['dlh', 'delhi', 'del'],
+  }
+  return map[n] || [n]
+}
+function isBillForCurrentBranch(bill, branchCode) {
+  if (!branchCode) return true
+  if (!bill || typeof bill !== 'object') return false
+  const wantList = branchAliases(branchCode)
+  const candidates = [
+    bill.branch_slug, bill.branchSlug, bill.branch_code, bill.branchCode,
+    bill.branch, bill.branch_name, bill.branchName, bill.branch_id, bill.branchId
+  ].filter((x) => x !== undefined && x !== null && String(x).trim() !== '')
+  // Branch hi nahi likha hai to ye Admin/Global ka Bill hai - Branch me MAT dikhao
+  if (candidates.length === 0) return false
+  return candidates.some((c) => wantList.includes(normalizeBranch(c)))
+}
+
 export default function BillList({ branchMode = false, branchCode }) {
   const { currentUser } = useAuth()
   const canDelete = canDeleteRecords(currentUser?.role)
@@ -53,14 +87,22 @@ export default function BillList({ branchMode = false, branchCode }) {
         setLoadError('Bill server par save nahi hua - Database connected nahi hai. Vercel me DATABASE_URL / JWT_SECRET check karo.')
         return
       }
-      const billsData = normalizeBills(res.data)
+      let billsData = normalizeBills(res.data)
+      // *** MAIN FIX - Server ne Admin ka Bill bhej bhi diya to yaha kaat do ***
+      // Branch me SIRF usi Branch ka Bill rakho, Admin ka hata do
+      if (branchMode && branchCode) {
+        billsData = billsData.filter((b) => isBillForCurrentBranch(b, branchCode))
+      }
       if (requestId !== requestSequence.current) return
       setBills((current) => offset === 0 ? billsData : [
         ...current,
         ...billsData.filter((bill) => !current.some((item) => String(item.id) === String(bill.id)))
       ])
       const raw = res.data || {}
-      const total = Number(raw.total ?? raw.count ?? raw.totalCount ?? billsData.length)
+      // Branch me Total bhi filtered wala dikhao, Server wala total mat dikhao
+      const total = (branchMode && branchCode)
+        ? billsData.length
+        : Number(raw.total ?? raw.count ?? raw.totalCount ?? billsData.length)
       setTotalBills(Number.isFinite(total) ? total : billsData.length)
       setHasMore(Boolean(raw.hasMore ?? raw.has_more ?? (billsData.length === 50)))
       setLoadError('')
