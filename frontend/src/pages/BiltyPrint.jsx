@@ -15,6 +15,15 @@ const preferredMeasurement = (primary, legacy) => {
   return primary ?? legacy ?? 0;
 };
 
+// *** SIRF YE HELPER ADD KIYA HAI - BAKI KUCH NAHI ***
+const normalizePrintBasis = (d) => {
+  const raw = String(d?.basis_of_booking || d?.basis_booking || d?.booking_basis || d?.payment_type || d?.payment_status || '').trim().toUpperCase().replace(/[\s_-]+/g, '_');
+  if (raw === 'TO_PAY' || raw === 'TOPAY' || raw === '1') return 'TO_PAY';
+  if (raw === 'TO_BE_BILLED' || raw === 'TO_BB' || raw === 'TBB' || raw === 'TO_BE_BILL' || raw === 'BILLED' || raw === '2') return 'TO_BE_BILLED';
+  if (raw === 'PAID' || raw === '3') return 'PAID';
+  return raw || '';
+};
+
 const BiltyPrint = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -175,7 +184,7 @@ const BiltyPrint = () => {
         pdf.text(`Act Wt: ${data.actual_weight || 0}   Chg Wt: ${data.charged_weight || 0}   E-Way: ${data.eway_bill_no || '-'}`, left, y); y += 6;
         pdf.text(`Description: ${data.description || data.material_desc || '-'}`, left, y); y += 6;
         pdf.text(`Size LxWxH: ${data.length || '-'} x ${data.width || '-'} x ${data.height || '-'}   CFT: ${data.total_cft || '-'}`, left, y); y += 6;
-        pdf.text(`Declared Value: Rs.${data.declared_value || '-'}   Basis: ${data.basis_booking || '-'}`, left, y); y += 10;
+        pdf.text(`Declared Value: Rs.${data.declared_value || '-'}   Basis: ${normalizePrintBasis(data) === 'TO_BE_BILLED' ? 'TO BB' : normalizePrintBasis(data) === 'TO_PAY' ? 'TO PAY' : normalizePrintBasis(data) === 'PAID' ? 'PAID' : '-'}`, left, y); y += 10;
         pdf.setFont('helvetica', 'bold'); pdf.setFontSize(11); pdf.text('FREIGHT DETAILS', left, y); y += 7;
         pdf.setFontSize(10); pdf.setFont('helvetica', 'normal');
         const f = (l, v) => { pdf.text(l, left, y); pdf.text(`Rs.${v || 0}`, 80, y); y += 6; };
@@ -366,9 +375,9 @@ const BiltyPrint = () => {
                 <div className="flex-1 text-xs font-bold border-b border-dotted border-gray-600">{data.billed_at || data.basis_party}</div>
               </div>
               <div className="flex justify-between flex-nowrap text-xs font-black mt-2 border-t border-dashed border-gray-600 pt-2 gap-2">
-                <label className="inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"><input type="radio" name={`basis_${copyLabel}`} checked={data.basis_booking === 'TO PAY'} readOnly /> TO PAY</label>
-                <label className="inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"><input type="radio" name={`basis_${copyLabel}`} checked={data.basis_booking === 'PAID'} readOnly /> PAID</label>
-                <label className="inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"><input type="radio" name={`basis_${copyLabel}`} checked={data.basis_booking === 'TO BB'} readOnly /> TO BB</label>
+                <label className="inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"><input type="radio" name={`basis_${copyLabel}`} checked={normalizePrintBasis(data) === 'TO_PAY'} readOnly /> TO PAY</label>
+                <label className="inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"><input type="radio" name={`basis_${copyLabel}`} checked={normalizePrintBasis(data) === 'PAID'} readOnly /> PAID</label>
+                <label className="inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"><input type="radio" name={`basis_${copyLabel}`} checked={normalizePrintBasis(data) === 'TO_BE_BILLED'} readOnly /> TO BB</label>
               </div>
             </div>
           </div>
