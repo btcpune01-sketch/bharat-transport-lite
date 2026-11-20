@@ -698,10 +698,22 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
-  async function handleLogout() {
+    async function handleLogout() {
+    // *** FIX - Branch Logout apne Branch Login pe jayega, Admin wale pe nahi ***
+    // Logout se pehle hi Branch yaad kar lo, kyunki logout() ke baad session saaf ho jata hai
+    const wasBranchDashboard = isBranchDashboard
+    const wasBranchSlug = branchSlug
+    const wasAdminViewingBranch = canAdminViewBranch
     await logout()
     sessionStorage.clear()
-    navigate('/login', { replace: true })
+    // 1. Agar Branch ka user hai (Amit - Ahmedabad) -> usi Branch ke Login pe jao
+    // 2. Agar Admin hai ya Admin Branch dekh raha tha -> Admin wale /login pe jao
+    // 3. Pune wala Pune pe, Ahmedabad wala Ahmedabad pe - kabhi dusre ke Login pe nahi
+    if (wasBranchDashboard && !wasAdminViewingBranch && wasBranchSlug) {
+      navigate(`/branch-login/${encodeURIComponent(wasBranchSlug)}`, { replace: true })
+    } else {
+      navigate('/login', { replace: true })
+    }
   }
 
   function stockBalance(stationery) {
