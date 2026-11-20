@@ -739,6 +739,7 @@ async function runMigrations() {
   await addColumnIfNotExists('consignments', 'pod_remarks', 'TEXT');
   await addColumnIfNotExists('consignments', 'updated_at', 'TIMESTAMP DEFAULT NOW()');
   await addColumnIfNotExists('consignments', 'payment_status', "TEXT DEFAULT 'Unpaid'");
+  await addColumnIfNotExists('consignments', 'payment_type', 'TEXT');
   await addColumnIfNotExists('consignments', 'cleared_at', 'TIMESTAMPTZ');
   await addColumnIfNotExists('consignments', 'cleared_by', 'TEXT');
   await addColumnIfNotExists('consignments', 'mr_active', 'BOOLEAN DEFAULT FALSE');
