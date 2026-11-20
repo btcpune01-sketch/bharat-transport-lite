@@ -74,6 +74,8 @@ const BRANCH_ROUTE_PATTERNS = [
   /^\/api\/dashboard\/pending-amount$/,
   /^\/api\/dashboard\/recent$/,
   /^\/api\/dashboard\/top-parties$/,
+  /^\/api\/dashboard\/cleared-amount$/,
+  /^\/api\/document-series(?:\/.*)?$/,
   /^\/api\/stock$/,
   /^\/api\/stationery-stock$/,
   /^\/api\/stationery-stock\/request$/,
