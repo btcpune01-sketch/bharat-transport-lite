@@ -215,7 +215,7 @@ const Consignments = ({ branchMode = false, branchCode }) => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => navigate(`/consignments/${c.id}/edit`)}
+                          onClick={() => navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/bilty-entry/${c.id}` : `/consignments/${c.id}/edit`)}
                           className="text-green-600 hover:text-green-800 p-1 transition"
                           title="Edit"
                         >
