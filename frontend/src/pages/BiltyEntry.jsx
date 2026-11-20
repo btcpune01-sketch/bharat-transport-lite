@@ -1,4 +1,5 @@
 // FINAL - Branch Edit Fix + Party Auto-Save - Print Format NOT Changed
+// + FAST SAVE + TO PAY / TBB / PAID WORKING
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -102,6 +103,28 @@ function branchFallbackLast(branchCode, branchSlugValue) {
   if (key === 'AHMD' || key === 'AHMEDABAD' || key === 'AHM') return 'BTC-13078'
   return null
 }
+
+// *** NEW - TO PAY / TBB / PAID - Normalise, purana data bhi chalega ***
+function normalizeBasis(v) {
+  const s = String(v || '').trim().toUpperCase().replace(/[\s_-]+/g, '_')
+  if (s === 'TO_PAY' || s === 'TOPAY' || s === 'TO_PAY_BASIS' || s === '1' || s === 'TO_PAY') return 'TO_PAY'
+  if (s === 'TO_BE_BILLED' || s === 'TO_BE' || s === 'TBB' || s === 'TO_BEBILLED' || s === '2' || s === 'TO_BE_BILL' || s === 'BILLED') return 'TO_BE_BILLED'
+  if (s === 'PAID' || s === '3' || s === 'PAYMENT_PAID' || s === 'CLEARED') return 'PAID'
+  return s || ''
+}
+function basisToPaymentStatus(basis) {
+  const b = normalizeBasis(basis)
+  if (b === 'PAID') return 'paid'
+  if (b === 'TO_BE_BILLED') return 'to_be_billed'
+  if (b === 'TO_PAY') return 'to_pay'
+  return ''
+}
+const BASIS_OPTIONS = [
+  { value: '', label: 'Select Basis' },
+  { value: 'TO_PAY', label: '(1) To Pay' },
+  { value: 'TO_BE_BILLED', label: '(2) To Be Billed (TBB)' },
+  { value: 'PAID', label: '(3) Paid' },
+]
 
 export default function BiltyEntry({ branchMode = false, branchCode: branchSlug, id: idProp, biltyId: biltyIdProp }) {
   const navigate = useNavigate()
@@ -228,6 +251,8 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           insurance_date: savedData.insurance_date ? formatDateForInput(savedData.insurance_date) : '',
           eway_valid_upto: savedData.eway_valid_upto ? formatDateForInput(savedData.eway_valid_upto) : '',
           bill_to_party: billToParty,
+          // *** FIX - Purani Bilty kholne pe bhi Basis sahi dikhe ***
+          basis_of_booking: normalizeBasis(savedData.basis_of_booking || savedData.payment_status || savedData.payment_type || (billToParty === 'PAID' ? 'PAID' : '')),
           third_party_gstin: savedData.third_party_gstin || savedData.third_party_gst || '',
           third_party_gst: savedData.third_party_gstin || savedData.third_party_gst || '',
           grand_total: total,
@@ -335,6 +360,25 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     })
   }
 
+  // *** NEW - Basis change karte hi Bill To bhi sync hoga ***
+  const handleBasisChange = (e) => {
+    const basis = normalizeBasis(e.target.value)
+    setFormData(prev => {
+      const next = { ...prev, basis_of_booking: basis, payment_status: basisToPaymentStatus(basis), payment_type: basis }
+      if (basis === 'PAID') {
+        next.bill_to_party = 'PAID'
+        next.billed_at_type = 'PAID'
+        next.billed_at = 'Paid'
+        next.gst_through = prev.gst_through || 'PAID'
+      } else if (prev.bill_to_party === 'PAID' && basis !== 'PAID') {
+        next.bill_to_party = ''
+        next.billed_at_type = ''
+        next.billed_at = ''
+      }
+      return next
+    })
+  }
+
   const handleCustomerSelect = (type, customerId) => {
     const customer = customers.find(c => String(c.id) === String(customerId))
     if (customer) {
@@ -381,22 +425,37 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (loading) return // *** FAST - Double click pe dobara Save nahi hoga ***
     if (!branchCode || (!branchMode && !branchId)) { toast.error('Bilty save karne se pehle branch select karo'); return }
     if (!formData.consignor_name || !formData.consignee_name) { toast.error('Consignor और Consignee का नाम required है'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) { toast.error('Enter a valid GSTIN for the Third Party'); return }
     setLoading(true)
     try {
-      const billedAt = formData.bill_to_party === 'CONSIGNOR' ? formData.consignor_name : formData.bill_to_party === 'CONSIGNEE' ? formData.consignee_name : formData.bill_to_party === 'THIRD PARTY' ? formData.third_party_name : formData.bill_to_party === 'PAID' ? 'Paid' : ''
+      const normalizedBasis = normalizeBasis(formData.basis_of_booking)
+      const paymentStatus = basisToPaymentStatus(normalizedBasis) || (formData.bill_to_party === 'PAID' ? 'paid' : '')
+      const effectiveBillTo = normalizedBasis === 'PAID' ? 'PAID' : formData.bill_to_party
+      const billedAt = effectiveBillTo === 'CONSIGNOR' ? formData.consignor_name : effectiveBillTo === 'CONSIGNEE' ? formData.consignee_name : effectiveBillTo === 'THIRD PARTY' ? formData.third_party_name : effectiveBillTo === 'PAID' ? 'Paid' : ''
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
-      const payload = { ...payloadData, ...(branchMode ? { branch: branchSlugValue } : {}), ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: formData.bill_to_party, billed_at_type: formData.bill_to_party, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt }
+      const payload = { ...payloadData, ...(branchMode ? { branch: branchSlugValue } : {}), ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: effectiveBillTo, billed_at_type: effectiveBillTo, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt,
+        // *** NEW - Basis / Payment Status ab server tak jayega ***
+        basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis }
       payload.eway_valid_upto = payload.eway_valid_upto || null
       if (mrActive) { payload.mr_active = true; payload.mr_date = payload.mr_date || null }
       else { for (const field of Object.keys(payload)) { if (field.startsWith('mr_')) delete payload[field] } }
+      // *** FAST - Party save ko peeche se chalao, Bilty ka wait mat karo ***
+      const savePartiesInBackground = () => {
+        try {
+          savePartyIfNew(formData.consignor_name, formData.consignor_mobile, formData.consignor_address, formData.consignor_gst).catch(() => {})
+          savePartyIfNew(formData.consignee_name, formData.consignee_mobile, formData.consignee_address, formData.consignee_gst).catch(() => {})
+        } catch (err) {}
+      }
       if (id) {
         const response = await biltyAPI.update(id, payload)
-        if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
+        if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); setLoading(false); savePartiesInBackground(); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
         toast.success('Bilty Updated - ' + payload.lr_no)
+        setLoading(false)
+        savePartiesInBackground()
       } else {
         // *** SIRF BRANCH ME - DUPLICATE PE ERROR NAHI, AGLA NUMBER LE LO - ADMIN SAME RAHEGA ***
         if (branchMode) {
@@ -427,20 +486,22 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           }
           if (!saved) throw lastErr || new Error('Bilty save nahi hui')
           const response = saved
-          if (response.data?.local) { const draft = saveLocalDraft('bilty', { ...payload, lr_no: currentLr }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
+          if (response.data?.local) { const draft = saveLocalDraft('bilty', { ...payload, lr_no: currentLr }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); setLoading(false); savePartiesInBackground(); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
           toast.success('Bilty Saved - ' + (response.data?.lr_no || currentLr))
           if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
+          setLoading(false)
+          savePartiesInBackground()
         } else {
           // ADMIN - purana wala same
           const response = await biltyAPI.create(payload)
-          if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
+          if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); setLoading(false); savePartiesInBackground(); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
           toast.success('Bilty Saved - ' + (response.data?.lr_no || payload.lr_no))
           if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
+          setLoading(false)
+          savePartiesInBackground()
         }
       }
-      // Bilty save ke BAAD party save - Bilty kabhi fail nahi hogi
-      await savePartyIfNew(formData.consignor_name, formData.consignor_mobile, formData.consignor_address, formData.consignor_gst)
-      await savePartyIfNew(formData.consignee_name, formData.consignee_mobile, formData.consignee_address, formData.consignee_gst)
+      // *** FAST - Navigate turant, Party ka wait nahi ***
       navigate(branchMode ? branchPath('consignments') : '/consignments')
     } catch (err) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
@@ -610,7 +671,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
             <h3 className="text-xl font-bold text-white mb-4">💵 Section 12: Booking Details - BILL TO PARTY FIXED</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Declared Value of Goods</label><input type="number" name="declared_value" value={formData.declared_value} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
-              <div><label className="block text-gray-300 text-sm font-medium mb-1">Basis of Booking</label><input type="text" name="basis_of_booking" value={formData.basis_of_booking} placeholder="(1) To Pay (2) To Be (3) Paid" className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
+              <div><CustomSelect label="Basis of Booking" name="basis_of_booking" value={formData.basis_of_booking} onChange={handleBasisChange} options={BASIS_OPTIONS} /></div>
               <div><CustomSelect label="Billed at with M/s" name="bill_to_party" value={formData.bill_to_party} onChange={(e) => setFormData(prev => ({ ...prev, bill_to_party: e.target.value, billed_at_type: e.target.value, gst_through: e.target.value }))} options={billedAtOptions} /></div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Company Name (Auto from Bill To)</label><input type="text" value={billedAtName} readOnly placeholder="Bill To Party select karo" className="w-full px-4 py-2 bg-white/10 border border-white/10 rounded-lg text-white font-bold" /></div>
               <div className="md:col-span-2"><CustomSelect label="GST Through" name="gst_through" value={formData.gst_through} onChange={(e) => setFormData(prev => ({ ...prev, gst_through: e.target.value, billed_at_type: e.target.value === 'B.T.C.' ? '' : e.target.value, bill_to_party: e.target.value === 'B.T.C.' ? '' : e.target.value }))} options={gstOptions} /></div>
