@@ -1,5 +1,5 @@
 // FINAL - Branch Edit Fix + Party Auto-Save - Print Format NOT Changed
-// + FAST SAVE + TO PAY / TBB / PAID WORKING
+// + FAST SAVE + TO PAY / TBB / PAID WORKING + VEHICLE NO / LORRY NO FIX
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -148,7 +148,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     consignor_name: '', consignor_address: '', consignor_gst: '', consignor_mobile: '', customer_code_consignor: '',
     consignee_name: '', consignee_address: '', consignee_gst: '', consignee_mobile: '', customer_code_consignee: '',
     invoice_no: '', invoice_date: '', po_no: '', po_date: '',
-    vehicle_no: '', driver_name: '', driver_mobile: '',
+    vehicle_no: '', lorry_no: '', driver_name: '', driver_mobile: '',
     no_of_packages: 0, method_of_packing: '', package_type: '', hsn_code: '', description: '', actual_weight: 0, charged_weight: 0, rate: 0, distance: 0,
     length: 0, width: 0, height: 0, no_of_pkgs_dimension: 0, total_cft_cmt: 0,
     private_marks: '', mr_no: '', mr_date: '', mr_amount: 0, load_type: 'Part Load',
@@ -235,6 +235,9 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         setFormData(previous => ({
           ...previous,
           ...savedData,
+          // *** FIX 1 - GADI NO: Purana lorry_no bhi vehicle_no box me dikhega ***
+          vehicle_no: savedData.vehicle_no || savedData.lorry_no || '',
+          lorry_no: savedData.vehicle_no || savedData.lorry_no || '',
           actual_weight: preferStoredMeasurement(savedData.actual_weight, savedData.act_wt),
           charged_weight: preferStoredMeasurement(savedData.charged_weight, savedData.chg_wt),
           no_of_packages: preferStoredMeasurement(savedData.no_of_packages, savedData.package_count),
@@ -252,7 +255,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           eway_valid_upto: savedData.eway_valid_upto ? formatDateForInput(savedData.eway_valid_upto) : '',
           bill_to_party: billToParty,
           // *** FIX - Purani Bilty kholne pe bhi Basis sahi dikhe ***
-          basis_of_booking: normalizeBasis(savedData.basis_of_booking || savedData.payment_status || savedData.payment_type || (billToParty === 'PAID' ? 'PAID' : '')),
+          basis_of_booking: normalizeBasis(savedData.basis_of_booking || savedData.basis_booking || savedData.payment_status || savedData.payment_type || (billToParty === 'PAID' ? 'PAID' : '')),
           third_party_gstin: savedData.third_party_gstin || savedData.third_party_gst || '',
           third_party_gst: savedData.third_party_gstin || savedData.third_party_gst || '',
           grand_total: total,
@@ -338,6 +341,8 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     const { name, value } = e.target
     setFormData(prev => {
       const newData = { ...prev, [name]: value }
+      // *** FIX 2 - GADI NO: vehicle_no badlo to lorry_no bhi apne aap badlega ***
+      if (name === 'vehicle_no' || name === 'lorry_no') { newData.vehicle_no = value; newData.lorry_no = value }
       if (name === 'method_of_packing' || name === 'package_type') { newData.method_of_packing = value; newData.package_type = value }
       if (name === 'charged_weight' || name === 'rate') {
         const w = parseFloat(name === 'charged_weight' ? value : prev.charged_weight) || 0
@@ -431,6 +436,8 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) { toast.error('Enter a valid GSTIN for the Third Party'); return }
     setLoading(true)
+    // *** FIX 3 - OFFLINE ke liye payload ko bahar rakha, taaki catch me bhi naya data save ho ***
+    let submitPayload = null
     try {
       const normalizedBasis = normalizeBasis(formData.basis_of_booking)
       const paymentStatus = basisToPaymentStatus(normalizedBasis) || (formData.bill_to_party === 'PAID' ? 'paid' : '')
@@ -438,8 +445,13 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const billedAt = effectiveBillTo === 'CONSIGNOR' ? formData.consignor_name : effectiveBillTo === 'CONSIGNEE' ? formData.consignee_name : effectiveBillTo === 'THIRD PARTY' ? formData.third_party_name : effectiveBillTo === 'PAID' ? 'Paid' : ''
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
       const payload = { ...payloadData, ...(branchMode ? { branch: branchSlugValue } : {}), ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: effectiveBillTo, billed_at_type: effectiveBillTo, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt,
-        // *** NEW - Basis / Payment Status ab server tak jayega ***
-        basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis }
+        // *** FIX - GADI NO + BASIS dono naam se server tak jayenge ***
+        vehicle_no: formData.vehicle_no || formData.lorry_no || '',
+        lorry_no: formData.vehicle_no || formData.lorry_no || '',
+        // *** NEW - Basis / Payment Status ab server tak jayega + purana Print bhi padh lega ***
+        basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis,
+        basis_booking: normalizedBasis === 'TO_BE_BILLED' ? 'TO BB' : normalizedBasis === 'TO_PAY' ? 'TO PAY' : normalizedBasis === 'PAID' ? 'PAID' : normalizedBasis }
+      submitPayload = payload
       payload.eway_valid_upto = payload.eway_valid_upto || null
       if (mrActive) { payload.mr_active = true; payload.mr_date = payload.mr_date || null }
       else { for (const field of Object.keys(payload)) { if (field.startsWith('mr_')) delete payload[field] } }
@@ -509,7 +521,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       if (err.response?.status === 409 && !branchMode) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
       if (err.response?.status === 409 && branchMode) { toast.error('Bilty save nahi hui, fir se try karo'); return }
       if (isDatabaseUnavailable(err)) {
-        try { const draft = saveLocalDraft('bilty', { ...formData, lr_no: formData.lr_no }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`) } catch (storageError) { console.error('Unable to store the Bilty as a local draft:', storageError); toast.error(`Unable to save Bilty: ${errorMsg}`) }
+        try { const draft = saveLocalDraft('bilty', submitPayload || { ...formData, lr_no: formData.lr_no }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`) } catch (storageError) { console.error('Unable to store the Bilty as a local draft:', storageError); toast.error(`Unable to save Bilty: ${errorMsg}`) }
       } else { toast.error(errorMsg) }
     } finally { setLoading(false) }
   }
