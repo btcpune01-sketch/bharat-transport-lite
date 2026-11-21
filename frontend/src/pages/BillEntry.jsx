@@ -7,7 +7,22 @@ import toast from 'react-hot-toast'
 import { formatDate, formatDateForInput } from '../utils/dateFormatter'
 import { getLocalDocumentNumber, isDatabaseUnavailable, saveLocalDraft } from '../utils/offlineDrafts'
 
-const getLocalBillNumber = () => getLocalDocumentNumber('bill', 'BTC/BILL/')
+// *** SIRF BILL NO. - BILL ki jagah YEAR - Serial same rahega ***
+// 21-11-2026 -> 26-27, 01-01-2027 ke baad -> 27-28 apne aap
+function billYearLabel(dateValue) {
+  const d = dateValue ? new Date(dateValue) : new Date()
+  const y = d.getFullYear() % 100
+  const n = (y + 1) % 100
+  return `${String(y).padStart(2, '0')}-${String(n).padStart(2, '0')}`
+}
+// Server se BTC/BILL/1074 aaye ya BTC/26-27/1074 aaye - serial nikal ke BTC/26-27/1074 bana dega
+function formatBillNoWithYear(billNo, dateValue) {
+  if (!billNo) return billNo
+  const serial = String(billNo).match(/(\d+)\s*$/)?.[1] || String(billNo)
+  return `BTC/${billYearLabel(dateValue)}/${serial}`
+}
+
+const getLocalBillNumber = () => getLocalDocumentNumber('bill', `BTC/${billYearLabel(new Date())}/`)
 
 export default function BillEntry({ branchMode = false, branchCode }) {
   const navigate = useNavigate()
@@ -96,7 +111,8 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       const nextSerial = response.data?.bill_no || response.data?.number
       if (!nextSerial) throw new Error('The server returned an invalid bill number.')
       if (requestId !== billNumberRequest.current) return
-      setBillData(prev => ({ ...prev, invNo: nextSerial }))
+      // *** SIRF YAHI BADLA - Server ka serial same, sirf BILL -> 26-27 ***
+      setBillData(prev => ({ ...prev, invNo: formatBillNoWithYear(nextSerial, prev.billDate || new Date()) }))
     } catch (error) {
       if (requestId !== billNumberRequest.current) return
       console.warn('Unable to query the branch bill series; using a local fallback:', error)
