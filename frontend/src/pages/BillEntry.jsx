@@ -30,6 +30,8 @@ export default function BillEntry({ branchMode = false, branchCode }) {
   const branchPath = (path) => branchMode
     ? `/branch/${encodeURIComponent(branchCode)}/${path}`
     : `/${path}`
+  // *** SIRF ADMIN BACK FIX - Branch wala rasta same rahega, Admin wala /bills pe jayega ***
+  const adminBillListPath = () => branchMode ? branchPath('bill-list') : '/bills'
   const [loading, setLoading] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [historyList, setHistoryList] = useState([])
@@ -181,7 +183,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       if (res.data.branch_code) setSelectedBranchCode(res.data.branch_code)
     } catch (err) {
       alert(err.response?.data?.error || 'Unable to load bill for editing.')
-      navigate(branchPath('bill-list'))
+      navigate(adminBillListPath())
     } finally {
       setLoading(false)
     }
@@ -704,7 +706,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
         <button className="btn" style={{background:'#1976d2'}} onClick={saveInvoice}>Save to List</button>
         <button className="btn" style={{background:'#f57c00'}} onClick={() => setShowHistory(true)}>History + CA</button>
         <button className="btn" style={{background:'var(--accent)'}} onClick={validateAndPrint}>Print</button>
-        <button className="btn" style={{background:'#666'}} onClick={() => navigate(branchPath('bill-list'))}>Back to List</button>
+        <button className="btn" style={{background:'#666'}} onClick={() => navigate(adminBillListPath())}>Back to List</button>
       </div>
 
       {/* HISTORY MODAL */}
