@@ -1,5 +1,6 @@
 // FINAL - Branch Edit Fix + Party Auto-Save - Print Format NOT Changed
 // + FAST SAVE + TO PAY / TBB / PAID WORKING + VEHICLE NO / LORRY NO FIX
+// + INDIAN AMOUNT FORMAT: 100000 -> ₹1,00,000/- (sirf dikhne me, calculation same)
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -49,6 +50,12 @@ function CustomSelect({ label, value, onChange, options = [], name, required, se
       )}
     </div>
   )
+}
+
+// *** SIRF YAHI NAYA - INDIAN STYLE: 100000 -> ₹1,00,000/- ***
+const formatINR = (num) => {
+  const n = parseFloat(num || 0)
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/-`
 }
 
 const numberToWords = (num) => {
@@ -429,14 +436,12 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const effectiveBillTo = normalizedBasis === 'PAID' ? 'PAID' : formData.bill_to_party
       const billedAt = effectiveBillTo === 'CONSIGNOR' ? formData.consignor_name : effectiveBillTo === 'CONSIGNEE' ? formData.consignee_name : effectiveBillTo === 'THIRD PARTY' ? formData.third_party_name : effectiveBillTo === 'PAID' ? 'Paid' : ''
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
-      // *** FIX - EDIT UPDATE WALA - Total ko fresh calculate karo, purana 0 mat bhejo ***
       const computedTotal = ['freight', 'aoc_amount', 'eov_charges', 'cover_charges', 'material_mgmt_ch', 'collection_charges', 'door_dly_charges', 'pass_cc_charges', 'enroute_charges', 'statistical_charges', 'misc_charges'].reduce((sum, field) => sum + (parseFloat(formData[field]) || 0), 0)
       const payload = { ...payloadData, ...(branchMode ? { branch: branchSlugValue } : {}), ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: effectiveBillTo, billed_at_type: effectiveBillTo, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt,
         vehicle_no: formData.vehicle_no || formData.lorry_no || '',
         lorry_no: formData.vehicle_no || formData.lorry_no || '',
         basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis,
         basis_booking: normalizedBasis === 'TO_BE_BILLED' ? 'TO BB' : normalizedBasis === 'TO_PAY' ? 'TO PAY' : normalizedBasis === 'PAID' ? 'PAID' : normalizedBasis,
-        // *** FIX - List me Total dikhane ke liye sirf ye 2 naam bhejo, generic total/amount se 500 aata tha ***
         grand_total: computedTotal,
         total_amount: computedTotal,
         amount_in_words: numberToWords(computedTotal) }
@@ -456,7 +461,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         toast.success('Bilty Updated - ' + payload.lr_no)
         setLoading(false)
         savePartiesInBackground()
-        // *** FIX - navigate + reload ki jagah direct href, taaki List pakka khule aur fresh data aaye ***
         window.location.href = branchMode ? branchPath('consignments') : '/consignments'
         return
       } else {
@@ -655,7 +659,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Statistical Charges</label><input type="number" name="statistical_charges" value={formData.statistical_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
               <div><label className="block text-gray-300 text-sm font-medium mb-1">Misc. Charges</label><input type="number" name="misc_charges" value={formData.misc_charges} onChange={handleChange} className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white" /></div>
             </div>
-            <div className="mt-4 text-right"><span className="text-gray-300 text-lg">Grand Total: </span><span className="text-3xl font-bold text-green-400">₹{formData.grand_total}</span></div>
+            <div className="mt-4 text-right"><span className="text-gray-300 text-lg">Grand Total: </span><span className="text-3xl font-bold text-green-400">{formatINR(formData.grand_total)}</span></div>
           </div>
           <div className="border-b border-white/10 pb-6">
             <h3 className="text-xl font-bold text-white mb-4">📋 Section 11: E-Way Bill</h3>
