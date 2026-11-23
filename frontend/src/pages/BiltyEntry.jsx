@@ -85,7 +85,6 @@ function canonicalBranchCode(value) {
   return ({ PUN: 'PUNE', MUM: 'MUMBAI', DEL: 'DLH', AHM: 'AHMD' })[code] || code
 }
 
-// *** SIRF BRANCH KE LIYE - AUTO SERIAL FIX - ADMIN KO HAATH NAHI ***
 function nextBiltyNo(last) {
   const s = String(last || '')
   const m = s.match(/(\d+)\s*$/)
@@ -97,14 +96,12 @@ function biltyNum(v) {
   const m = String(v || '').match(/(\d+)\s*$/)
   return m ? Number(m[1]) : 0
 }
-// Ahmedabad ka last BTC-13078 hai, isliye agla 13079 se neeche nahi jana chahiye
 function branchFallbackLast(branchCode, branchSlugValue) {
   const key = String(branchCode || branchSlugValue || '').trim().toUpperCase()
   if (key === 'AHMD' || key === 'AHMEDABAD' || key === 'AHM') return 'BTC-13078'
   return null
 }
 
-// *** NEW - TO PAY / TBB / PAID - Normalise, purana data bhi chalega ***
 function normalizeBasis(v) {
   const s = String(v || '').trim().toUpperCase().replace(/[\s_-]+/g, '_')
   if (s === 'TO_PAY' || s === 'TOPAY' || s === 'TO_PAY_BASIS' || s === '1' || s === 'TO_PAY') return 'TO_PAY'
@@ -235,7 +232,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         setFormData(previous => ({
           ...previous,
           ...savedData,
-          // *** FIX 1 - GADI NO: Purana lorry_no bhi vehicle_no box me dikhega ***
           vehicle_no: savedData.vehicle_no || savedData.lorry_no || '',
           lorry_no: savedData.vehicle_no || savedData.lorry_no || '',
           actual_weight: preferStoredMeasurement(savedData.actual_weight, savedData.act_wt),
@@ -254,7 +250,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           insurance_date: savedData.insurance_date ? formatDateForInput(savedData.insurance_date) : '',
           eway_valid_upto: savedData.eway_valid_upto ? formatDateForInput(savedData.eway_valid_upto) : '',
           bill_to_party: billToParty,
-          // *** FIX - Purani Bilty kholne pe bhi Basis sahi dikhe ***
           basis_of_booking: normalizeBasis(savedData.basis_of_booking || savedData.basis_booking || savedData.payment_status || savedData.payment_type || (billToParty === 'PAID' ? 'PAID' : '')),
           third_party_gstin: savedData.third_party_gstin || savedData.third_party_gst || '',
           third_party_gst: savedData.third_party_gstin || savedData.third_party_gst || '',
@@ -290,24 +285,20 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     } catch (err) { console.error('Failed to load customers:', err); setCustomers([]) }
   }
 
-  // *** SIRF YAHI FUNCTION BADLA HAI - BRANCH SERIAL FIX ***
   const generateLRNo = async (selectedBranch = branchCode) => {
     const requestId = ++lrGenerationRequest.current
     if (!selectedBranch) { setNumberLoading(false); setFormData(prev => ({ ...prev, lr_no: '' })); return }
     setNumberLoading(true)
     setFormData(prev => ({ ...prev, lr_no: '' }))
-    // Branch ka fallback - Ahmedabad ka last BTC-13078, agla BTC-13079
     const fallbackLast = branchMode ? branchFallbackLast(selectedBranch, branchSlugValue) : null
     const fallbackNext = fallbackLast ? nextBiltyNo(fallbackLast) : null
     try {
       const response = await biltyAPI.getNextNumber({ branch: selectedBranch })
       let nextLrNo = response.data?.lr_no || response.data?.data?.lr_no
       if (!nextLrNo) throw new Error('invalid')
-      // BRANCH ME: Server ne purana / chhota number diya to usko mat lo, fallback se bada wala lo
       if (branchMode && fallbackNext && biltyNum(nextLrNo) < biltyNum(fallbackNext)) {
         nextLrNo = fallbackNext
       }
-      // BRANCH ME: Browser me saved last se bhi check karo - usse bada hi lo
       if (branchMode) {
         try {
           const savedKey = `btc_last_bilty_${String(branchSlugValue || selectedBranch).toLowerCase()}`
@@ -315,7 +306,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           if (savedLast && biltyNum(nextLrNo) <= biltyNum(savedLast)) {
             nextLrNo = nextBiltyNo(savedLast)
           }
-          // Fallback se bhi bada hona chahiye
           if (fallbackNext && biltyNum(nextLrNo) < biltyNum(fallbackNext)) nextLrNo = fallbackNext
         } catch (e) {}
       }
@@ -326,7 +316,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     } catch (err) {
       if (requestId !== lrGenerationRequest.current) return
       console.warn('Unable to query the branch LR series; save will request a database-generated number:', err)
-      // BRANCH ME: Server fail ho to khaali MAT chhodo, fallback 13079 bhar do
       if (branchMode && fallbackNext) {
         setFormData(prev => ({ ...prev, lr_no: fallbackNext }))
         setIsLrEditable(false)
@@ -341,7 +330,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     const { name, value } = e.target
     setFormData(prev => {
       const newData = { ...prev, [name]: value }
-      // *** FIX 2 - GADI NO: vehicle_no badlo to lorry_no bhi apne aap badlega ***
       if (name === 'vehicle_no' || name === 'lorry_no') { newData.vehicle_no = value; newData.lorry_no = value }
       if (name === 'method_of_packing' || name === 'package_type') { newData.method_of_packing = value; newData.package_type = value }
       if (name === 'charged_weight' || name === 'rate') {
@@ -365,7 +353,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     })
   }
 
-  // *** NEW - Basis change karte hi Bill To bhi sync hoga ***
   const handleBasisChange = (e) => {
     const basis = normalizeBasis(e.target.value)
     setFormData(prev => {
@@ -406,7 +393,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
     })
   }
 
-  // PARTY AUTO-SAVE - sirf naya fix, baki kuch nahi
   const savePartyIfNew = async (name, mobile, address, gst) => {
     const cleanName = String(name || '').trim()
     if (!cleanName) return
@@ -430,13 +416,12 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (loading) return // *** FAST - Double click pe dobara Save nahi hoga ***
+    if (loading) return
     if (!branchCode || (!branchMode && !branchId)) { toast.error('Bilty save karne se pehle branch select karo'); return }
     if (!formData.consignor_name || !formData.consignee_name) { toast.error('Consignor और Consignee का नाम required है'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && !formData.third_party_name.trim()) { toast.error('Third Party Name is required'); return }
     if (formData.bill_to_party === 'THIRD PARTY' && formData.third_party_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/i.test(formData.third_party_gstin.trim())) { toast.error('Enter a valid GSTIN for the Third Party'); return }
     setLoading(true)
-    // *** FIX 3 - OFFLINE ke liye payload ko bahar rakha, taaki catch me bhi naya data save ho ***
     let submitPayload = null
     try {
       const normalizedBasis = normalizeBasis(formData.basis_of_booking)
@@ -444,18 +429,21 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const effectiveBillTo = normalizedBasis === 'PAID' ? 'PAID' : formData.bill_to_party
       const billedAt = effectiveBillTo === 'CONSIGNOR' ? formData.consignor_name : effectiveBillTo === 'CONSIGNEE' ? formData.consignee_name : effectiveBillTo === 'THIRD PARTY' ? formData.third_party_name : effectiveBillTo === 'PAID' ? 'Paid' : ''
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
+      // *** FIX - EDIT UPDATE WALA - Total ko fresh calculate karo, purana 0 mat bhejo ***
+      const computedTotal = ['freight', 'aoc_amount', 'eov_charges', 'cover_charges', 'material_mgmt_ch', 'collection_charges', 'door_dly_charges', 'pass_cc_charges', 'enroute_charges', 'statistical_charges', 'misc_charges'].reduce((sum, field) => sum + (parseFloat(formData[field]) || 0), 0)
       const payload = { ...payloadData, ...(branchMode ? { branch: branchSlugValue } : {}), ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: effectiveBillTo, billed_at_type: effectiveBillTo, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt,
-        // *** FIX - GADI NO + BASIS dono naam se server tak jayenge ***
         vehicle_no: formData.vehicle_no || formData.lorry_no || '',
         lorry_no: formData.vehicle_no || formData.lorry_no || '',
-        // *** NEW - Basis / Payment Status ab server tak jayega + purana Print bhi padh lega ***
         basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis,
-        basis_booking: normalizedBasis === 'TO_BE_BILLED' ? 'TO BB' : normalizedBasis === 'TO_PAY' ? 'TO PAY' : normalizedBasis === 'PAID' ? 'PAID' : normalizedBasis }
+        basis_booking: normalizedBasis === 'TO_BE_BILLED' ? 'TO BB' : normalizedBasis === 'TO_PAY' ? 'TO PAY' : normalizedBasis === 'PAID' ? 'PAID' : normalizedBasis,
+        // *** FIX - List me Total dikhane ke liye sirf ye 2 naam bhejo, generic total/amount se 500 aata tha ***
+        grand_total: computedTotal,
+        total_amount: computedTotal,
+        amount_in_words: numberToWords(computedTotal) }
       submitPayload = payload
       payload.eway_valid_upto = payload.eway_valid_upto || null
       if (mrActive) { payload.mr_active = true; payload.mr_date = payload.mr_date || null }
       else { for (const field of Object.keys(payload)) { if (field.startsWith('mr_')) delete payload[field] } }
-      // *** FAST - Party save ko peeche se chalao, Bilty ka wait mat karo ***
       const savePartiesInBackground = () => {
         try {
           savePartyIfNew(formData.consignor_name, formData.consignor_mobile, formData.consignor_address, formData.consignor_gst).catch(() => {})
@@ -468,8 +456,10 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         toast.success('Bilty Updated - ' + payload.lr_no)
         setLoading(false)
         savePartiesInBackground()
+        // *** FIX - navigate + reload ki jagah direct href, taaki List pakka khule aur fresh data aaye ***
+        window.location.href = branchMode ? branchPath('consignments') : '/consignments'
+        return
       } else {
-        // *** SIRF BRANCH ME - DUPLICATE PE ERROR NAHI, AGLA NUMBER LE LO - ADMIN SAME RAHEGA ***
         if (branchMode) {
           let currentLr = payload.lr_no || ''
           let saved = null
@@ -479,7 +469,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
               const attemptPayload = { ...payload, lr_no: currentLr }
               const res = await biltyAPI.create(attemptPayload)
               saved = res
-              // Last save karo - agli baar isse aage wala aayega
               try { localStorage.setItem(`btc_last_bilty_${String(branchSlugValue || branchCode).toLowerCase()}`, currentLr) } catch (e) {}
               setFormData(prev => ({ ...prev, lr_no: currentLr }))
               break
@@ -489,7 +478,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
               const suggested = createErr?.response?.data?.suggested_number
               const isDup = createErr?.response?.status === 409 || msg.includes('duplicate') || msg.includes('already') || msg.includes('exists')
               if (isDup) {
-                // Error MAT dikhao, agla number lo
                 currentLr = suggested ? String(suggested) : nextBiltyNo(currentLr)
                 continue
               }
@@ -504,7 +492,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           setLoading(false)
           savePartiesInBackground()
         } else {
-          // ADMIN - purana wala same
           const response = await biltyAPI.create(payload)
           if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); setLoading(false); savePartiesInBackground(); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
           toast.success('Bilty Saved - ' + (response.data?.lr_no || payload.lr_no))
@@ -513,11 +500,9 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           savePartiesInBackground()
         }
       }
-      // *** FAST - Navigate turant, Party ka wait nahi ***
       navigate(branchMode ? branchPath('consignments') : '/consignments')
     } catch (err) {
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
-      // BRANCH ME duplicate pe yaha tak aaye to bhi error mat dikhao, wapas try ho chuka hai
       if (err.response?.status === 409 && !branchMode) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
       if (err.response?.status === 409 && branchMode) { toast.error('Bilty save nahi hui, fir se try karo'); return }
       if (isDatabaseUnavailable(err)) {
