@@ -506,9 +506,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     selectedData.forEach((inv, i) => {
       let amt = parseFloat((inv.grandtotal || inv.totalAmt || '0').toString().replace(/[^0-9.]/g, '')) || 0
       total += amt
-      text += `${i + 1}. *Party:* ${inv.partyName}\n *GST No:* ${inv.partyGst || 'N/A'}\n *Gadi No:* ${inv.vehNo || 'N/A'}\n *Inv:* ${inv.invNo} | *Date:* ${formatDate(inv.billDate || inv.date)}\n *Amount:* ₹${amt.toLocaleString('en-IN')}\n\n`
+      text += `${i + 1}. *Party:* ${inv.partyName}\n *GST No:* ${inv.partyGst || 'N/A'}\n *Gadi No:* ${inv.vehNo || 'N/A'}\n *Inv:* ${inv.invNo} | *Date:* ${formatDate(inv.billDate || inv.date)}\n *Amount:* ${formatINR(amt)}\n\n`
     })
-    text += `*GRAND TOTAL: Rs. ${total.toLocaleString('en-IN')}*`
+    text += `*GRAND TOTAL: ${formatINR(total)}*`
     
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank')
   }
@@ -518,7 +518,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     if (selectedData.length === 0) { alert("Pehle select karo!"); return }
     const subject = `Bharat Transport Company bills for CA - ${formatDate(new Date())}`
     const body = selectedData.map((inv, index) =>
-      `${index + 1}. ${inv.invNo} | ${inv.partyName} | GST: ${inv.partyGst || 'N/A'} | Date: ${formatDate(inv.billDate || inv.date)} | Total: ₹${inv.grandtotal || 0} | Balance: ₹${inv.balance || 0}`
+      `${index + 1}. ${inv.invNo} | ${inv.partyName} | GST: ${inv.partyGst || 'N/A'} | Date: ${formatDate(inv.billDate || inv.date)} | Total: ${formatINR(inv.grandtotal || 0)} | Balance: ${formatINR(inv.balance || 0)}`
     ).join('\n')
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
   }
@@ -555,16 +555,20 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       })
       
       let finalY = doc.lastAutoTable.finalY + 5
-      doc.setFontSize(9); doc.text(`Sub-Total: ${inv.subtotal}`, 130, finalY); finalY += 5
-      doc.text(`GST (${inv.gstPer || 0}%): ${inv.gstAmt}`, 130, finalY); finalY += 5
-      doc.setFont("helvetica", "bold"); doc.text(`Grand Total: ${inv.grandtotal}`, 130, finalY); finalY += 5
-      doc.setFont("helvetica", "normal"); doc.setTextColor(211, 47, 47); doc.text(`Advance: -${inv.advInput || 0}`, 130, finalY); finalY += 5
-      doc.setTextColor(46, 125, 50); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(`NET BALANCE: ${inv.balance}`, 130, finalY)
+      doc.setFontSize(9); doc.text(`Sub-Total: ${formatINR(inv.subtotal)}`, 130, finalY); finalY += 5
+      doc.text(`GST (${inv.gstPer || 0}%): ${formatINR(inv.gstAmt)}`, 130, finalY); finalY += 5
+      doc.setFont("helvetica", "bold"); doc.text(`Grand Total: ${formatINR(inv.grandtotal)}`, 130, finalY); finalY += 5
+      doc.setFont("helvetica", "normal"); doc.setTextColor(211, 47, 47); doc.text(`Advance: -${formatINR(inv.advInput || 0)}`, 130, finalY); finalY += 5
+      doc.setTextColor(46, 125, 50); doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text(`NET BALANCE: ${formatINR(inv.balance)}`, 130, finalY)
     })
     doc.save(`BTC_Original_Bills_${formatDateForInput(new Date())}.pdf`)
   }
 
-  const formatINR = (num) => parseFloat(num || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // *** SIRF YAHI BADLA - INDIAN STYLE: 100000 -> ₹1,00,000/- ***
+  const formatINR = (num) => {
+    const n = parseFloat(num || 0)
+    return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}/-`
+  }
 
   return (
     <div className="min-h-screen w-full bg-[#eef2f7]">
@@ -742,7 +746,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
                   <div>{inv.partyName}</div>
                   <div>{inv.partyGst || 'N/A'}</div>
                   <div>{formatDate(inv.billDate || inv.date)}</div>
-                  <div>₹{inv.grandtotal || inv.totalAmt}</div>
+                  <div>{formatINR(inv.grandtotal || inv.totalAmt)}</div>
                   <div><button className="btn" style={{background:'#0d1b3e', padding:'4px 8px'}} onClick={() => {
                     setBillData(inv)
                     setShowHistory(false)
@@ -812,9 +816,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
           </div>
 
           <div className="dashboard">
-            <div className="card"><span>Grand Total</span><strong>₹ {formatINR(billData.grandtotal)}</strong></div>
+            <div className="card"><span>Grand Total</span><strong>{formatINR(billData.grandtotal)}</strong></div>
             <div className="card"><span>Advance Received</span><strong>₹ <input type="number" value={billData.advInput} onChange={(e) => updateBillField('advInput', e.target.value)} /></strong></div>
-            <div className="card"><span>Balance Due</span><strong>₹ {formatINR(billData.balance)}</strong></div>
+            <div className="card"><span>Balance Due</span><strong>{formatINR(billData.balance)}</strong></div>
           </div>
 
           <table id="tripTable">
