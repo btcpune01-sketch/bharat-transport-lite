@@ -2,7 +2,7 @@
 // + FAST SAVE + TO PAY / TBB / PAID WORKING + VEHICLE NO / LORRY NO FIX
 // + INDIAN AMOUNT FORMAT: 100000 -> ₹1,00,000/- (sirf dikhne me, calculation same)
 // + FIX: Edit me Amount List me nahi dikhta tha - kyunki Edit Local Draft me ja raha tha. Ab Edit kabhi Local me nahi jayega, sirf Server pe save hoga.
-// + FIX 2: column "booking_basis" does not exist - 500 error. booking_basis / basis_booking / total / amount / branch jaise galat columns ab Server ko bheje hi nahi jayenge.
+// + FIX 2: column "booking_basis" / "total_amount" does not exist - 500 error. Ab AUTO-FIX LOOP hai - Server jo column bolega nahi hai, code khud usko kaat ke dobara try karega.
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -134,12 +134,19 @@ const BASIS_OPTIONS = [
 
 // FIX: Ye columns DB me NAHI hai - inko kabhi Server ko mat bhejo, nahi to 500 aayega
 const DROP_BEFORE_SAVE = [
-  'booking_basis', 'basis_booking', 'total', 'amount', 'branch',
+  'booking_basis', 'basis_booking', 'total', 'amount', 'total_amount', 'branch',
   'from_code', 'aoc_percent', 'act_wt', 'chg_wt', 'package_count',
   'l', 'w', 'h', 'total_cft', 'cft_cmt',
   'id', 'created_at', 'updated_at', 'branch_name',
   'consignor_select', 'consignee_select'
 ]
+
+// AUTO-FIX: Server se aaye `column "XYZ" does not exist` se XYZ nikalta hai
+function missingColumnFromError(err) {
+  const msg = String(err?.response?.data?.error || err?.message || '')
+  const m = msg.match(/column\s+"([^"]+)"\s+of relation/i) || msg.match(/column\s+"([^"]+)"\s+does not exist/i) || msg.match(/column\s+([a-z_0-9]+)\s+does not exist/i)
+  return m ? m[1] : null
+}
 
 export default function BiltyEntry({ branchMode = false, branchCode: branchSlug, id: idProp, biltyId: biltyIdProp }) {
   const navigate = useNavigate()
@@ -454,9 +461,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis,
         freight: parseFloat(formData.freight) || 0,
         grand_total: computedTotal,
-        total_amount: computedTotal,
         amount_in_words: numberToWords(computedTotal) }
-      // FIX: DB me na hone wale columns ko yahi pe kaat do - booking_basis / basis_booking / total / amount / branch kabhi nahi jayenge
       for (const k of DROP_BEFORE_SAVE) delete payload[k]
       submitPayload = payload
       payload.eway_valid_upto = payload.eway_valid_upto || null
@@ -469,17 +474,23 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         } catch (err) {}
       }
       if (id) {
-        // EDIT kabhi Local Draft me nahi jayega
+        // EDIT kabhi Local Draft me nahi jayega + AUTO-FIX: missing column aaye to kaat ke dobara try karo
         let updateResponse = null
         let updateError = null
-        for (let attempt = 0; attempt < 2; attempt++) {
+        const retryPayload = { ...payload }
+        for (let attempt = 0; attempt < 15; attempt++) {
           try {
-            updateResponse = await biltyAPI.update(id, payload)
+            updateResponse = await biltyAPI.update(id, retryPayload)
             updateError = null
             break
           } catch (err) {
             updateError = err
-            // 400 / 409 / 500 pe retry ka koi fayda nahi - seedha bahar, asli error dikhao
+            const missing = missingColumnFromError(err)
+            if (missing && retryPayload[missing] !== undefined) {
+              console.warn('Auto-fix: dropping missing column', missing)
+              delete retryPayload[missing]
+              continue
+            }
             break
           }
         }
@@ -503,8 +514,17 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
             try {
               const attemptPayload = { ...payload, lr_no: currentLr }
               for (const k of DROP_BEFORE_SAVE) delete attemptPayload[k]
-              const res = await biltyAPI.create(attemptPayload)
-              saved = res
+              // Create me bhi AUTO-FIX: missing column aaye to kaat ke dobara try karo
+              let created = null
+              const createPayload = { ...attemptPayload }
+              for (let inner = 0; inner < 15; inner++) {
+                try { created = await biltyAPI.create(createPayload); break } catch (ce) {
+                  const missing = missingColumnFromError(ce)
+                  if (missing && createPayload[missing] !== undefined) { delete createPayload[missing]; continue }
+                  throw ce
+                }
+              }
+              saved = created
               try { localStorage.setItem(`btc_last_bilty_${String(branchSlugValue || branchCode).toLowerCase()}`, currentLr) } catch (e) {}
               setFormData(prev => ({ ...prev, lr_no: currentLr }))
               break
@@ -528,7 +548,16 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           setLoading(false)
           savePartiesInBackground()
         } else {
-          const response = await biltyAPI.create(payload)
+          // Non-branch Create me bhi AUTO-FIX
+          let response = null
+          const createPayload = { ...payload }
+          for (let inner = 0; inner < 15; inner++) {
+            try { response = await biltyAPI.create(createPayload); break } catch (ce) {
+              const missing = missingColumnFromError(ce)
+              if (missing && createPayload[missing] !== undefined) { delete createPayload[missing]; continue }
+              throw ce
+            }
+          }
           if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); setLoading(false); savePartiesInBackground(); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
           toast.success('Bilty Saved - ' + (response.data?.lr_no || payload.lr_no))
           if (response.data?.warning) toast(response.data.warning, { icon: '⚠️', duration: 7000 })
@@ -541,7 +570,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (err.response?.status === 409 && !branchMode) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
       if (err.response?.status === 409 && branchMode) { toast.error('Bilty save nahi hui, fir se try karo'); return }
-      // FIX: Edit me asli Server error dikhao, taaki agla missing column turant pata chale
       if (id) {
         console.error('Edit save failed:', err)
         toast.error(errorMsg)
