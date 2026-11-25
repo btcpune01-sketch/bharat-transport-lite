@@ -2,6 +2,7 @@
 // + FAST SAVE + TO PAY / TBB / PAID WORKING + VEHICLE NO / LORRY NO FIX
 // + INDIAN AMOUNT FORMAT: 100000 -> ₹1,00,000/- (sirf dikhne me, calculation same)
 // + FIX: Edit me Amount List me nahi dikhta tha - kyunki Edit Local Draft me ja raha tha. Ab Edit kabhi Local me nahi jayega, sirf Server pe save hoga.
+// + FIX 2: column "booking_basis" does not exist - 500 error. booking_basis / basis_booking / total / amount / branch jaise galat columns ab Server ko bheje hi nahi jayenge.
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -129,6 +130,15 @@ const BASIS_OPTIONS = [
   { value: 'TO_PAY', label: '(1) To Pay' },
   { value: 'TO_BE_BILLED', label: '(2) To Be Billed (TBB)' },
   { value: 'PAID', label: '(3) Paid' },
+]
+
+// FIX: Ye columns DB me NAHI hai - inko kabhi Server ko mat bhejo, nahi to 500 aayega
+const DROP_BEFORE_SAVE = [
+  'booking_basis', 'basis_booking', 'total', 'amount', 'branch',
+  'from_code', 'aoc_percent', 'act_wt', 'chg_wt', 'package_count',
+  'l', 'w', 'h', 'total_cft', 'cft_cmt',
+  'id', 'created_at', 'updated_at', 'branch_name',
+  'consignor_select', 'consignee_select'
 ]
 
 export default function BiltyEntry({ branchMode = false, branchCode: branchSlug, id: idProp, biltyId: biltyIdProp }) {
@@ -438,18 +448,16 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const billedAt = effectiveBillTo === 'CONSIGNOR' ? formData.consignor_name : effectiveBillTo === 'CONSIGNEE' ? formData.consignee_name : effectiveBillTo === 'THIRD PARTY' ? formData.third_party_name : effectiveBillTo === 'PAID' ? 'Paid' : ''
       const { from_code: _fromCode, aoc_percent: _aocPercent, ...payloadData } = formData
       const computedTotal = ['freight', 'aoc_amount', 'eov_charges', 'cover_charges', 'material_mgmt_ch', 'collection_charges', 'door_dly_charges', 'pass_cc_charges', 'enroute_charges', 'statistical_charges', 'misc_charges'].reduce((sum, field) => sum + (parseFloat(formData[field]) || 0), 0)
-      const payload = { ...payloadData, ...(branchMode ? { branch: branchSlugValue } : {}), ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: effectiveBillTo, billed_at_type: effectiveBillTo, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt,
+      const payload = { ...payloadData, ...(branchId ? { branch_id: branchId } : {}), ...(branchCode ? { branch_code: branchCode } : {}), actual_weight: formData.actual_weight ?? formData.act_wt ?? 0, charged_weight: formData.charged_weight ?? formData.chg_wt ?? 0, length: formData.length ?? 0, width: formData.width ?? 0, height: formData.height ?? 0, no_of_packages: formData.no_of_packages ?? formData.package_count ?? 0, package_type: formData.package_type || formData.method_of_packing, bill_to_party: effectiveBillTo, billed_at_type: effectiveBillTo, third_party_gstin: formData.third_party_gstin, third_party_gst: formData.third_party_gstin, billed_at: billedAt,
         vehicle_no: formData.vehicle_no || formData.lorry_no || '',
         lorry_no: formData.vehicle_no || formData.lorry_no || '',
-        basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis,
-        basis_booking: normalizedBasis === 'TO_BE_BILLED' ? 'TO BB' : normalizedBasis === 'TO_PAY' ? 'TO PAY' : normalizedBasis === 'PAID' ? 'PAID' : normalizedBasis,
-        // FIX: List isi se Amount dikhati hai - isliye 3 jagah same computedTotal bheja ja raha hai
+        basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis,
         freight: parseFloat(formData.freight) || 0,
         grand_total: computedTotal,
         total_amount: computedTotal,
-        total: computedTotal,
-        amount: computedTotal,
         amount_in_words: numberToWords(computedTotal) }
+      // FIX: DB me na hone wale columns ko yahi pe kaat do - booking_basis / basis_booking / total / amount / branch kabhi nahi jayenge
+      for (const k of DROP_BEFORE_SAVE) delete payload[k]
       submitPayload = payload
       payload.eway_valid_upto = payload.eway_valid_upto || null
       if (mrActive) { payload.mr_active = true; payload.mr_date = payload.mr_date || null }
@@ -461,23 +469,21 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         } catch (err) {}
       }
       if (id) {
-        // ===== FIX START: EDIT kabhi Local Draft me nahi jayega =====
+        // EDIT kabhi Local Draft me nahi jayega
         let updateResponse = null
         let updateError = null
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
             updateResponse = await biltyAPI.update(id, payload)
             updateError = null
             break
           } catch (err) {
             updateError = err
-            // 409 / validation error pe retry mat karo, seedha bahar
-            if (err?.response?.status === 409 || err?.response?.status === 400) break
-            if (attempt < 2) await new Promise(r => setTimeout(r, 800))
+            // 400 / 409 / 500 pe retry ka koi fayda nahi - seedha bahar, asli error dikhao
+            break
           }
         }
         if (updateError) throw updateError
-        // Agar API ne local:true bheja to usko SUCCESS mat mano - Edit server pe hona chahiye
         if (updateResponse?.data?.local) {
           toast.error('Server offline hai - Edit save nahi hua. Net check karke dobara Update dabao.')
           setLoading(false)
@@ -488,7 +494,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         savePartiesInBackground()
         window.location.href = branchMode ? branchPath('consignments') : '/consignments'
         return
-        // ===== FIX END =====
       } else {
         if (branchMode) {
           let currentLr = payload.lr_no || ''
@@ -497,6 +502,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           for (let attempt = 0; attempt < 5; attempt++) {
             try {
               const attemptPayload = { ...payload, lr_no: currentLr }
+              for (const k of DROP_BEFORE_SAVE) delete attemptPayload[k]
               const res = await biltyAPI.create(attemptPayload)
               saved = res
               try { localStorage.setItem(`btc_last_bilty_${String(branchSlugValue || branchCode).toLowerCase()}`, currentLr) } catch (e) {}
@@ -535,10 +541,10 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (err.response?.status === 409 && !branchMode) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
       if (err.response?.status === 409 && branchMode) { toast.error('Bilty save nahi hui, fir se try karo'); return }
-      // ===== FIX: Edit me Database Unavailable pe bhi Local Draft / Print pe mat bhejo =====
+      // FIX: Edit me asli Server error dikhao, taaki agla missing column turant pata chale
       if (id) {
-        console.error('Edit save failed, staying on edit page:', err)
-        toast.error('Edit save nahi hua - Server offline hai. Dobara Update dabao. List me purana Amount hi dikhega jab tak ye save nahi hoga.')
+        console.error('Edit save failed:', err)
+        toast.error(errorMsg)
         return
       }
       if (isDatabaseUnavailable(err)) {
