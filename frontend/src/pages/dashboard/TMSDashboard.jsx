@@ -174,7 +174,6 @@ const valueOrZero = (value) => Number(value || 0)
 const money = (value) => `₹${valueOrZero(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 const number = (value) => valueOrZero(value).toLocaleString('en-IN')
 
-// *** FIX 1 - Bilty ka Amount kisi bhi naam se aaye - sab se nikal lo, ₹0 nahi dikhega ***
 function biltyAmountOf(r) {
   if (!r) return 0
   const direct = Number(r.grand_total ?? r.total_amount ?? r.total ?? r.amount ?? 0)
@@ -213,7 +212,6 @@ function getData(response) {
   return response?.data?.data || response?.data || {}
 }
 
-// *** NEW - Branch Filter - Admin ka data Branch me nahi dikhega ***
 function normalizeBranch(v) {
   return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
@@ -246,7 +244,6 @@ function savedLinksKey(branchSlug) {
   return branchSlug && branchSlug !== 'global' ? `btc_bill_bilty_links_${normalizeBranch(branchSlug)}` : 'btc_bill_bilty_links'
 }
 
-// *** FAST DASHBOARD CACHE - SIRF SPEED KE LIYE JODA HAI, BAAKI KUCH DELETE NAHI KIYA ***
 function dashboardCacheKey(branchSlug, userId) {
   const b = branchSlug && branchSlug !== 'global' ? `branch_${String(branchSlug).toLowerCase().replace(/[^a-z0-9]/g,'_')}` : 'admin_global'
   const u = userId ? `_${String(userId)}` : ''
@@ -402,14 +399,13 @@ export default function TMSDashboard({ branch }) {
     if (statsBranchSlug) query.branch = statsBranchSlug
     if (statsBranchId) query.branch_id = statsBranchId
 
-    // *** FIX 2 - Manual Refresh pe Cache bilkul mat dikhao, nahi to nayi Bilty kabhi nahi dikhegi ***
+    // *** FIX - Cache se purana stats MAT lo, wahi 58,000 chipka rehta tha ***
     const isManualRefresh = refreshKey > 0
     const cached = !isManualRefresh ? loadDashboardCache(branchSlug, currentUser?.id || currentUser?.username) : null
     if (cached?.data) {
       const c = cached.data
-      if (c.stats) setStats(c.stats)
+      // stats Cache se nahi lena - naya data hi aayega
       if (Array.isArray(c.stock)) setStock(c.stock)
-      // PendingRows Cache se MAT lo - wahi purani 7 Bilty chipki rehti thi
       if (c.monthlyStats) setMonthlyStats(c.monthlyStats)
       if (Array.isArray(c.allBills)) setAllBills(c.allBills)
       setStatsUnavailable(false)
@@ -419,7 +415,6 @@ export default function TMSDashboard({ branch }) {
     }
     setStatsUnavailable(false)
 
-    // *** FIX 3 - Pending ke saath Consignments bhi lao - jo Bilty Pending API ne bahar kar di wo yaha se jod denge ***
     Promise.allSettled([
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
       api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query }),
@@ -524,7 +519,7 @@ export default function TMSDashboard({ branch }) {
 
       if (statsResult.status === 'fulfilled' || pendingResult.status === 'fulfilled' || billsResult?.status === 'fulfilled') {
         saveDashboardCache(branchSlug, currentUser?.id || currentUser?.username, {
-          stats: nextStats ?? cached?.data?.stats ?? null,
+          stats: nextStats ?? null,
           stock: nextStock,
           pendingRows: nextPending,
           clearedBills: nextCleared,
@@ -770,16 +765,22 @@ export default function TMSDashboard({ branch }) {
     return 0
   }
 
-  // *** FIX 4 - Agar Server Revenue 0 bhej raha hai to Pending Bilty se hi Revenue nikal lo ***
+  // *** FIX - Upar ke dabbe List se banao, Server ke purane stats se nahi ***
+  // Pending + Cleared Bilty = Total Bilty. Isi se Today / Month / Pending niklega, to List se kabhi alag nahi hoga.
   const pendingTotal = pendingRows.reduce((s, r) => s + biltyAmountOf(r), 0)
-  const todayRows = pendingRows.filter((r) => biltyDateKey(r.lr_date || r.created_at) === todayKey())
+  const clearedTotal = clearedBills.reduce((s, r) => s + biltyAmountOf(r), 0)
+  const allBilties = [...pendingRows, ...clearedBills]
+  const todayRows = allBilties.filter((r) => biltyDateKey(r.lr_date || r.created_at || r.cleared_at) === todayKey())
   const todayPendingTotal = todayRows.reduce((s, r) => s + biltyAmountOf(r), 0)
   const thisMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`
-  const monthRows = pendingRows.filter((r) => biltyDateKey(r.lr_date || r.created_at).startsWith(thisMonthKey))
+  const monthRows = allBilties.filter((r) => biltyDateKey(r.lr_date || r.created_at || r.cleared_at).startsWith(thisMonthKey))
   const monthPendingTotal = monthRows.reduce((s, r) => s + biltyAmountOf(r), 0)
-  const displayTodayRevenue = Number(getStat('today_revenue')) > 0 ? Number(getStat('today_revenue')) : todayPendingTotal
-  const displayMonthRevenue = Number(getStat('month_revenue')) > 0 ? Number(getStat('month_revenue')) : monthPendingTotal
-  const displayPendingAmount = Number(getStat('pending_amount', 'pendingAmount')) > 0 ? Number(getStat('pending_amount', 'pendingAmount')) : pendingTotal
+  // Agar List me data hai to List wala hi dikhao, List khali hai tabhi Server wala dikhao
+  const displayTodayCount = todayRows.length > 0 ? todayRows.length : Number(getStat('today_lr', 'todaysBooking'))
+  const displayMonthCount = monthRows.length > 0 ? monthRows.length : Number(getStat('month_lr', 'monthlyBooking'))
+  const displayTodayRevenue = todayRows.length > 0 ? todayPendingTotal : Number(getStat('today_revenue'))
+  const displayMonthRevenue = monthRows.length > 0 ? monthPendingTotal : Number(getStat('month_revenue'))
+  const displayPendingAmount = pendingRows.length > 0 ? pendingTotal : Number(getStat('pending_amount', 'pendingAmount'))
 
   const billBalance = (b) => Number(b?.net_balance ?? b?.balance_due ?? b?.grand_total ?? 0)
   const billNoOf = (b) => b?.bill_no || b?.invoice_no || b?.bill_number || b?.billNo || ''
@@ -1036,12 +1037,12 @@ export default function TMSDashboard({ branch }) {
         <section aria-label="Dashboard statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Link to={branchPath('bookings/list?filter=today')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Today&apos;s Booking</p>
-            <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(getStat('today_lr', 'todaysBooking'))} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
+            <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(displayTodayCount)} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
             <p className="mt-2 text-sm text-slate-600">Today&apos;s Revenue <strong className="text-slate-900">{money(displayTodayRevenue)}</strong></p>
           </Link>
           <Link to={branchPath('bookings/list?filter=month')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">This Month&apos;s Booking</p>
-            <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(getStat('month_lr', 'monthlyBooking'))} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
+            <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(displayMonthCount)} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
             <p className="mt-2 text-sm text-slate-600">Month&apos;s Revenue <strong className="text-slate-900">{money(displayMonthRevenue)}</strong></p>
           </Link>
           <Link to={branchPath('billing/pending')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
