@@ -174,6 +174,33 @@ const valueOrZero = (value) => Number(value || 0)
 const money = (value) => `₹${valueOrZero(value).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 const number = (value) => valueOrZero(value).toLocaleString('en-IN')
 
+// *** FIX 1 - Bilty ka Amount kisi bhi naam se aaye - sab se nikal lo, ₹0 nahi dikhega ***
+function biltyAmountOf(r) {
+  if (!r) return 0
+  const direct = Number(r.grand_total ?? r.total_amount ?? r.total ?? r.amount ?? 0)
+  if (direct > 0) return direct
+  const sum = ['freight','aoc_amount','eov_charges','cover_charges','material_mgmt_ch','collection_charges','door_dly_charges','pass_cc_charges','enroute_charges','statistical_charges','misc_charges'].reduce((s, f) => s + (Number(r[f]) || 0), 0)
+  return sum
+}
+function isBiltyCleared(r) {
+  if (!r) return false
+  const ps = String(r.payment_status || r.paymentStatus || '').toLowerCase()
+  const st = String(r.status || '').toLowerCase()
+  if (r.is_cleared === true || r.cleared === true || r.isCleared === true) return true
+  if (ps === 'paid' || ps === 'cleared' || ps === 'clear') return true
+  if (st === 'cleared' || st === 'paid' || st === 'delivered_paid') return true
+  return false
+}
+function biltyDateKey(v) {
+  const d = new Date(v || '')
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+function todayKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
 function branchLabel(branch) {
   return (branch || 'Branch')
     .split('-')
@@ -200,9 +227,7 @@ function isRowForCurrentBranch(row, branchSlug, activeBranch) {
     row.branch_slug, row.branchSlug, row.branch_code, row.branchCode,
     row.branch, row.branch_name, row.branchName, row.branch_id, row.branchId
   ].filter((x) => x !== undefined && x !== null && String(x).trim() !== '')
-  // Agar Bill/Bilty me Branch hi nahi likha hai to wo Admin/Global ka hai - Branch me MAT dikhao
   if (candidates.length === 0) return false
-  // branch_id match ho to bhi chalega
   if (activeBranch?.id && candidates.some((c) => String(c) === String(activeBranch.id))) return true
   return candidates.some((c) => {
     const n = normalizeBranch(c)
@@ -211,7 +236,6 @@ function isRowForCurrentBranch(row, branchSlug, activeBranch) {
 }
 function loadSavedLinks(branchSlug) {
   try {
-    // Branch-wise key - Ahmedabad ka Link Pune me nahi dikhega
     const key = branchSlug && branchSlug !== 'global' ? `btc_bill_bilty_links_${normalizeBranch(branchSlug)}` : 'btc_bill_bilty_links'
     const raw = localStorage.getItem(key) || '{}'
     const obj = JSON.parse(raw)
@@ -223,7 +247,6 @@ function savedLinksKey(branchSlug) {
 }
 
 // *** FAST DASHBOARD CACHE - SIRF SPEED KE LIYE JODA HAI, BAAKI KUCH DELETE NAHI KIYA ***
-// Admin ka cache alag, har Branch ka cache alag, har User ka cache alag rahega
 function dashboardCacheKey(branchSlug, userId) {
   const b = branchSlug && branchSlug !== 'global' ? `branch_${String(branchSlug).toLowerCase().replace(/[^a-z0-9]/g,'_')}` : 'admin_global'
   const u = userId ? `_${String(userId)}` : ''
@@ -296,7 +319,6 @@ export default function TMSDashboard({ branch }) {
     ? adminQuickActions
     : adminQuickActions.filter((item) => !item.adminOnly && (isBranchDashboard || item.path !== 'user-management'))
 
-  // Branch badle to us Branch ke Links load karo, dusri Branch ke nahi
   useEffect(() => {
     setSavedLinks(loadSavedLinks(branchSlug))
   }, [branchSlug])
@@ -380,15 +402,14 @@ export default function TMSDashboard({ branch }) {
     if (statsBranchSlug) query.branch = statsBranchSlug
     if (statsBranchId) query.branch_id = statsBranchId
 
-    // *** FAST 1 - Pehle Cache se dikhao, Loading mat dikhao ***
+    // *** FIX 2 - Manual Refresh pe Cache bilkul mat dikhao, nahi to nayi Bilty kabhi nahi dikhegi ***
     const isManualRefresh = refreshKey > 0
     const cached = !isManualRefresh ? loadDashboardCache(branchSlug, currentUser?.id || currentUser?.username) : null
     if (cached?.data) {
       const c = cached.data
       if (c.stats) setStats(c.stats)
       if (Array.isArray(c.stock)) setStock(c.stock)
-      if (Array.isArray(c.pendingRows)) setPendingRows(c.pendingRows)
-      if (Array.isArray(c.clearedBills)) setClearedBills(c.clearedBills)
+      // PendingRows Cache se MAT lo - wahi purani 7 Bilty chipki rehti thi
       if (c.monthlyStats) setMonthlyStats(c.monthlyStats)
       if (Array.isArray(c.allBills)) setAllBills(c.allBills)
       setStatsUnavailable(false)
@@ -398,17 +419,18 @@ export default function TMSDashboard({ branch }) {
     }
     setStatsUnavailable(false)
 
-    // *** FAST 2 - Peeche se naya data lao (Background Refresh) ***
+    // *** FIX 3 - Pending ke saath Consignments bhi lao - jo Bilty Pending API ne bahar kar di wo yaha se jod denge ***
     Promise.allSettled([
       dashboardAPI.getDashboardStats(statsBranchSlug, statsBranchId),
       api.get(isBranchDashboard ? '/stationery-stock' : '/stock', { params: query }),
       api.get('/dashboard/pending-amount', { params: query }),
       api.get('/dashboard/cleared-amount', { params: query }),
       dashboardAPI.getMonthlyStats(statsBranchSlug, statsBranchId),
-      api.get('/bills', { params: query })
+      api.get('/bills', { params: query }),
+      api.get('/consignments', { params: query }),
     ]).then((results) => {
       if (!active) return
-      const [statsResult, stockResult, pendingResult, clearedResult, monthlyStatsResult, billsResult] = results
+      const [statsResult, stockResult, pendingResult, clearedResult, monthlyStatsResult, billsResult, consignmentsResult] = results
       let nextStats = null, nextStock = [], nextPending = [], nextCleared = [], nextMonthly = { bills: [], bilties: [] }, nextAllBills = []
 
       if (statsResult.status === 'fulfilled' && statsResult.value.data?.success !== false) {
@@ -426,19 +448,42 @@ export default function TMSDashboard({ branch }) {
       if (pendingResult.status === 'fulfilled') {
         const data = getData(pendingResult.value)
         let rows = Array.isArray(data) ? data : []
-        // *** BRANCH FILTER - Admin ki Bilty Branch me nahi ***
-        // Sirf tab filter karo jab Bilty me Branch likha ho, warna server ka data hi dikhao
         if (isBranchDashboard) {
           const withBranch = rows.filter((r) => r.branch_code || r.branch_slug || r.branch_name || r.branch_id || r.branch)
           if (withBranch.length > 0) rows = rows.filter((r) => isRowForCurrentBranch(r, branchSlug, activeBranch))
         }
         nextPending = rows
-        setPendingRows(rows)
         setPendingError('')
       } else {
         console.error('Unable to load dashboard pending amounts:', pendingResult.reason)
-        if (!cached?.data) { setPendingRows([]); setPendingError(pendingResult.reason?.response?.data?.error || 'Pending amounts could not be loaded.') }
+        if (!cached?.data) { setPendingError(pendingResult.reason?.response?.data?.error || 'Pending amounts could not be loaded.') }
       }
+      if (consignmentsResult?.status === 'fulfilled') {
+        try {
+          const rawC = consignmentsResult.value?.data || {}
+          let cList = Array.isArray(rawC) ? rawC : (Array.isArray(rawC.data) ? rawC.data : (Array.isArray(rawC.consignments) ? rawC.consignments : (Array.isArray(rawC.rows) ? rawC.rows : [])))
+          if (isBranchDashboard) {
+            const withB = cList.filter((r) => r.branch_code || r.branch_slug || r.branch_name || r.branch_id || r.branch)
+            if (withB.length > 0) cList = cList.filter((r) => isRowForCurrentBranch(r, branchSlug, activeBranch))
+          }
+          const seen = new Set(nextPending.map((r) => String(r.lr_no || r.lrNo || '').trim().toUpperCase()))
+          const clearedSet = new Set()
+          if (clearedResult?.status === 'fulfilled') {
+            const cData = getData(clearedResult.value)
+            const cRows = Array.isArray(cData) ? cData : []
+            cRows.forEach((r) => clearedSet.add(String(r.lr_no || '').trim().toUpperCase()))
+          }
+          cList.forEach((r) => {
+            const lr = String(r.lr_no || r.lrNo || '').trim().toUpperCase()
+            if (!lr || seen.has(lr) || clearedSet.has(lr)) return
+            if (isBiltyCleared(r)) return
+            seen.add(lr)
+            nextPending.push({ ...r, grand_total: biltyAmountOf(r) })
+          })
+          nextPending.sort((a, b) => new Date(b.lr_date || b.created_at || 0) - new Date(a.lr_date || a.created_at || 0))
+        } catch (e) { console.warn('Consignments merge skip:', e) }
+      }
+      setPendingRows(nextPending)
       if (clearedResult.status === 'fulfilled') {
         const data = getData(clearedResult.value)
         let rows = Array.isArray(data) ? data : []
@@ -468,8 +513,6 @@ export default function TMSDashboard({ branch }) {
       if (billsResult && billsResult.status === 'fulfilled') {
         const raw = billsResult.value?.data || {}
         let list = Array.isArray(raw) ? raw : (Array.isArray(raw.data) ? raw.data : (Array.isArray(raw.bills) ? raw.bills : (Array.isArray(raw.rows) ? raw.rows : [])))
-        // *** BRANCH FILTER - YAHI MAIN FIX HAI ***
-        // Branch Dashboard me SIRF usi Branch ka Bill rakho, Admin ka Bill hata do
         if (isBranchDashboard) {
           list = list.filter((b) => isRowForCurrentBranch(b, branchSlug, activeBranch))
         }
@@ -479,7 +522,6 @@ export default function TMSDashboard({ branch }) {
         if (!cached?.data) setAllBills([])
       }
 
-      // *** FAST 3 - Naya data aate hi Cache me save kar do, agli baar fast khulega ***
       if (statsResult.status === 'fulfilled' || pendingResult.status === 'fulfilled' || billsResult?.status === 'fulfilled') {
         saveDashboardCache(branchSlug, currentUser?.id || currentUser?.username, {
           stats: nextStats ?? cached?.data?.stats ?? null,
@@ -698,17 +740,12 @@ export default function TMSDashboard({ branch }) {
     }
   }
 
-    async function handleLogout() {
-    // *** FIX - Branch Logout apne Branch Login pe jayega, Admin wale pe nahi ***
-    // Logout se pehle hi Branch yaad kar lo, kyunki logout() ke baad session saaf ho jata hai
+  async function handleLogout() {
     const wasBranchDashboard = isBranchDashboard
     const wasBranchSlug = branchSlug
     const wasAdminViewingBranch = canAdminViewBranch
     await logout()
     sessionStorage.clear()
-    // 1. Agar Branch ka user hai (Amit - Ahmedabad) -> usi Branch ke Login pe jao
-    // 2. Agar Admin hai ya Admin Branch dekh raha tha -> Admin wale /login pe jao
-    // 3. Pune wala Pune pe, Ahmedabad wala Ahmedabad pe - kabhi dusre ke Login pe nahi
     if (wasBranchDashboard && !wasAdminViewingBranch && wasBranchSlug) {
       navigate(`/branch-login/${encodeURIComponent(wasBranchSlug)}`, { replace: true })
     } else {
@@ -732,6 +769,17 @@ export default function TMSDashboard({ branch }) {
     }
     return 0
   }
+
+  // *** FIX 4 - Agar Server Revenue 0 bhej raha hai to Pending Bilty se hi Revenue nikal lo ***
+  const pendingTotal = pendingRows.reduce((s, r) => s + biltyAmountOf(r), 0)
+  const todayRows = pendingRows.filter((r) => biltyDateKey(r.lr_date || r.created_at) === todayKey())
+  const todayPendingTotal = todayRows.reduce((s, r) => s + biltyAmountOf(r), 0)
+  const thisMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`
+  const monthRows = pendingRows.filter((r) => biltyDateKey(r.lr_date || r.created_at).startsWith(thisMonthKey))
+  const monthPendingTotal = monthRows.reduce((s, r) => s + biltyAmountOf(r), 0)
+  const displayTodayRevenue = Number(getStat('today_revenue')) > 0 ? Number(getStat('today_revenue')) : todayPendingTotal
+  const displayMonthRevenue = Number(getStat('month_revenue')) > 0 ? Number(getStat('month_revenue')) : monthPendingTotal
+  const displayPendingAmount = Number(getStat('pending_amount', 'pendingAmount')) > 0 ? Number(getStat('pending_amount', 'pendingAmount')) : pendingTotal
 
   const billBalance = (b) => Number(b?.net_balance ?? b?.balance_due ?? b?.grand_total ?? 0)
   const billNoOf = (b) => b?.bill_no || b?.invoice_no || b?.bill_number || b?.billNo || ''
@@ -842,7 +890,7 @@ export default function TMSDashboard({ branch }) {
                 {pendingRows.length > 0 ? (
                   <div className="mt-2">
                     <p className="font-bold text-red-600">⚠️ {pendingRows.length} Bilty Pending hai</p>
-                    <p className="text-slate-500">Total Pending: {money(pendingRows.reduce((s, r) => s + Number(r.grand_total || 0), 0))}</p>
+                    <p className="text-slate-500">Total Pending: {money(pendingTotal)}</p>
                     <p className="mt-1 text-slate-500">Payment aaye to Pending se Clear kar do.</p>
                   </div>
                 ) : (
@@ -989,18 +1037,18 @@ export default function TMSDashboard({ branch }) {
           <Link to={branchPath('bookings/list?filter=today')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Today&apos;s Booking</p>
             <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(getStat('today_lr', 'todaysBooking'))} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
-            <p className="mt-2 text-sm text-slate-600">Today&apos;s Revenue <strong className="text-slate-900">{money(getStat('today_revenue'))}</strong></p>
+            <p className="mt-2 text-sm text-slate-600">Today&apos;s Revenue <strong className="text-slate-900">{money(displayTodayRevenue)}</strong></p>
           </Link>
           <Link to={branchPath('bookings/list?filter=month')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">This Month&apos;s Booking</p>
             <p className="mt-3 text-2xl font-extrabold text-slate-900">{number(getStat('month_lr', 'monthlyBooking'))} <span className="text-sm font-medium text-slate-500">Bilties</span></p>
-            <p className="mt-2 text-sm text-slate-600">Month&apos;s Revenue <strong className="text-slate-900">{money(getStat('month_revenue'))}</strong></p>
+            <p className="mt-2 text-sm text-slate-600">Month&apos;s Revenue <strong className="text-slate-900">{money(displayMonthRevenue)}</strong></p>
           </Link>
           <Link to={branchPath('billing/pending')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Pending Amount</p>
-            <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(getStat('pending_amount', 'pendingAmount'))}</p>
+            <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(displayPendingAmount)}</p>
             <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs text-slate-600">
-              <span>Pending Bilties <strong>{number(getStat('pending_lr'))}</strong></span>
+              <span>Pending Bilties <strong>{number(pendingRows.length)}</strong></span>
               <span>Bills <strong>{number(getStat('pending_bills'))}</strong></span>
               <span>Money Receipts <strong>{number(getStat('total_mr'))}</strong></span>
               <span>Gadi Challans <strong>{number(getStat('total_gadi_challan'))}</strong></span>
@@ -1048,7 +1096,7 @@ export default function TMSDashboard({ branch }) {
                         <p className="text-xs text-slate-500">Cleared on: {entry.cleared_at || 'Today'}{entry.cleared_by ? ` · By: ${entry.cleared_by}` : ''}{entry.branch_code ? ` · ${entry.branch_code}` : ''}</p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <strong className="text-sm text-green-700">{money(entry.grand_total)}</strong>
+                        <strong className="text-sm text-green-700">{money(biltyAmountOf(entry))}</strong>
                         <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">✓ Cleared</span>
                       </div>
                     </div>
@@ -1077,7 +1125,7 @@ export default function TMSDashboard({ branch }) {
                     <p className="text-xs text-slate-500">{entry.lr_date || 'Date unavailable'}{entry.branch_code ? ` · ${entry.branch_code}` : ''}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <strong className="text-sm text-red-700">{money(entry.grand_total)}</strong>
+                    <strong className="text-sm text-red-700">{money(biltyAmountOf(entry))}</strong>
                     {canClearPending && (
                       <button
                         type="button"
@@ -1209,7 +1257,7 @@ export default function TMSDashboard({ branch }) {
               <div>
                 <h2 id="clear-pending-title" className="text-lg font-bold text-slate-900">Clear pending amount?</h2>
                 <p className="mt-2 text-sm text-slate-600">
-                  Are you sure you want to clear the pending amount for {pendingToClear.lr_no} ({money(pendingToClear.grand_total)})?
+                  Are you sure you want to clear the pending amount for {pendingToClear.lr_no} ({money(biltyAmountOf(pendingToClear))})?
                   This marks the bilty as cleared; it does not create a payment receipt.
                 </p>
               </div>
