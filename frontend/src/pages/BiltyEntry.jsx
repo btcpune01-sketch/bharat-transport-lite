@@ -1,6 +1,7 @@
 // FINAL - Branch Edit Fix + Party Auto-Save - Print Format NOT Changed
 // + FAST SAVE + TO PAY / TBB / PAID WORKING + VEHICLE NO / LORRY NO FIX
 // + INDIAN AMOUNT FORMAT: 100000 -> ₹1,00,000/- (sirf dikhne me, calculation same)
+// + FIX: Edit me Amount List me nahi dikhta tha - kyunki Edit Local Draft me ja raha tha. Ab Edit kabhi Local me nahi jayega, sirf Server pe save hoga.
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -442,8 +443,12 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         lorry_no: formData.vehicle_no || formData.lorry_no || '',
         basis_of_booking: normalizedBasis, payment_status: paymentStatus, payment_type: normalizedBasis, booking_basis: normalizedBasis,
         basis_booking: normalizedBasis === 'TO_BE_BILLED' ? 'TO BB' : normalizedBasis === 'TO_PAY' ? 'TO PAY' : normalizedBasis === 'PAID' ? 'PAID' : normalizedBasis,
+        // FIX: List isi se Amount dikhati hai - isliye 3 jagah same computedTotal bheja ja raha hai
+        freight: parseFloat(formData.freight) || 0,
         grand_total: computedTotal,
         total_amount: computedTotal,
+        total: computedTotal,
+        amount: computedTotal,
         amount_in_words: numberToWords(computedTotal) }
       submitPayload = payload
       payload.eway_valid_upto = payload.eway_valid_upto || null
@@ -456,13 +461,34 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         } catch (err) {}
       }
       if (id) {
-        const response = await biltyAPI.update(id, payload)
-        if (response.data?.local) { const draft = saveLocalDraft('bilty', payload); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); setLoading(false); savePartiesInBackground(); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`); return }
+        // ===== FIX START: EDIT kabhi Local Draft me nahi jayega =====
+        let updateResponse = null
+        let updateError = null
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            updateResponse = await biltyAPI.update(id, payload)
+            updateError = null
+            break
+          } catch (err) {
+            updateError = err
+            // 409 / validation error pe retry mat karo, seedha bahar
+            if (err?.response?.status === 409 || err?.response?.status === 400) break
+            if (attempt < 2) await new Promise(r => setTimeout(r, 800))
+          }
+        }
+        if (updateError) throw updateError
+        // Agar API ne local:true bheja to usko SUCCESS mat mano - Edit server pe hona chahiye
+        if (updateResponse?.data?.local) {
+          toast.error('Server offline hai - Edit save nahi hua. Net check karke dobara Update dabao.')
+          setLoading(false)
+          return
+        }
         toast.success('Bilty Updated - ' + payload.lr_no)
         setLoading(false)
         savePartiesInBackground()
         window.location.href = branchMode ? branchPath('consignments') : '/consignments'
         return
+        // ===== FIX END =====
       } else {
         if (branchMode) {
           let currentLr = payload.lr_no || ''
@@ -509,6 +535,12 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
       const errorMsg = err.response?.data?.error || `Failed to ${id ? 'update' : 'create'} bilty`
       if (err.response?.status === 409 && !branchMode) { const suggestedNumber = err.response.data?.suggested_number; toast.error(suggestedNumber ? `${errorMsg} Next number: ${suggestedNumber}` : errorMsg); return }
       if (err.response?.status === 409 && branchMode) { toast.error('Bilty save nahi hui, fir se try karo'); return }
+      // ===== FIX: Edit me Database Unavailable pe bhi Local Draft / Print pe mat bhejo =====
+      if (id) {
+        console.error('Edit save failed, staying on edit page:', err)
+        toast.error('Edit save nahi hua - Server offline hai. Dobara Update dabao. List me purana Amount hi dikhega jab tak ye save nahi hoga.')
+        return
+      }
       if (isDatabaseUnavailable(err)) {
         try { const draft = saveLocalDraft('bilty', submitPayload || { ...formData, lr_no: formData.lr_no }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); navigate(branchMode ? branchPath(`bilty-print/${draft.localDraftId}`) : `/bilty-print/${draft.localDraftId}`) } catch (storageError) { console.error('Unable to store the Bilty as a local draft:', storageError); toast.error(`Unable to save Bilty: ${errorMsg}`) }
       } else { toast.error(errorMsg) }
