@@ -3,6 +3,7 @@
 // + INDIAN AMOUNT FORMAT: 100000 -> ₹1,00,000/- (sirf dikhne me, calculation same)
 // + FIX: Edit me Amount List me nahi dikhta tha - kyunki Edit Local Draft me ja raha tha. Ab Edit kabhi Local me nahi jayega, sirf Server pe save hoga.
 // + FIX 2: column "booking_basis" / "total_amount" does not exist - 500 error. Ab AUTO-FIX LOOP hai - Server jo column bolega nahi hai, code khud usko kaat ke dobara try karega.
+// + FIX 3: 404 - window.location.href hata ke navigate() kar diya, taaki #/consignments pe jaye, /consignments pe nahi.
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api, { biltyAPI, customerAPI } from '../api'
@@ -503,7 +504,7 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
         toast.success('Bilty Updated - ' + payload.lr_no)
         setLoading(false)
         savePartiesInBackground()
-        window.location.href = branchMode ? branchPath('consignments') : '/consignments'
+        navigate(branchMode ? branchPath('consignments') : '/consignments')
         return
       } else {
         if (branchMode) {
@@ -514,7 +515,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
             try {
               const attemptPayload = { ...payload, lr_no: currentLr }
               for (const k of DROP_BEFORE_SAVE) delete attemptPayload[k]
-              // Create me bhi AUTO-FIX: missing column aaye to kaat ke dobara try karo
               let created = null
               const createPayload = { ...attemptPayload }
               for (let inner = 0; inner < 15; inner++) {
@@ -548,7 +548,6 @@ export default function BiltyEntry({ branchMode = false, branchCode: branchSlug,
           setLoading(false)
           savePartiesInBackground()
         } else {
-          // Non-branch Create me bhi AUTO-FIX
           let response = null
           const createPayload = { ...payload }
           for (let inner = 0; inner < 15; inner++) {
