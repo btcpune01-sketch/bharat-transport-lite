@@ -18,25 +18,53 @@ function formatBillNoWithYear(billNo, dateValue) {
   const serial = String(billNo).match(/(\d+)\s*$/)?.[1] || String(billNo)
   return `BTC/${billYearLabel(dateValue)}/${serial}`
 }
-// *** NAYA - BRANCH ONLY: Bill No. se sirf serial nikalo ***
 function extractSerial(billNo) {
   if (!billNo) return 0
   const m = String(billNo).match(/(\d+)\s*$/)
   return m ? parseInt(m[1], 10) : 0
 }
-// *** NAYA - BRANCH ONLY: List se sabse bada serial nikalo ***
-function getMaxSerialFromList(list, branch, yearLabel) {
+// *** FIXED - Branch match naram kiya, Year filter hataya ***
+// Pehle: branch_code exact match + 26-27 hona zaroori tha -> sab 0 ho jata tha -> 1 aa jata tha
+// Ab: Koi branch field hi nahi hai to Bill ko gino (purana bill), branch field hai aur clearly dusri branch hai tabhi chhodo
+function normalizeBranchKey(v) {
+  return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+function getBranchKeys(branch, branchSession) {
+  const keys = [branch, branchSession?.branch?.branch_code, branchSession?.branch?.branch_name, branchSession?.branch?.url_slug, branchSession?.branch?.branch_slug]
+    .map(normalizeBranchKey).filter(Boolean)
+  return [...new Set(keys)]
+}
+function isBillForThisBranch(b, branchKeys) {
+  if (!branchKeys || !branchKeys.length) return true
+  const fields = [b.branch_code, b.branchCode, b.branch, b.branch_name, b.branchName, b.branch_slug, b.branchSlug]
+    .map(normalizeBranchKey).filter(Boolean)
+  // Koi branch field hi nahi hai (purana bill) -> is branch ka maan lo, chhodo mat
+  if (!fields.length) return true
+  // Branch id alag se check - id number ho sakta hai
+  if (b.branch_id || b.branchId) {
+    // id ko key me nahi milaya, isliye yaha sirf field se match dekho, id mismatch pe bhi mat chhodo agar naam match hai
+  }
+  return fields.some((f) => branchKeys.some((k) => f === k || f.includes(k) || k.includes(f)))
+}
+function getMaxSerialFromList(list, branchKeys) {
   let max = 0
   ;(list || []).forEach((b) => {
-    const bNo = b.bill_no || b.invNo || ''
+    const bNo = b.bill_no || b.invNo || b.invoice_no || b.bill_number || ''
     if (!bNo) return
-    // Sirf isi branch + isi year ka number gino
-    if (branch && b.branch_code && String(b.branch_code) !== String(branch)) return
-    if (yearLabel && !String(bNo).includes(yearLabel)) return
+    // *** YEAR FILTER HATAYA - BTC/BILL/1074 bhi gina jayega, sirf serial chahiye ***
+    if (!isBillForThisBranch(b, branchKeys)) return
     const s = extractSerial(bNo)
     if (s > max) max = s
   })
   return max
+}
+function parseBillListResponse(res) {
+  const d = res?.data
+  if (Array.isArray(d)) return d
+  if (Array.isArray(d?.data)) return d.data
+  if (Array.isArray(d?.bills)) return d.bills
+  if (Array.isArray(d?.rows)) return d.rows
+  return []
 }
 const getLocalBillNumber = () => getLocalDocumentNumber('bill', `BTC/${billYearLabel(new Date())}/`)
 
@@ -57,7 +85,6 @@ export default function BillEntry({ branchMode = false, branchCode }) {
   const billNumberRequest = useRef(0)
   const [branches, setBranches] = useState([])
   const [selectedBranchCode, setSelectedBranchCode] = useState('')
-  // *** NAYA - BRANCH ONLY: List me Edit ke liye ***
   const [editingBillId, setEditingBillId] = useState(null)
   const [editingBillNo, setEditingBillNo] = useState('')
   const [lrSearch, setLrSearch] = useState('')
@@ -122,35 +149,67 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     fetchNextBillNo(branch)
   }, [id, branchMode, branchCode, selectedBranchCode])
 
-  // *** FIXED - BRANCH MODE: Last Bill List se +1 | ADMIN MODE: Purana wala same ***
+  // *** FIXED - BRANCH: 3 jagah se Last lo, sabse bada +1 | ADMIN: purana same ***
   const fetchNextBillNo = async (branch = (branchMode ? branchCode : selectedBranchCode)) => {
     const requestId = ++billNumberRequest.current
     if (!branch) return
-    // ===== BRANCH ONLY - NAYA LOGIC =====
     if (branchMode) {
+      let branchSession = null
+      try { branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null') } catch (e) {}
+      const branchKeys = getBranchKeys(branch, branchSession)
+      const branchId = branchSession?.branch?.id
       try {
-        // 1. Isi branch ki Bill List lao - yehi source of truth hai
-        const res = await api.get('/bills', { params: { branch: branch, branch_code: branch, limit: 1000 } })
-        const list = res.data?.data || res.data || []
-        // Agar server ne filter nahi kiya to yaha filter karenge
-        const yearLabel = billYearLabel(new Date())
-        const maxSerial = getMaxSerialFromList(list, branch, yearLabel)
+        // Teenon ko ek saath mangao - ek fail bhi ho to dusra kaam karega
+        const [seriesRes, billsFilteredRes, billsAllRes] = await Promise.allSettled([
+          documentSeriesAPI.getNextNumber('bill', branch),
+          api.get('/bills', { params: { branch, branch_code: branch, branch_id: branchId, limit: 1000 } }),
+          api.get('/bills', { params: { limit: 1000 } }),
+        ])
         if (requestId !== billNumberRequest.current) return
-        // 2. Last + 1
-        const next = `BTC/${yearLabel}/${maxSerial + 1}`
-        setBillData(prev => ({ ...prev, invNo: next }))
-        // History bhi isi list se update taaki dobara fetch na karna pade
-        if (Array.isArray(list) && list.length) {
-          setHistoryList(list.map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
+
+        // 1) SERIES se - ye Server ka asli Next Number hai (pehle isko ignore kar rahe the)
+        let seriesNext = 0
+        if (seriesRes.status === 'fulfilled') {
+          const d = seriesRes.value?.data || {}
+          const raw = d.bill_no || d.number || d.next_number || d.nextNumber || d.next_bill_no || ''
+          const lastRaw = d.last_used || d.lastUsed || d.last_number || ''
+          if (raw) seriesNext = extractSerial(raw)
+          else if (lastRaw) seriesNext = extractSerial(lastRaw) + 1
+        }
+        // 2) FILTERED LIST se
+        let listMax = 0
+        if (billsFilteredRes.status === 'fulfilled') {
+          listMax = Math.max(listMax, getMaxSerialFromList(parseBillListResponse(billsFilteredRes.value), branchKeys))
+        }
+        // 3) FULL LIST se (agar server ne branch filter me khali bhej diya to yaha se mil jayega)
+        // Yaha bhi branchKeys se hi filter karenge, dusri branch ka number kabhi nahi lenge
+        let allList = []
+        if (billsAllRes.status === 'fulfilled') {
+          allList = parseBillListResponse(billsAllRes.value)
+          listMax = Math.max(listMax, getMaxSerialFromList(allList, branchKeys))
+        }
+        // 4) HISTORY se (jo pehle se loaded hai)
+        const historyMax = getMaxSerialFromList(historyList, branchKeys)
+
+        // Sabse bada + 1 - koi ek khali ho to bhi dusre se sahi number aayega, 1 nahi aayega
+        const nextSerial = Math.max(seriesNext, listMax + 1, historyMax + 1, 1)
+        const yearLabel = billYearLabel(new Date())
+        setBillData(prev => ({ ...prev, invNo: `BTC/${yearLabel}/${nextSerial}` }))
+        // History ko bhi sahi list se bhar do taaki Edit me sahi dikhe
+        const bestList = allList.length ? allList : parseBillListResponse(billsFilteredRes.status === 'fulfilled' ? billsFilteredRes.value : null)
+        if (bestList.length) {
+          const filteredForHistory = bestList.filter((b) => isBillForThisBranch(b, branchKeys))
+          if (filteredForHistory.length) {
+            setHistoryList(filteredForHistory.map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
+          }
         }
         return
       } catch (error) {
         if (requestId !== billNumberRequest.current) return
-        console.warn('Branch bill list se number nahi mila, history se try:', error)
-        // Fallback: jo history pehle se loaded hai usi se
+        // Agar sab fail ho gaya to History se hi lo, Local 1 se nahi
+        const historyMax = getMaxSerialFromList(historyList, branchKeys)
         const yearLabel = billYearLabel(new Date())
-        const maxSerial = getMaxSerialFromList(historyList, branch, yearLabel)
-        setBillData(prev => ({ ...prev, invNo: `BTC/${yearLabel}/${maxSerial + 1}` }))
+        setBillData(prev => ({ ...prev, invNo: `BTC/${yearLabel}/${historyMax + 1}` }))
         return
       }
     }
@@ -168,21 +227,17 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     }
   }
 
-  // *** NAYA - BRANCH ONLY: Bill List me Bill No. Edit + Save ***
   const saveEditedBillNo = async (billItem) => {
     if (!branchMode) return
     const newNo = editingBillNo.trim()
     if (!newNo) { toast.error('Bill Number khali hai'); return }
-    // Format fix: BTC/26-27/1086 jaisa bana do
     const formatted = formatBillNoWithYear(newNo, billItem.billDate || new Date())
-    // Duplicate check - isi branch ki list me
     const dup = historyList.find(b => b.id !== billItem.id && String(b.invNo || b.bill_no) === formatted)
     if (dup) { toast.error(`Ye number pehle se hai - ${formatted} duplicate hai`); return }
     try {
       setLoading(true)
       await api.put(`/bills/${billItem.id}`, { bill_no: formatted })
       setHistoryList(prev => prev.map(b => b.id === billItem.id ? { ...b, invNo: formatted, bill_no: formatted } : b))
-      // Agar wahi bill form me khula hai to form bhi update
       if (String(id) === String(billItem.id)) setBillData(prev => ({ ...prev, invNo: formatted }))
       setEditingBillId(null); setEditingBillNo('')
       toast.success(`Bill Number badal gaya - ${formatted}`)
@@ -233,7 +288,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       balance: Number(bill.net_balance ?? bill.balance_due ?? bill.balance) || 0,
       amountWords: bill.amount_in_words || bill.amountWords || '',
       remarks: bill.remarks || '',
-      branch_code: bill.branch_code || '',
+      branch_code: bill.branch_code || bill.branch || '',
+      branch_name: bill.branch_name || '',
+      branch_id: bill.branch_id || '',
       rows: rows.length ? rows : [{ date: '', lr: '', inv: '', from: '', to: '', wt: '', load: '', unload: '', oth: '', freight: '', total: '0.00' }]
     }
   }
@@ -252,10 +309,24 @@ export default function BillEntry({ branchMode = false, branchCode }) {
 
   const fetchHistory = async () => {
     try {
-      // BRANCH MODE: sirf isi branch ki list lao
+      let branchSession = null
+      try { branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null') } catch (e) {}
+      const branchKeys = branchMode ? getBranchKeys(branchCode, branchSession) : []
       const params = branchMode ? { branch: branchCode, branch_code: branchCode, limit: 1000 } : {}
       const res = await api.get('/bills', { params })
-      setHistoryList((res.data.data || []).map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
+      let list = parseBillListResponse(res)
+      // Agar server ne khali bhej diya to bina filter wali list se lo, par branch se filter karke - dusri branch mix nahi hogi
+      if (branchMode && !list.length) {
+        try {
+          const resAll = await api.get('/bills', { params: { limit: 1000 } })
+          list = parseBillListResponse(resAll).filter((b) => isBillForThisBranch(b, branchKeys))
+        } catch (e) {}
+      } else if (branchMode) {
+        const filtered = list.filter((b) => isBillForThisBranch(b, branchKeys))
+        // Agar filter ke baad sab ud gaya matlab branch field ka format alag hai, to original list hi rakho - khali mat karo
+        if (filtered.length) list = filtered
+      }
+      setHistoryList(list.map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
     } catch (e) {
       try { setHistoryList(JSON.parse(localStorage.getItem('btc_history') || '[]').map(mapBillToForm)) }
       catch (parseError) { setHistoryList([]) }
@@ -349,9 +420,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     if (!billData.partyName) { alert("Party Name zaroori hai!"); return }
     const branch = branchMode ? branchCode : selectedBranchCode
     if (!branch) { alert('Select a branch before saving this Bill.'); return }
-    // *** FIXED - BRANCH ONLY: Duplicate pe ab ROKO, confirm nahi ***
     if (billData.invNo.trim()) {
-      // Pehle List se check karo - sabse tez
       const listDup = historyList.find(b => String(b.invNo || b.bill_no) === billData.invNo.trim() && String(b.id) !== String(id || ''))
       if (branchMode && listDup) { toast.error(`Ye number pehle use ho chuka hai - ${billData.invNo}. List se Edit karke alag number lo.`); return }
       try {
@@ -586,7 +655,6 @@ export default function BillEntry({ branchMode = false, branchCode }) {
               {historyList.map(inv => (
                 <div key={inv.id} className="history-item">
                   <div><input type="checkbox" checked={selectedInvoices.includes(inv.id)} onChange={(e) => { if(e.target.checked) setSelectedInvoices([...selectedInvoices, inv.id]); else setSelectedInvoices(selectedInvoices.filter(id => id !== inv.id)) }} /></div>
-                  {/* *** BRANCH ONLY EDIT - List me Bill No. Edit *** */}
                   <div>
                     {branchMode && editingBillId === inv.id ? (
                       <div style={{display:'flex', gap:'4px'}}>
