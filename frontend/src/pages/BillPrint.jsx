@@ -1,14 +1,48 @@
 import React, { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api'
 import { formatDate } from '../utils/dateFormatter'
 
-const BillPrint = ({ branchMode = false, branchCode }) => {
-  const { id } = useParams()
+function normalizeBranchKey(v) {
+  return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+function getBranchSession() {
+  try { return JSON.parse(localStorage.getItem('branch_session') || 'null') } catch (e) { return null }
+}
+function getBranchFromURL() {
+  try {
+    const full = window.location.hash + window.location.pathname
+    const m = full.match(/\/branch\/([^\/\?#]+)/i)
+    return m ? decodeURIComponent(m[1]) : ''
+  } catch (e) { return '' }
+}
+function isBillForThisBranch(b, branchKeys) {
+  if (!branchKeys || !branchKeys.length) return true
+  const fields = [b.branch_code, b.branchCode, b.branch, b.branch_name, b.branchName, b.branch_slug, b.branchSlug]
+    .map(normalizeBranchKey).filter(Boolean)
+  // Branch field hi nahi hai to ye Admin/Global ka Bill hai - Branch me MAT dikhao
+  if (!fields.length) return false
+  return fields.some((f) => branchKeys.some((k) => f === k || f.includes(k) || k.includes(f)))
+}
+function unwrapBillData(d) {
+  if (!d) return null
+  if (d.data && typeof d.data === 'object' && !Array.isArray(d.data)) return d.data
+  if (d.bill && typeof d.bill === 'object') return d.bill
+  return d
+}
+
+const BillPrint = ({ branchMode = false, branchCode: branchCodeProp }) => {
+  const params = useParams()
+  const navigate = useNavigate()
+  const { id } = params
+  // FIX No.4 - effectiveBranchCode: prop / params / URL / session - 4 jagah se, kabhi khali nahi
+  const branchSessionEarly = getBranchSession()
+  const branchCode = branchCodeProp || params.branchCode || params.branch || params.branchSlug || params.branch_code || getBranchFromURL() || branchSessionEarly?.branch?.branch_code || branchSessionEarly?.branch?.url_slug || ''
   const [bills, setBills] = useState([])
   const [selectedBill, setSelectedBill] = useState(null)
   const [loading, setLoading] = useState(true)
   const [printOption, setPrintOption] = useState('original')
+  const [branchError, setBranchError] = useState('')
 
   const normalizeBill = (bill) => {
     let paymentDetails = {}
@@ -65,20 +99,48 @@ const BillPrint = ({ branchMode = false, branchCode }) => {
 
     const fetchBills = async () => {
       try {
+        // FIX: Agar id hai to list mat mangao, seedha detail lo - list se Admin leak nahi hoga
+        if (id) {
+          const detailRes = await api.get(`/bills/${encodeURIComponent(id)}`)
+          const rawBill = unwrapBillData(detailRes.data)
+          if (!active) return
+          if (!rawBill || !rawBill.id) {
+            setBranchError('Bill nahi mila')
+            setLoading(false)
+            return
+          }
+          // FIX: BRANCH CHECK - Dusri branch / Admin ka Bill yaha kabhi nahi khulega
+          if (branchMode && branchCode) {
+            const session = getBranchSession()
+            const keys = [branchCode, session?.branch?.branch_code, session?.branch?.branch_name, session?.branch?.url_slug].map(normalizeBranchKey).filter(Boolean)
+            if (!isBillForThisBranch(rawBill, [...new Set(keys)])) {
+              setBranchError('Ye Bill is Branch ka nahi hai')
+              setSelectedBill(null)
+              setBills([])
+              setLoading(false)
+              return
+            }
+          }
+          if (active) setSelectedBill(normalizeBill(rawBill))
+          setBills([])
+          return
+        }
         const res = await api.get('/bills', {
-          params: branchMode && branchCode ? { branch: branchCode } : undefined
+          params: branchMode && branchCode ? { branch: branchCode, branch_code: branchCode, limit: 1000 } : { limit: 1000 }
         })
         const data = res.data?.data || res.data?.bills || res.data || []
-        const rows = Array.isArray(data) ? data.map(normalizeBill) : []
+        let rows = Array.isArray(data) ? data.map(normalizeBill) : []
+        // FIX: List me bhi sirf apni branch - Server ne Admin ka bhej bhi diya to yaha kaat do
+        if (branchMode && branchCode) {
+          const session = getBranchSession()
+          const keys = [branchCode, session?.branch?.branch_code, session?.branch?.branch_name, session?.branch?.url_slug].map(normalizeBranchKey).filter(Boolean)
+          rows = rows.filter((b) => isBillForThisBranch(b, [...new Set(keys)]))
+        }
         if (!active) return
         setBills(rows)
-
-        if (id) {
-          const detail = await api.get(`/bills/${encodeURIComponent(id)}`)
-          if (active) setSelectedBill(normalizeBill(detail.data))
-        }
       } catch (err) {
         console.error('Error fetching bills:', err)
+        if (active) setBranchError(err.response?.data?.error || 'Bill load nahi hua')
       } finally {
         if (active) setLoading(false)
       }
@@ -90,12 +152,28 @@ const BillPrint = ({ branchMode = false, branchCode }) => {
 
   const handlePrint = async (bill) => {
     try {
+      // FIX: Print se pehle bhi branch check
+      if (branchMode && branchCode) {
+        const session = getBranchSession()
+        const keys = [branchCode, session?.branch?.branch_code, session?.branch?.branch_name, session?.branch?.url_slug].map(normalizeBranchKey).filter(Boolean)
+        if (!isBillForThisBranch(bill, [...new Set(keys)])) {
+          window.alert('Ye Bill is Branch ka nahi hai')
+          return
+        }
+      }
       const detail = bill.id ? await api.get(`/bills/${encodeURIComponent(bill.id)}`) : null
-      setSelectedBill(normalizeBill(detail?.data || bill))
+      const raw = unwrapBillData(detail?.data) || bill
+      setSelectedBill(normalizeBill(raw))
       setTimeout(() => window.print(), 500)
     } catch (err) {
       console.error('Error loading bill for printing:', err)
     }
+  }
+
+  const goBackToList = () => {
+    if (branchMode && branchCode) navigate(`/branch/${encodeURIComponent(branchCode)}/bill-list`)
+    else if (window.history.length > 1) window.history.back()
+    else navigate('/bills')
   }
 
   const formatINR = (num) => {
@@ -115,21 +193,31 @@ const BillPrint = ({ branchMode = false, branchCode }) => {
       return res
     }
     let str = ""
-    if (n >= 10000000) { str += getWords(Math.floor(n/10000000)) + "CRORE "; n %= 10000000 }
-    if (n >= 100000) { str += getWords(Math.floor(n/100000)) + "LAKH "; n %= 100000 }
-    if (n >= 1000) { str += getWords(Math.floor(n/1000)) + "THOUSAND "; n %= 1000 }
+    if (n >= 10000000) { str += getWords(Math.floor(n / 10000000)) + "CRORE "; n %= 10000000 }
+    if (n >= 100000) { str += getWords(Math.floor(n / 100000)) + "LAKH "; n %= 100000 }
+    if (n >= 1000) { str += getWords(Math.floor(n / 1000)) + "THOUSAND "; n %= 1000 }
     str += getWords(n)
     return str.trim() + " RUPEES ONLY"
   }
 
   if (loading) return <div style={{padding: '50px', textAlign: 'center'}}>Loading bills...</div>
 
+  if (branchError) {
+    return (
+      <div style={{padding: '50px', textAlign: 'center'}}>
+        <h2 style={{color: '#d32f2f'}}>{branchError}</h2>
+        <p style={{color: '#666'}}>Ye Bill is Branch ka nahi hai ya nahi mila.</p>
+        <button onClick={goBackToList} style={{padding: '10px 16px', background: '#0d1b3e', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>← Back to Bill List</button>
+      </div>
+    )
+  }
+
   if (!selectedBill) {
     return (
       <div style={{padding: '20px', maxWidth: '1200px', margin: '0 auto'}}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-          <h2 style={{color: '#0d1b3e', borderBottom: '3px solid #d32f2f', paddingBottom: '10px'}}>📋 Select a Bill to Print</h2>
-          <button onClick={() => window.history.length > 1 ? window.history.back() : window.location.assign('#/bills')} style={{padding: '8px 12px', background: '#666', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>← Back</button>
+          <h2 style={{color: '#0d1b3e', borderBottom: '3px solid #d32f2f', paddingBottom: '10px'}}>📋 Select a Bill to Print {branchMode && branchCode ? `(Branch: ${branchCode})` : ''}</h2>
+          <button onClick={goBackToList} style={{padding: '8px 12px', background: '#666', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold'}}>← Back</button>
         </div>
         {bills.length === 0 ? (
           <p style={{textAlign: 'center', padding: '40px', color: '#666'}}>No bills found. Create a bill first.</p>
@@ -174,7 +262,7 @@ const BillPrint = ({ branchMode = false, branchCode }) => {
   return (
     <>
       <div className="no-print" style={{textAlign: 'center', padding: '12px', background: '#111', position: 'sticky', top: 0, zIndex: 1000, display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap'}}>
-        <div style={{color: 'white', fontSize: '12px', fontWeight: 'bold', marginRight: '10px'}}>BTC BILL MANAGER</div>
+        <div style={{color: 'white', fontSize: '12px', fontWeight: 'bold', marginRight: '10px'}}>BTC BILL MANAGER {branchMode && branchCode ? `| Branch: ${branchCode}` : ''}</div>
         <select value={printOption} onChange={(e) => setPrintOption(e.target.value)} style={{padding: '8px', fontWeight: 'bold', borderRadius: '5px'}}>
           <option value="original">ORIGINAL</option>
           <option value="duplicate">DUPLICATE</option>
