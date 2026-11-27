@@ -347,19 +347,37 @@ export default function TMSDashboard({ branch }) {
     }
   }, [branchSlug, currentUser, isBranchDashboard])
 
-  useEffect(() => {
+    useEffect(() => {
     if (!isAdminUser) return
     let active = true
-    branchAPI.getAll()
-      .then((response) => {
+    const parseBranches = (resp) => {
+      const d = resp?.data ?? resp ?? {}
+      if (Array.isArray(d)) return d
+      if (Array.isArray(d.data)) return d.data
+      if (Array.isArray(d.branches)) return d.branches
+      if (Array.isArray(d.rows)) return d.rows
+      if (Array.isArray(d.data?.branches)) return d.data.branches
+      if (Array.isArray(d.data?.rows)) return d.data.rows
+      return []
+    }
+    const loadBranches = async () => {
+      try {
+        const res = await branchAPI.getAll()
         if (!active) return
-        const data = getData(response)
-        setBranches(Array.isArray(data) ? data : [])
-      })
-      .catch((error) => {
+        let list = parseBranches(res)
+        if (list.length === 0) {
+          try {
+            const res2 = await api.get('/branches')
+            list = parseBranches(res2)
+          } catch (e2) {}
+        }
+        if (active) setBranches(list)
+      } catch (error) {
         console.error('Unable to load branches for dashboard navigation:', error)
         if (active) setBranches([])
-      })
+      }
+    }
+    loadBranches()
     return () => { active = false }
   }, [isAdminUser])
 
