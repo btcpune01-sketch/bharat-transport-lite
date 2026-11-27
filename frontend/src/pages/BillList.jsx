@@ -76,7 +76,7 @@ export default function BillList({ branchMode = false, branchCode }) {
           limit: 50,
           offset,
           ...(searchText.trim() ? { search: searchText.trim() } : {}),
-          ...(branchMode && branchCode ? { branch: branchCode } : {})
+          ...(branchMode && branchCode ? { branch: branchCode, branch_code: branchCode, branchCode: branchCode } : {})
         }
       })
       if (res.data?.local === true) {
@@ -140,11 +140,12 @@ export default function BillList({ branchMode = false, branchCode }) {
     }
   }
 
-  // FIX: Branch Edit - pehle /bill-entry/:id pe ja raha tha jo route hai hi nahi, isliye dashboard pe aa raha tha. Ab /bill-edit/:id pe jayega jo bana hua hai.
+  // FIX No.2 - Branch Edit: pehle /bill-edit/:id (Admin route) pe ja raha tha, isliye Dashboard pe aa raha tha.
+  // Ab Branch route pe jayega: /branch/:branchCode/bill-entry/:id - jo App.jsx No.1 me fix ho gaya hai.
   const handleEdit = (bill) => {
     if (branchMode) {
       sessionStorage.setItem('branchReturn', `/branch/${encodeURIComponent(branchCode)}/bill-list`)
-      navigate(`/bill-edit/${bill.id}?branch=${encodeURIComponent(branchCode)}`)
+      navigate(`/branch/${encodeURIComponent(branchCode)}/bill-entry/${bill.id}`)
     } else {
       navigate(`/bill-edit/${bill.id}`)
     }
