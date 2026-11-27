@@ -225,7 +225,8 @@ function isRowForCurrentBranch(row, branchSlug, activeBranch) {
     row.branch_slug, row.branchSlug, row.branch_code, row.branchCode,
     row.branch, row.branch_name, row.branchName, row.branch_id, row.branchId
   ].filter((x) => x !== undefined && x !== null && String(x).trim() !== '')
-  if (candidates.length === 0) return false
+  // FIX: Purana data - Branch khali hai to ye Purana Row hai, DIKHAO, chhupao mat. Pehle yaha false tha, isliye purana data gayab ho raha tha.
+  if (candidates.length === 0) return true
   if (activeBranch?.id && candidates.some((c) => String(c) === String(activeBranch.id))) return true
   return candidates.some((c) => {
     const n = normalizeBranch(c)
@@ -381,8 +382,10 @@ export default function TMSDashboard({ branch }) {
     return () => { active = false }
   }, [branchSlug, isBranchDashboard, refreshKey])
 
+  // FIX: Agar branches list se activeBranch na mile to bhi khali mat chhodo - branchSlug se hi bana do, warna Admin Branch Dashboard atak jata tha
   const activeBranch = branchSession?.branch
-    || branches.find((item) => item.url_slug === branchSlug)
+    || branches.find((item) => item.url_slug === branchSlug || item.branch_code === branchSlug || item.slug === branchSlug)
+    || (isBranchDashboard ? { id: null, url_slug: branchSlug, branch_code: branchSlug, branch_name: branchSlug } : undefined)
 
   useEffect(() => {
     if (isBranchDashboard && branchSession === null) return
@@ -605,7 +608,9 @@ export default function TMSDashboard({ branch }) {
       'branch-portal': '/branch-portal',
       'branch-payments/summary': '/branch-payments/summary',
       'accounts/tds-register': '/accounts/tds-register',
-      'admin/database': '/admin/database'
+      'admin/database': '/admin/database',
+      // FIX: Admin me Bilty Amount wala card /billing/pending pe jata tha jo route hai hi nahi, isliye 404 aata tha. Ab /outstanding pe jayega.
+      'billing/pending': '/outstanding'
     }
     if (globalAliases[path]) return globalAliases[path]
     return path === 'dashboard'
@@ -763,13 +768,12 @@ export default function TMSDashboard({ branch }) {
     return 0
   }
 
-  // *** FIX - ADMIN GLOBAL: Bina Branch Select kiye kisi ka data nahi dikhega ***
+  // FIX - ADMIN GLOBAL: Admin ko bina Branch Select kiye bhi GLOBAL data dikhega. Pehle yaha safePendingRows = [] kar diya tha, isliye Admin me sab 0 dikh raha tha. Ab Admin Global me bhi asli data dikhega.
   const isAdminGlobal = isAdmin && !isBranchDashboard
-  const safePendingRows = isAdminGlobal ? [] : pendingRows
-  const safeClearedBills = isAdminGlobal ? [] : clearedBills
-  const safeAllBills = isAdminGlobal ? [] : allBills
+  const safePendingRows = pendingRows
+  const safeClearedBills = clearedBills
+  const safeAllBills = allBills
 
-  // *** FIX - Upar ke dabbe List se banao, Server ke purane stats se nahi ***
   const pendingTotal = safePendingRows.reduce((s, r) => s + biltyAmountOf(r), 0)
   const clearedTotal = safeClearedBills.reduce((s, r) => s + biltyAmountOf(r), 0)
   const allBilties = [...safePendingRows, ...safeClearedBills]
@@ -778,21 +782,20 @@ export default function TMSDashboard({ branch }) {
   const thisMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`
   const monthRows = allBilties.filter((r) => biltyDateKey(r.lr_date || r.created_at || r.cleared_at).startsWith(thisMonthKey))
   const monthPendingTotal = monthRows.reduce((s, r) => s + biltyAmountOf(r), 0)
-  const displayTodayCount = isAdminGlobal ? 0 : (todayRows.length > 0 ? todayRows.length : Number(getStat('today_lr', 'todaysBooking')))
-  const displayMonthCount = isAdminGlobal ? 0 : (monthRows.length > 0 ? monthRows.length : Number(getStat('month_lr', 'monthlyBooking')))
-  const displayTodayRevenue = isAdminGlobal ? 0 : (todayRows.length > 0 ? todayPendingTotal : Number(getStat('today_revenue')))
-  const displayMonthRevenue = isAdminGlobal ? 0 : (monthRows.length > 0 ? monthPendingTotal : Number(getStat('month_revenue')))
-  const displayPendingAmount = isAdminGlobal ? 0 : (safePendingRows.length > 0 ? pendingTotal : Number(getStat('pending_amount', 'pendingAmount')))
+  const displayTodayCount = (todayRows.length > 0 ? todayRows.length : Number(getStat('today_lr', 'todaysBooking')))
+  const displayMonthCount = (monthRows.length > 0 ? monthRows.length : Number(getStat('month_lr', 'monthlyBooking')))
+  const displayTodayRevenue = (todayRows.length > 0 ? todayPendingTotal : Number(getStat('today_revenue')))
+  const displayMonthRevenue = (monthRows.length > 0 ? monthPendingTotal : Number(getStat('month_revenue')))
+  const displayPendingAmount = (safePendingRows.length > 0 ? pendingTotal : Number(getStat('pending_amount', 'pendingAmount')))
 
   const billBalance = (b) => Number(b?.net_balance ?? b?.balance_due ?? b?.grand_total ?? 0)
   const billNoOf = (b) => b?.bill_no || b?.invoice_no || b?.bill_number || b?.billNo || ''
-  // *** NAYA - BILL AMOUNT: Sirf isi branch ke Bills se ***
   const billGrandTotal = (b) => Number(b?.grand_total ?? b?.total_amount ?? b?.amount ?? 0)
   const billTotalAmount = safeAllBills.reduce((s, b) => s + billGrandTotal(b), 0)
   const billPendingAmount = safeAllBills.filter((b) => billBalance(b) > 0).reduce((s, b) => s + billBalance(b), 0)
   const billClearedAmount = safeAllBills.filter((b) => billBalance(b) <= 0).reduce((s, b) => s + billGrandTotal(b), 0)
   const billTotalCount = safeAllBills.length
-  const displayBillAmount = isAdminGlobal ? 0 : billTotalAmount
+  const displayBillAmount = billTotalAmount
 
   const billByLr = {}
   safeAllBills.forEach((b) => {
@@ -867,9 +870,13 @@ export default function TMSDashboard({ branch }) {
                 className="max-w-48 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
               >
                 <option value="">Select Branch</option>
-                {branches.map((item) => (
-                  <option key={item.id} value={item.url_slug}>{item.branch_name || item.branch_code}</option>
-                ))}
+                {branches.map((item) => {
+                  // FIX: Branch Select - url_slug khali ho to branch_code / slug se kaam chalega, warna Select dabane pe kuch nahi hota tha
+                  const slugValue = item.url_slug || item.branch_code || item.slug || item.branch_slug || ''
+                  return (
+                    <option key={item.id || slugValue} value={slugValue}>{item.branch_name || item.branch_code}</option>
+                  )
+                })}
               </select>
             </>
           )}
@@ -898,9 +905,7 @@ export default function TMSDashboard({ branch }) {
             {showNotifications && (
               <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white p-4 text-sm shadow-lg">
                 <strong className="text-slate-800">Notifications</strong>
-                {isAdminGlobal ? (
-                  <p className="mt-2 text-slate-500">Branch Select karo, tabhi Pending Bilty dikhegi.</p>
-                ) : safePendingRows.length > 0 ? (
+                {safePendingRows.length > 0 ? (
                   <div className="mt-2">
                     <p className="font-bold text-red-600">⚠️ {safePendingRows.length} Bilty Pending hai</p>
                     <p className="text-slate-500">Total Pending: {money(pendingTotal)}</p>
@@ -1059,43 +1064,25 @@ export default function TMSDashboard({ branch }) {
           </Link>
           <Link to={branchPath('billing/pending')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Bilty Amount</p>
-            {isAdminGlobal ? (
-              <p className="mt-3 text-sm font-bold text-amber-700">Branch Select karo, tabhi Bilty Amount dikhega</p>
-            ) : (
-              <>
-                <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(displayPendingAmount)}</p>
-                <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs text-slate-600">
-                  <span>Pending Bilties <strong>{number(safePendingRows.length)}</strong></span>
-                  <span>Cleared Bilties <strong>{number(safeClearedBills.length)}</strong></span>
-                  <span>Cleared Amount <strong>{money(clearedTotal)}</strong></span>
-                  <span>Total Bilty <strong>{money(pendingTotal + clearedTotal)}</strong></span>
-                </div>
-              </>
-            )}
+            <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(displayPendingAmount)}</p>
+            <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs text-slate-600">
+              <span>Pending Bilties <strong>{number(safePendingRows.length)}</strong></span>
+              <span>Cleared Bilties <strong>{number(safeClearedBills.length)}</strong></span>
+              <span>Cleared Amount <strong>{money(clearedTotal)}</strong></span>
+              <span>Total Bilty <strong>{money(pendingTotal + clearedTotal)}</strong></span>
+            </div>
           </Link>
           <Link to={branchPath('bill-list')} className="block rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Bill Amount</p>
-            {isAdminGlobal ? (
-              <p className="mt-3 text-sm font-bold text-amber-700">Branch Select karo, tabhi Bill Amount dikhega</p>
-            ) : (
-              <>
-                <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(displayBillAmount)}</p>
-                <div className="mt-3 space-y-2 text-sm text-slate-700">
-                  <p>Total Bills <strong>{number(billTotalCount)}</strong></p>
-                  <p>Pending Bill Amount <strong>{money(billPendingAmount)}</strong></p>
-                  <p>Cleared Bill Amount <strong>{money(billClearedAmount)}</strong></p>
-                  <p>Pending Bills <strong>{number(pendingBillsBox.length)}</strong></p>
-                </div>
-              </>
-            )}
+            <p className="mt-3 text-2xl font-extrabold text-slate-900">{money(displayBillAmount)}</p>
+            <div className="mt-3 space-y-2 text-sm text-slate-700">
+              <p>Total Bills <strong>{number(billTotalCount)}</strong></p>
+              <p>Pending Bill Amount <strong>{money(billPendingAmount)}</strong></p>
+              <p>Cleared Bill Amount <strong>{money(billClearedAmount)}</strong></p>
+              <p>Pending Bills <strong>{number(pendingBillsBox.length)}</strong></p>
+            </div>
           </Link>
         </section>
-
-        {isAdminGlobal && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Admin Dashboard me Branch Select karo - Upar wale Header me <b>Select Branch</b> se kisi ek Branch ka Dashboard kholo. Bina Branch ke kisi Branch ka Bilty / Bill Amount nahi dikhega.
-          </div>
-        )}
 
         {monthlyStatsError ? (
           <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -1115,9 +1102,7 @@ export default function TMSDashboard({ branch }) {
           {billTab === 'cleared' ? (
             <div>
               <h2 className="mb-2 text-base font-bold text-slate-900">Cleared Bilty</h2>
-              {isAdminGlobal ? (
-                <p className="text-sm text-amber-800">Branch Select karo, tabhi Cleared Bilty dikhegi.</p>
-              ) : clearedError ? (
+              {clearedError ? (
                 <p className="text-sm text-amber-800">{clearedError}</p>
               ) : safeClearedBills.length === 0 ? (
                 <p className="text-sm text-slate-500">Abhi koi Bilty Clear nahi hui hai.</p>
@@ -1145,9 +1130,7 @@ export default function TMSDashboard({ branch }) {
             <span className="text-xs text-slate-500">Showing up to 100 unpaid bilties</span>
             {loading && <span className="text-xs text-slate-500">Updating…</span>}
           </div>
-          {isAdminGlobal ? (
-            <p className="text-sm text-amber-800">Branch Select karo, tabhi Pending Bilty dikhegi.</p>
-          ) : pendingError ? (
+          {pendingError ? (
             <p role="alert" className="text-sm text-amber-800">{pendingError}</p>
           ) : safePendingRows.length === 0 ? (
             <p className="text-sm text-slate-500">No pending bilty amounts found.</p>
@@ -1186,9 +1169,7 @@ export default function TMSDashboard({ branch }) {
             <button type="button" onClick={() => setBillBoxTab('cleared')} className={`rounded-full px-4 py-2 text-sm font-bold ${billBoxTab === 'cleared' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-700'}`}>Cleared Bills ({clearedBillsBox.length})</button>
           </div>
           <h2 className="mb-2 text-base font-bold text-slate-900">Bill</h2>
-          {isAdminGlobal ? (
-            <p className="text-sm text-amber-800">Branch Select karo, tabhi Bills dikhenge.</p>
-          ) : (billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).length === 0 ? (
+          {(billBoxTab === 'pending' ? pendingBillsBox : clearedBillsBox).length === 0 ? (
             <p className="text-sm text-slate-500">{billBoxTab === 'pending' ? 'No pending bills.' : 'No cleared bills.'}</p>
           ) : (
             <div className="divide-y divide-slate-100">
