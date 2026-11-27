@@ -47,10 +47,7 @@ function isBillForThisBranch(b, branchKeys, strictBranchMode) {
   if (!branchKeys || !branchKeys.length) return !strictBranchMode
   const fields = [b.branch_code, b.branchCode, b.branch, b.branch_name, b.branchName, b.branch_slug, b.branchSlug]
     .map(normalizeBranchKey).filter(Boolean)
-  // FIX: Pehle yaha return true tha - branch field na ho to bhi is branch ka maan lete the
-  // Ab: Branch mode me branch field hi nahi hai to ye Bill is branch ka NAHI hai
   if (!fields.length) return false
-  // Branch ID se bhi check - ID mismatch ho to bhi naam se match hona chahiye
   return fields.some((f) => branchKeys.some((k) => f === k || f.includes(k) || k.includes(f)))
 }
 function getMaxSerialFromList(list, branchKeys) {
@@ -85,12 +82,14 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
   const navigate = useNavigate()
   const location = useLocation()
   const params = useParams()
-  // FIX EDIT: id, billId, bill_id, billNo - sab naam support karenge
   const id = params.id || params.billId || params.bill_id || params.billNo || location.state?.billId || location.state?.id || null
   const effectiveId = id ? String(id) : null
-  // FIX EDIT: branchCode prop / params / URL / session - 4 jagah se pakdenge, khali nahi rahega
+  // FIX No.3 - effectiveBranchCode: prop / params / URL / session - 4 jagah se, kabhi khali nahi
   const branchSessionEarly = getBranchSession()
-  const branchCode = branchCodeProp || params.branchCode || params.branch || params.branchSlug || params.branch_code || getBranchFromURL() || branchSessionEarly?.branch?.branch_code || branchSessionEarly?.branch?.url_slug || ''
+  const branchCodePropValue = branchCodeProp || params.branchCode || params.branch || params.branchSlug || params.branch_code || ''
+  const branchCodeFromUrl = getBranchFromURL()
+  const effectiveBranchCode = branchCodePropValue || branchCodeFromUrl || branchSessionEarly?.branch?.branch_code || branchSessionEarly?.branch?.url_slug || branchSessionEarly?.branch?.branch_slug || ''
+  const branchCode = effectiveBranchCode
   const branchPath = (path) => branchMode ? `/branch/${encodeURIComponent(branchCode)}/${path}` : `/${path}`
   const adminBillListPath = () => branchMode ? branchPath('bill-list') : '/bills'
   const [loading, setLoading] = useState(false)
@@ -142,7 +141,6 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveId, branchMode, branchCode, selectedBranchCode])
 
-  // FIX: BRANCH ME KABHI BINA FILTER WALI LIST NAHI MANGENGE
   const fetchNextBillNo = async (branch = (branchMode ? branchCode : selectedBranchCode)) => {
     const requestId = ++billNumberRequest.current
     if (!branch) return
@@ -185,7 +183,6 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
         return
       }
     }
-    // ===== ADMIN MODE - JAISE THA WAISA HI, HAATH NAHI LAGAYA =====
     try {
       const response = await documentSeriesAPI.getNextNumber('bill', branch)
       const nextSerial = response.data?.bill_no || response.data?.number
@@ -233,7 +230,6 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
     }
   }
 
-  // FIX EDIT + FIX ADMIN LEAK - DONO EK SAATH
   const loadBill = async (billId) => {
     setLoading(true)
     try {
@@ -242,7 +238,6 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
         const res = await api.get(`/bills/${billId}`)
         billObj = unwrapBill(res)
       } catch (e) { console.warn('Direct bill load fail:', e?.response?.status) }
-      // Agar direct nahi mila to SIRF apni branch ki filtered list se dhoondo, bina filter wali kabhi nahi
       if (!billObj || !billObj.id) {
         try {
           const branchSession = getBranchSession()
@@ -257,7 +252,6 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
         if (fromHistory) billObj = fromHistory
       }
       if (!billObj || !billObj.id) throw new Error('Bill nahi mila')
-      // BRANCH CHECK - Dusri branch / Admin ka Bill yaha kabhi nahi khulega
       if (branchMode) {
         const branchSession = getBranchSession()
         const branchKeys = getBranchKeys(branchCode, branchSession)
@@ -273,9 +267,7 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
       if (billObj.branch_code) setSelectedBranchCode(billObj.branch_code)
     } catch (err) {
       if (branchMode) {
-        // BRANCH ME DASHBOARD PE KABHI MAT BHEJO - Bill List pe bhejo, Dashboard pe nahi
         toast.error('Bill load nahi hua - ' + (err.response?.data?.error || err.message || 'Server error'))
-        // navigate MAT KARO yaha, isi page pe ruko taaki Party ka Bill edit ho sake
       } else {
         alert(err.response?.data?.error || 'Unable to load bill for editing.')
         navigate(adminBillListPath())
@@ -283,7 +275,6 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
     } finally { setLoading(false) }
   }
 
-  // FIX ADMIN LEAK - Sirf apni branch, khali ho to khali dikhao, Admin ka mat lao
   const fetchHistory = async () => {
     try {
       const branchSession = getBranchSession()
@@ -297,7 +288,7 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
       setHistoryList(list.map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
     } catch (e) {
       if (branchMode) {
-        setHistoryList([]) // Branch me Local Admin history kabhi mat dikhao
+        setHistoryList([])
       } else {
         try { setHistoryList(JSON.parse(localStorage.getItem('btc_history') || '[]').map(mapBillToForm)) } catch (parseError) { setHistoryList([]) }
       }
@@ -382,16 +373,16 @@ export default function BillEntry({ branchMode = false, branchCode: branchCodePr
     setLoading(true)
     try {
       const calculated = calculate(billData)
+      const sessionForSave = getBranchSession()
       const payload = {
-        branch, branch_code: branchMode ? getBranchSession()?.branch?.branch_code || branchCode : branches.find(item => item.branch_code === selectedBranchCode)?.branch_code,
-        branch_id: branchMode ? getBranchSession()?.branch?.id : branches.find(item => item.branch_code === selectedBranchCode)?.id,
+        branch, branch_code: branchMode ? (sessionForSave?.branch?.branch_code || branchCode || branch) : branches.find(item => item.branch_code === selectedBranchCode)?.branch_code,
+        branch_id: branchMode ? sessionForSave?.branch?.id : branches.find(item => item.branch_code === selectedBranchCode)?.id,
         bill_no: billData.invNo, bill_date: billData.billDate, party_name: billData.partyName, party_gst: billData.partyGst, party_address: [billData.fromAddr, billData.toAddr].filter(Boolean).join(' | '), from_name: billData.fromAddr, to_name: billData.toAddr, vehicle_no: billData.vehNo, advance_received: Number(billData.advInput) || 0, trip_subtotal: calculated.subtotal, gst_percent: Number(billData.gstPer) || 0, gst_amount: calculated.gstAmt, grand_total: calculated.grandtotal, balance_due: calculated.balance, net_balance: calculated.balance, amount_in_words: calculated.amountWords, payment_details: JSON.stringify({ cash: billData.advCash, cheque: billData.advChq, online: billData.advUpi }), remarks: billData.remarks,
         items: calculated.rows.map(row => ({ lr_no: row.lr, invoice_no: row.inv, from_name: row.from, to_name: row.to, packages: row.packages, weight_mt: row.wt, freight: row.freight, loading: row.load, unloading: row.unload, other_charges: row.oth, trip_date: row.date || null, total: row.total }))
       }
       const response = effectiveId ? await api.put(`/bills/${effectiveId}`, payload) : await api.post('/bills', payload)
       if (response.data?.local) { saveLocalDraft('bill', { ...payload, bill_no: payload.bill_no || billData.invNo }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); return }
       const savedBill = unwrapBill(response) || { id: effectiveId }
-      // Branch me Local History me Admin ka Bill kabhi mix mat karo - sirf Admin me karo
       if (!branchMode) {
         try {
           const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
