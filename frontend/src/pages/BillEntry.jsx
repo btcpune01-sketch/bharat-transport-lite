@@ -23,9 +23,6 @@ function extractSerial(billNo) {
   const m = String(billNo).match(/(\d+)\s*$/)
   return m ? parseInt(m[1], 10) : 0
 }
-// *** FIXED - Branch match naram kiya, Year filter hataya ***
-// Pehle: branch_code exact match + 26-27 hona zaroori tha -> sab 0 ho jata tha -> 1 aa jata tha
-// Ab: Koi branch field hi nahi hai to Bill ko gino (purana bill), branch field hai aur clearly dusri branch hai tabhi chhodo
 function normalizeBranchKey(v) {
   return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
@@ -38,12 +35,7 @@ function isBillForThisBranch(b, branchKeys) {
   if (!branchKeys || !branchKeys.length) return true
   const fields = [b.branch_code, b.branchCode, b.branch, b.branch_name, b.branchName, b.branch_slug, b.branchSlug]
     .map(normalizeBranchKey).filter(Boolean)
-  // Koi branch field hi nahi hai (purana bill) -> is branch ka maan lo, chhodo mat
   if (!fields.length) return true
-  // Branch id alag se check - id number ho sakta hai
-  if (b.branch_id || b.branchId) {
-    // id ko key me nahi milaya, isliye yaha sirf field se match dekho, id mismatch pe bhi mat chhodo agar naam match hai
-  }
   return fields.some((f) => branchKeys.some((k) => f === k || f.includes(k) || k.includes(f)))
 }
 function getMaxSerialFromList(list, branchKeys) {
@@ -51,7 +43,6 @@ function getMaxSerialFromList(list, branchKeys) {
   ;(list || []).forEach((b) => {
     const bNo = b.bill_no || b.invNo || b.invoice_no || b.bill_number || ''
     if (!bNo) return
-    // *** YEAR FILTER HATAYA - BTC/BILL/1074 bhi gina jayega, sirf serial chahiye ***
     if (!isBillForThisBranch(b, branchKeys)) return
     const s = extractSerial(bNo)
     if (s > max) max = s
@@ -66,11 +57,22 @@ function parseBillListResponse(res) {
   if (Array.isArray(d?.rows)) return d.rows
   return []
 }
+function unwrapBill(res) {
+  const d = res?.data
+  if (!d) return null
+  if (d.data && typeof d.data === 'object' && !Array.isArray(d.data)) return d.data
+  if (d.bill && typeof d.bill === 'object') return d.bill
+  return d
+}
 const getLocalBillNumber = () => getLocalDocumentNumber('bill', `BTC/${billYearLabel(new Date())}/`)
 
-export default function BillEntry({ branchMode = false, branchCode }) {
+export default function BillEntry({ branchMode = false, branchCode: branchCodeProp }) {
   const navigate = useNavigate()
-  const { id } = useParams()
+  // FIX 1: URL se branchCode bhi lo, prop na mile to bhi kaam karega
+  const params = useParams()
+  const id = params.id || params.billId || params.bill_id || null
+  const effectiveId = id
+  const branchCode = branchCodeProp || params.branchCode || params.branch || params.branchSlug || ''
   const branchPath = (path) => branchMode
     ? `/branch/${encodeURIComponent(branchCode)}/${path}`
     : `/${path}`
@@ -122,9 +124,10 @@ export default function BillEntry({ branchMode = false, branchCode }) {
   }
 
   useEffect(() => {
-    if (id) loadBill(id)
     fetchHistory()
-  }, [id])
+    if (effectiveId) loadBill(effectiveId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveId])
 
   useEffect(() => {
     if (branchMode) return
@@ -138,7 +141,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
   }, [branchMode])
 
   useEffect(() => {
-    if (id) return
+    if (effectiveId) return
     const branch = branchMode ? branchCode : selectedBranchCode
     if (!branch) {
       billNumberRequest.current += 1
@@ -147,9 +150,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     }
     setBillData(previous => ({ ...previous, invNo: '' }))
     fetchNextBillNo(branch)
-  }, [id, branchMode, branchCode, selectedBranchCode])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveId, branchMode, branchCode, selectedBranchCode])
 
-  // *** FIXED - BRANCH: 3 jagah se Last lo, sabse bada +1 | ADMIN: purana same ***
   const fetchNextBillNo = async (branch = (branchMode ? branchCode : selectedBranchCode)) => {
     const requestId = ++billNumberRequest.current
     if (!branch) return
@@ -159,15 +162,12 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       const branchKeys = getBranchKeys(branch, branchSession)
       const branchId = branchSession?.branch?.id
       try {
-        // Teenon ko ek saath mangao - ek fail bhi ho to dusra kaam karega
         const [seriesRes, billsFilteredRes, billsAllRes] = await Promise.allSettled([
           documentSeriesAPI.getNextNumber('bill', branch),
           api.get('/bills', { params: { branch, branch_code: branch, branch_id: branchId, limit: 1000 } }),
           api.get('/bills', { params: { limit: 1000 } }),
         ])
         if (requestId !== billNumberRequest.current) return
-
-        // 1) SERIES se - ye Server ka asli Next Number hai (pehle isko ignore kar rahe the)
         let seriesNext = 0
         if (seriesRes.status === 'fulfilled') {
           const d = seriesRes.value?.data || {}
@@ -176,26 +176,19 @@ export default function BillEntry({ branchMode = false, branchCode }) {
           if (raw) seriesNext = extractSerial(raw)
           else if (lastRaw) seriesNext = extractSerial(lastRaw) + 1
         }
-        // 2) FILTERED LIST se
         let listMax = 0
         if (billsFilteredRes.status === 'fulfilled') {
           listMax = Math.max(listMax, getMaxSerialFromList(parseBillListResponse(billsFilteredRes.value), branchKeys))
         }
-        // 3) FULL LIST se (agar server ne branch filter me khali bhej diya to yaha se mil jayega)
-        // Yaha bhi branchKeys se hi filter karenge, dusri branch ka number kabhi nahi lenge
         let allList = []
         if (billsAllRes.status === 'fulfilled') {
           allList = parseBillListResponse(billsAllRes.value)
           listMax = Math.max(listMax, getMaxSerialFromList(allList, branchKeys))
         }
-        // 4) HISTORY se (jo pehle se loaded hai)
         const historyMax = getMaxSerialFromList(historyList, branchKeys)
-
-        // Sabse bada + 1 - koi ek khali ho to bhi dusre se sahi number aayega, 1 nahi aayega
         const nextSerial = Math.max(seriesNext, listMax + 1, historyMax + 1, 1)
         const yearLabel = billYearLabel(new Date())
         setBillData(prev => ({ ...prev, invNo: `BTC/${yearLabel}/${nextSerial}` }))
-        // History ko bhi sahi list se bhar do taaki Edit me sahi dikhe
         const bestList = allList.length ? allList : parseBillListResponse(billsFilteredRes.status === 'fulfilled' ? billsFilteredRes.value : null)
         if (bestList.length) {
           const filteredForHistory = bestList.filter((b) => isBillForThisBranch(b, branchKeys))
@@ -206,7 +199,6 @@ export default function BillEntry({ branchMode = false, branchCode }) {
         return
       } catch (error) {
         if (requestId !== billNumberRequest.current) return
-        // Agar sab fail ho gaya to History se hi lo, Local 1 se nahi
         const historyMax = getMaxSerialFromList(historyList, branchKeys)
         const yearLabel = billYearLabel(new Date())
         setBillData(prev => ({ ...prev, invNo: `BTC/${yearLabel}/${historyMax + 1}` }))
@@ -238,7 +230,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       setLoading(true)
       await api.put(`/bills/${billItem.id}`, { bill_no: formatted })
       setHistoryList(prev => prev.map(b => b.id === billItem.id ? { ...b, invNo: formatted, bill_no: formatted } : b))
-      if (String(id) === String(billItem.id)) setBillData(prev => ({ ...prev, invNo: formatted }))
+      if (String(effectiveId) === String(billItem.id)) setBillData(prev => ({ ...prev, invNo: formatted }))
       setEditingBillId(null); setEditingBillNo('')
       toast.success(`Bill Number badal gaya - ${formatted}`)
     } catch (e) {
@@ -295,15 +287,51 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     }
   }
 
+  // FIX 2 - BRANCH ME KABHI DASHBOARD / LIST PE REDIRECT NAHI HOGA
   const loadBill = async (billId) => {
     setLoading(true)
     try {
-      const res = await api.get(`/bills/${billId}`)
-      setBillData(prev => ({ ...prev, ...mapBillToForm(res.data) }))
-      if (res.data.branch_code) setSelectedBranchCode(res.data.branch_code)
+      // 1) Pehle direct try karo
+      let billObj = null
+      try {
+        const res = await api.get(`/bills/${billId}`)
+        billObj = unwrapBill(res)
+      } catch (e) {
+        // direct fail hua to neeche list se dhoondenge, turant redirect nahi karenge
+        console.warn('Direct bill load fail, list se try kar raha hu:', e?.response?.status)
+      }
+      // 2) Agar direct se nahi mila to List se dhoondo - yahi asli fix hai
+      if (!billObj || !billObj.id) {
+        try {
+          const resList = await api.get('/bills', { params: { limit: 1000, branch: branchCode, branch_code: branchCode } })
+          const list = parseBillListResponse(resList)
+          billObj = list.find(b => String(b.id) === String(billId)) || null
+          // Agar branch filter wali list me nahi mila to bina filter wali me dhoondo
+          if (!billObj) {
+            const resAll = await api.get('/bills', { params: { limit: 1000 } })
+            const all = parseBillListResponse(resAll)
+            billObj = all.find(b => String(b.id) === String(billId)) || null
+          }
+        } catch (e) {}
+      }
+      // 3) Abhi bhi nahi mila to History / Local se dhoondo
+      if (!billObj || !billObj.id) {
+        const fromHistory = historyList.find(b => String(b.id) === String(billId))
+        if (fromHistory) billObj = fromHistory
+      }
+      if (!billObj || !billObj.id) throw new Error('Bill nahi mila')
+      const mapped = mapBillToForm(billObj)
+      const withCalc = { ...mapped, ...calculate(mapped) }
+      setBillData(prev => ({ ...prev, ...withCalc }))
+      if (billObj.branch_code) setSelectedBranchCode(billObj.branch_code)
     } catch (err) {
-      alert(err.response?.data?.error || 'Unable to load bill for editing.')
-      navigate(adminBillListPath())
+      // BRANCH MODE: Kabhi navigate mat karo, isi page pe ruko
+      if (branchMode) {
+        toast.error('Bill load nahi hua - ' + (err.response?.data?.error || err.message || 'Server error'))
+      } else {
+        alert(err.response?.data?.error || 'Unable to load bill for editing.')
+        navigate(adminBillListPath())
+      }
     } finally { setLoading(false) }
   }
 
@@ -315,7 +343,6 @@ export default function BillEntry({ branchMode = false, branchCode }) {
       const params = branchMode ? { branch: branchCode, branch_code: branchCode, limit: 1000 } : {}
       const res = await api.get('/bills', { params })
       let list = parseBillListResponse(res)
-      // Agar server ne khali bhej diya to bina filter wali list se lo, par branch se filter karke - dusri branch mix nahi hogi
       if (branchMode && !list.length) {
         try {
           const resAll = await api.get('/bills', { params: { limit: 1000 } })
@@ -323,7 +350,6 @@ export default function BillEntry({ branchMode = false, branchCode }) {
         } catch (e) {}
       } else if (branchMode) {
         const filtered = list.filter((b) => isBillForThisBranch(b, branchKeys))
-        // Agar filter ke baad sab ud gaya matlab branch field ka format alag hai, to original list hi rakho - khali mat karo
         if (filtered.length) list = filtered
       }
       setHistoryList(list.map(bill => ({ id: bill.id, ...mapBillToForm(bill), date: bill.bill_date })))
@@ -421,10 +447,10 @@ export default function BillEntry({ branchMode = false, branchCode }) {
     const branch = branchMode ? branchCode : selectedBranchCode
     if (!branch) { alert('Select a branch before saving this Bill.'); return }
     if (billData.invNo.trim()) {
-      const listDup = historyList.find(b => String(b.invNo || b.bill_no) === billData.invNo.trim() && String(b.id) !== String(id || ''))
+      const listDup = historyList.find(b => String(b.invNo || b.bill_no) === billData.invNo.trim() && String(b.id) !== String(effectiveId || ''))
       if (branchMode && listDup) { toast.error(`Ye number pehle use ho chuka hai - ${billData.invNo}. List se Edit karke alag number lo.`); return }
       try {
-        const duplicateCheck = await documentSeriesAPI.validate({ type: 'bill', number: billData.invNo.trim(), branch, exclude_id: id || undefined })
+        const duplicateCheck = await documentSeriesAPI.validate({ type: 'bill', number: billData.invNo.trim(), branch, exclude_id: effectiveId || undefined })
         if (duplicateCheck.data?.duplicate) {
           if (branchMode) { toast.error('Ye number is branch me pehle use ho chuka hai.'); return }
           if (!window.confirm('Ye number is branch me pehle use ho chuka hai, kya aap aage badhna chahte ho? Yes / No')) return
@@ -458,9 +484,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
         remarks: billData.remarks,
         items: calculated.rows.map(row => ({ lr_no: row.lr, invoice_no: row.inv, from_name: row.from, to_name: row.to, packages: row.packages, weight_mt: row.wt, freight: row.freight, loading: row.load, unloading: row.unload, other_charges: row.oth, trip_date: row.date || null, total: row.total }))
       }
-      const response = id ? await api.put(`/bills/${id}`, payload) : await api.post('/bills', payload)
+      const response = effectiveId ? await api.put(`/bills/${effectiveId}`, payload) : await api.post('/bills', payload)
       if (response.data?.local) { saveLocalDraft('bill', { ...payload, bill_no: payload.bill_no || billData.invNo }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }); return }
-      const savedBill = response.data
+      const savedBill = unwrapBill(response) || { id: effectiveId }
       try {
         const localHistory = JSON.parse(localStorage.getItem('btc_history') || '[]')
         if (!Array.isArray(localHistory)) throw new Error('Saved bill history is not a list.')
@@ -468,8 +494,9 @@ export default function BillEntry({ branchMode = false, branchCode }) {
         localStorage.setItem('btc_history', JSON.stringify(nextHistory))
       } catch (storageError) { console.error('Bill saved to the server but local history could not be updated:', storageError); toast('Bill saved to the server, but local history could not be updated.', { icon: '⚠️' }) }
       await fetchHistory()
-      toast.success(id ? 'Bill updated successfully.' : 'Bill saved successfully.')
-      navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/bill-print/${savedBill.id}` : `/bills/${savedBill.id}/print`)
+      toast.success(effectiveId ? 'Bill updated successfully.' : 'Bill saved successfully.')
+      const printId = savedBill.id || effectiveId
+      navigate(branchMode ? `/branch/${encodeURIComponent(branchCode)}/bill-print/${printId}` : `/bills/${printId}/print`)
     } catch (err) {
       if (isDatabaseUnavailable(err)) {
         try { saveLocalDraft('bill', { ...billData, bill_no: billData.invNo }); toast('Saved locally, will sync when server is online', { icon: '💾', duration: 7000 }) }
@@ -480,7 +507,7 @@ export default function BillEntry({ branchMode = false, branchCode }) {
 
   const newBill = () => {
     if (window.confirm("Generate New Bill?")) {
-      if (id) { navigate(branchPath('bill-entry')); return }
+      if (effectiveId) { navigate(branchPath('bill-entry')); return }
       setBillData({ invNo: '', billDate: formatDateForInput(new Date()), partyName: '', partyGst: '', fromAddr: '', toAddr: '', vehNo: '', subtotal: 0, gstAmt: 0, grandtotal: 0, balance: 0, amountWords: '', advInput: 0, advCash: '', advChq: '', advUpi: '', gstPer: 0, remarks: '', rows: [{ date: '', lr: '', inv: '', from: '', to: '', wt: '', load: '', unload: '', oth: '', freight: '', total: '0.00' }] })
       setLrSearch('')
       fetchNextBillNo(branchMode ? branchCode : selectedBranchCode)
