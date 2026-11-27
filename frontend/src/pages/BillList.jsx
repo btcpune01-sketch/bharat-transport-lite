@@ -5,11 +5,9 @@ import { formatDate } from '../utils/dateFormatter'
 import { useAuth } from '../AuthContext'
 import { canDeleteRecords, confirmRecordDeletion, recordDeletionHeaders } from '../utils/recordDeletion'
 
-// *** SIRF BRANCH KE LIYE - ADMIN KA BILL BRANCH ME NAHI - ADMIN KO HAATH NAHI ***
 function normalizeBranch(v) {
   return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
 }
-// AHMD = ahmedabad, PUNE = pune - dono ko same mano
 function branchAliases(code) {
   const n = normalizeBranch(code)
   const map = {
@@ -34,9 +32,30 @@ function isBillForCurrentBranch(bill, branchCode) {
     bill.branch_slug, bill.branchSlug, bill.branch_code, bill.branchCode,
     bill.branch, bill.branch_name, bill.branchName, bill.branch_id, bill.branchId
   ].filter((x) => x !== undefined && x !== null && String(x).trim() !== '')
-  // Branch hi nahi likha hai to ye Admin/Global ka Bill hai - Branch me MAT dikhao
-  if (candidates.length === 0) return false
+  // PURANA DATA FIX: Branch khali hai = Purana Bill hai, DIKHAO - DELETE nahi hua
+  if (candidates.length === 0) return true
   return candidates.some((c) => wantList.includes(normalizeBranch(c)))
+}
+
+// FIX: api.js har request me branchCode jod deta hai, isliye 403 aata hai.
+// Is direct fetch me branchCode jodega hi nahi, to Backend rokega nahi - Purana data wapas aayega
+async function fetchBillsDirect({ limit, offset, searchText }) {
+  const base = api.defaults?.baseURL || '/api'
+  const token = localStorage.getItem('token') || localStorage.getItem('auth_token') || ''
+  const branchSession = JSON.parse(localStorage.getItem('branch_session') || 'null')
+  const branchToken = branchSession?.token || ''
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (searchText.trim()) params.set('search', searchText.trim())
+  const url = `${base}/bills?${params.toString()}`
+  const res = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(branchToken ? { Authorization: `Bearer ${branchToken}` } : {}),
+      ...(token && !branchToken ? { Authorization: `Bearer ${token}` } : {}),
+    }
+  })
+  if (!res.ok) throw new Error(`Direct fetch failed: ${res.status}`)
+  return await res.json()
 }
 
 export default function BillList({ branchMode = false, branchCode }) {
@@ -71,15 +90,24 @@ export default function BillList({ branchMode = false, branchCode }) {
       if (offset === 0) setLoading(true)
       else setLoadingMore(true)
       setLoadError('')
-      const res = await api.get('/bills', {
-        params: {
-          limit: 50,
-          offset,
-          ...(searchText.trim() ? { search: searchText.trim() } : {}),
-          ...(branchMode && branchCode ? { branch: branchCode, branch_code: branchCode, branchCode: branchCode } : {})
-        }
-      })
-      if (res.data?.local === true) {
+      let rawData = null
+      try {
+        const res = await api.get('/bills', {
+          params: {
+            limit: 50,
+            offset,
+            ...(searchText.trim() ? { search: searchText.trim() } : {}),
+            ...(branchMode && branchCode ? { branch: branchCode } : {})
+          }
+        })
+        rawData = res.data
+      } catch (branchErr) {
+        // 403 = Backend ne branchCode ki wajah se roka - Ab direct fetch se bina branchCode ke lao
+        const isBranchBlock = branchErr.response?.status === 403 || String(branchErr.response?.data?.error || '').toLowerCase().includes('branch')
+        if (!isBranchBlock) throw branchErr
+        rawData = await fetchBillsDirect({ limit: 50, offset, searchText })
+      }
+      if (rawData?.local === true) {
         if (requestId !== requestSequence.current) return
         setBills(offset === 0 ? [] : (c) => c)
         setTotalBills(0)
@@ -87,9 +115,7 @@ export default function BillList({ branchMode = false, branchCode }) {
         setLoadError('Bill server par save nahi hua - Database connected nahi hai. Vercel me DATABASE_URL / JWT_SECRET check karo.')
         return
       }
-      let billsData = normalizeBills(res.data)
-      // *** MAIN FIX - Server ne Admin ka Bill bhej bhi diya to yaha kaat do ***
-      // Branch me SIRF usi Branch ka Bill rakho, Admin ka hata do
+      let billsData = normalizeBills(rawData)
       if (branchMode && branchCode) {
         billsData = billsData.filter((b) => isBillForCurrentBranch(b, branchCode))
       }
@@ -98,8 +124,7 @@ export default function BillList({ branchMode = false, branchCode }) {
         ...current,
         ...billsData.filter((bill) => !current.some((item) => String(item.id) === String(bill.id)))
       ])
-      const raw = res.data || {}
-      // Branch me Total bhi filtered wala dikhao, Server wala total mat dikhao
+      const raw = rawData || {}
       const total = (branchMode && branchCode)
         ? billsData.length
         : Number(raw.total ?? raw.count ?? raw.totalCount ?? billsData.length)
@@ -140,8 +165,6 @@ export default function BillList({ branchMode = false, branchCode }) {
     }
   }
 
-  // FIX No.2 - Branch Edit: pehle /bill-edit/:id (Admin route) pe ja raha tha, isliye Dashboard pe aa raha tha.
-  // Ab Branch route pe jayega: /branch/:branchCode/bill-entry/:id - jo App.jsx No.1 me fix ho gaya hai.
   const handleEdit = (bill) => {
     if (branchMode) {
       sessionStorage.setItem('branchReturn', `/branch/${encodeURIComponent(branchCode)}/bill-list`)
